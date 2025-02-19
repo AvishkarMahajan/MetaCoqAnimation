@@ -107,6 +107,13 @@ Definition animate (R_name : kername) : TemplateMonad unit :=
   lemma1 <- tmQuotedLemma lemma1_name f ;;
   tmMsg "done".
 
+Definition someify (t : term) : term := tApp <% @Some %> [hole; t].
+Print Some.
+
+MetaCoq Run (tmEval all (someify <% true %>) >>=
+               tmUnquoteTyped (option bool) >>=
+               tmPrint).
+
 
  (** #[local] Obligation Tactic :=
   unfold run_step_branch_type;
