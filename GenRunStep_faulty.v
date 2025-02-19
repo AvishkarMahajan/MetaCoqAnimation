@@ -84,7 +84,9 @@ Definition animate (R_name : kername) : TemplateMonad unit :=
   (** @tmDefinition run_step_name run_step_type f ;; **)
   tmDefinition run_step_name f ;;
   lemma1_name <- tmFreshName "lemma" ;;
-  lemma1 <- tmQuote =<< tmLemma lemma1_name (run_step_type' f) ;; 
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (f) ;;
+   (** Replacing 'f' in the line above with 'exists x : f, True' makes the whole thing work but the resulting proof obligation is
+   slightly different **)  
   
   tmMsg "done".
   
