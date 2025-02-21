@@ -17,8 +17,17 @@ Notation "<? x ?>" :=
 
 Open Scope bs.
 
+Definition someify (t : term) : term := tApp <% @Some %> [hole; t].
 
-Definition progTransIndRelPm6 (p : mutual_inductive_body) : option term :=
+
+
+MetaCoq Quote Definition nonterm := (@None (nat -> nat)).
+
+Print nonterm.
+
+
+
+Definition progTransIndRel6 (p : mutual_inductive_body) : term :=
   match p with
   |{| ind_finite := inf
     ; ind_npars := n
@@ -43,12 +52,14 @@ Definition progTransIndRelPm6 (p : mutual_inductive_body) : option term :=
         |} :: tb
     ; ind_universes := iu
     ; ind_variance := iv
-    |}  => Some j1
-  | _ => None
+    |}  => someify j1
+  | _ => nonterm
   end.
 
 
-Parameter errorFun : nat -> nat.
+
+
+(** Parameter errorFun : nat -> nat.
 MetaCoq Quote Definition errorFunTerm := errorFun.
 
 
@@ -65,7 +76,7 @@ Definition extractTerm (x : option term) : term :=
  end. **)
 
 Definition progTransIndRel6 (p : mutual_inductive_body) : term :=
-  extractTerm (progTransIndRelPm6 p).
+  extractTerm (progTransIndRelPm6 p). **)
 
 
 
@@ -78,16 +89,17 @@ Inductive step : nat -> nat -> Prop :=
 
 
 
-Definition run_step_type' (f : nat -> nat) : Type :=
-  forall e1 : nat, {o : nat | match o with
-                              | e2 => ((step e1 e2 /\ o = f e1) \/ (f = errorFun))
+Definition run_step_type' (f : option (nat -> nat)) : Type :=
+  forall e1 : nat, {o : nat | match f with
+                              | Some f' => (step e1 o /\ o = f' e1)
+                              | None => True
                               end }.
 
 
 Definition gen_run_step_sig
            (mut : mutual_inductive_body)
            : TemplateMonad Type :=
-  f_out <- tmUnquoteTyped (nat -> nat) (progTransIndRel6 mut);;
+  f_out <- tmUnquoteTyped (option (nat -> nat)) (progTransIndRel6 mut);;
   (** lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (run_step_type' f_out) ;; **)
   @tmReturn Type (run_step_type' (f_out)).
@@ -107,7 +119,7 @@ Definition animate (R_name : kername) : TemplateMonad unit :=
   lemma1 <- tmQuotedLemma lemma1_name f ;;
   tmMsg "done".
 
-Definition someify (t : term) : term := tApp <% @Some %> [hole; t].
+
 Print Some.
 
 MetaCoq Run (tmEval all (someify <% true %>) >>=
