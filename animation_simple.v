@@ -4,7 +4,9 @@ Require Import List.
 Require Import MetaCoq.Template.All.
 Import monad_utils.MCMonadNotation.
 
-
+Require Import utils.
+Import MetaCoqNotations.
+Open Scope bs.
 
 Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
  match l with
@@ -12,15 +14,48 @@ Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
   | (h :: t) => if (Nat.eqb h a) then true else (inNatLst a t)
  end.
 
-
-
- 
-   
-
-
 (* a, b designated as input, c d e designated as output *)
 Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (e = b /\ d = c /\ c = a + e) -> foo a b c d e.
+
+MetaCoq Run (tmQuoteInductive <? foo ?> >>= tmPrint).
+
+Definition animate_conjunct
+           (c : constructor_body) (conjunct : context_decl) : TemplateMonad named_term :=
+  (* t is the MetaCoq term for the conjunct like (e = b /\ d = c /\ c = a + e) *) 
+  let t : term := decl_type conjunct in
+  (* tl here only works because we assume there is only one, large, nested "and" conjunct *)
+  t_named <- DB.undeBruijn' (tl (map (fun arg => binder_name (decl_name arg)) (cstr_args c))) t ;;
+  (* now you can work with the named representation, as you can see below: *)
+  tmPrint t_named ;;
+  ret hole.
+
+Fixpoint collect_conjuncts (cs : list constructor_body) : TemplateMonad (list named_term) :=
+  match cs with
+  | [] => ret []
+  | c :: cs =>
+      match cstr_args c with
+      | conjunct :: _ =>
+          conjunct' <- animate_conjunct c conjunct ;;
+          cs' <- collect_conjuncts cs ;;
+          ret (conjunct' :: cs')
+      | _ => tmFail "No arguments for constructor c"
+      end
+  end.
+
+Definition animate (kn : kername) : TemplateMonad unit :=
+  mut <- tmQuoteInductive kn ;;
+  match ind_bodies mut with
+  | [ one ] =>
+    conjuncts <- collect_conjuncts (ind_ctors one) ;;
+    (* there has to be something clever here *)
+    ret conjuncts
+  | _ => tmFail "Not one type in mutually inductive block."
+  end ;;
+  ret tt.
+
+MetaCoq Run (animate <? foo ?>).
+
 
 (* Let clauses in the same order as foo, leads to error since d depends on c but only a b e are known at that point.  
 Definition animate1 (a : nat) (b : nat) : list nat :=
