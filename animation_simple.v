@@ -109,6 +109,11 @@ Compute (sortConj [[1 ; 0] ; [2 ; 1] ; [3 ; 2] ; [4 ; 3 ; 5]] [5 ; 0]).
 Compute (sortConj [[4 ; 1] ; [3 ; 2] ; [2 ; 0 ; 4]] [0 ; 1]).
 
 Compute (sortConj [[1 ; 0] ; [2 ; 1] ; [3 ; 2] ; [4 ; 3 ; 5]] [0]).
+
+Parameter partialProg : nat -> nat.
+MetaCoq Quote Definition letTerm := (let a := b in partialProg).
+
+Print letTerm.
      
      
      
