@@ -19,11 +19,14 @@ Open Scope bs.
 
 Definition someify (t : term) : term := tApp <% @Some %> [hole; t].
 
+Print someify.
+
+
 Compute (<% 5 %>).
 
-(** Definition genFun {A : Type} (p : A) : term := <% p %>.
+Definition genFun {A : Type} (p : A) : term := <% p %>.
 
-Compute (genFun 2). p just gets treated as a char not as an input provided to the function. <% t %> can be used in other functions but 
+Compute (genFun 2). (** p just gets treated as a char not as an input provided to the function. <% t %> can be used in other functions but 
 the t is fixed and not dependent on function parameters. You cannot abstract over the argument arg of <% arg %>, since 
 <% %> cannot be given a type. I.e. <% t %> is just short hand for MetaCoq Quote Definition <% t %> := t  **) 
 

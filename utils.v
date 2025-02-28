@@ -55,7 +55,7 @@ Definition ident_eq (x y : ident) : bool :=
   end.
 
 Module DB.
-  (* Inspired by code written by John Li but changed slightly.
+ (* Inspired by code written by John Li but changed slightly.
      We should eventually consider making a MetaCoq_utils module. *)
   (* Takes a named representation and converts it into the de Bruijn representation. *)
   Definition deBruijn' (ctx : list name) (t : named_term) : TemplateMonad term :=
@@ -142,10 +142,13 @@ Module DB.
              default' <- go ctx default ;;
              type' <- go ctx type ;;
              ret (tArray u arr' default' type')
+        | tString s => ret (tString s)     
         end
     in go ctx t.
 
   Definition deBruijn (t : named_term) : TemplateMonad term := deBruijn' nil t.
+  
+  
 
   (* Takes a de Bruijn representation and changes [tRel]s to [tVar]s. *)
   Definition undeBruijn' (ctx : list name) (t : term) : TemplateMonad named_term :=
@@ -226,6 +229,7 @@ Module DB.
              default' <- go ctx default ;;
              type' <- go ctx type ;;
              ret (tArray u arr' default' type')
+        | tString s => ret (tString s)
         end
     in go ctx t.
 

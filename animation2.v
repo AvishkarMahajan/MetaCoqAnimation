@@ -3,11 +3,18 @@ Require Import List.
             
 Require Import MetaCoq.Template.All.
 Import monad_utils.MCMonadNotation.
+(*Require Import utils.*)
 
 
 (* a, b designated as input, c d e designated as output *)
 Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (c + 1 = 2 * a /\ e = b /\ d = c /\ c = a + e) -> foo a b c d e.
+
+MetaCoq Quote Recursively Definition footerm := foo.
+
+Print footerm. 
+
+Print TemplateMonad.
 
 
 (* Target output function *)
@@ -28,7 +35,7 @@ MetaCoq Quote Definition letTerm := (let a := b in partialProg).
 
 Print letTerm.
 
-Definition oneConjunctAnimate (conjunct : Prop) (known_vars : (list nat)) (partialProg : term) : 
+Definition oneConjunctAnimate (conjunct : term) (known_vars : (list nat)) (partialProg : term) : 
                                                               ((list nat) × term). Admitted.
                                                               
                                                               
