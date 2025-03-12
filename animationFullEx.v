@@ -1,5 +1,6 @@
 Require Import Coq.Lists.List.
 Require Import List.
+Import ListNotations.
             
 Require Import MetaCoq.Template.All.
 Import monad_utils.MCMonadNotation.
@@ -688,8 +689,20 @@ Compute (constrFn (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 
 
 
 
-Definition animate' (t : term) : TemplateMonad (nat -> nat -> (option (list nat))) :=
-  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) (t) ;; tmPrint f ;; tmReturn f.
+Definition animate' (t : term) : TemplateMonad (nat -> nat -> option (list nat)) :=
+  tmMsg "before" ;;
+  tmPrint t ;;
+  t' <- DB.deBruijn' [nNamed "d"; nNamed "b"; nNamed "a"] t ;;
+  tmMsg "before but with evaluation and de Bruijn" ;;
+  tmEval all t' >>= tmPrint ;;
+  f <- @tmUnquoteTyped _ t ;;
+  tmMsg "after" ;;
+  tmPrint f ;;
+  tmMsg "after but with evaluation" ;;
+  tmEval all t >>= tmPrint ;;
+  tmReturn f.
+
+
   
 
 
