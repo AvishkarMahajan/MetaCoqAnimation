@@ -692,7 +692,7 @@ Compute (constrFn (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 
 Definition animate' (t : term) : TemplateMonad (nat -> nat -> option (list nat)) :=
   tmMsg "before" ;;
   tmPrint t ;;
-  t' <- DB.deBruijn' [nNamed "d"; nNamed "b"; nNamed "a"] t ;;
+  t' <- DB.deBruijn' [nNamed "d"; nNamed "c"; nNamed "b"; nNamed "a"] t ;;
   tmMsg "before but with evaluation and de Bruijn" ;;
   tmEval all t' >>= tmPrint ;;
   f <- @tmUnquoteTyped _ t ;;
@@ -702,9 +702,28 @@ Definition animate' (t : term) : TemplateMonad (nat -> nat -> option (list nat))
   tmEval all t >>= tmPrint ;;
   tmReturn f.
 
+Search incl.
 
-  
 
+Theorem incl_dec :
+  forall {A : Type} (dec : forall (a b : A), {a = b} + {a <> b}),
+  forall (l1 l2 : list A),
+    {incl l1 l2} + {~ incl l1 l2}.
+Proof.
+  intros A dec l1 l2.
+  induction l1 as [|x xs].
+  * left. eapply incl_nil_l.
+  * destruct (in_dec dec x l2).
+    destruct IHxs.
+    left. eapply incl_cons; eauto.
+    right. intros w. destruct (incl_cons_inv w). auto.
+    right. intros w. destruct (incl_cons_inv w). auto.
+Defined.
+
+Compute (match incl_dec StringOTOrig.eq_dec ["a"] ["a";"b"] with
+         | left _ => true
+         | right _ => false
+         end).
 
 
 MetaCoq Run (animate' (constrFn (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 10 (fun t : term => t)) ( (tApp (tConst (MPfile ["Datatypes"; "Init"; "Coq"], "andb") [])
