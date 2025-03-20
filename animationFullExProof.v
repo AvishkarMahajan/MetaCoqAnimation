@@ -666,14 +666,25 @@ Definition genFun (fooTerm : term) (inputVars : list string) (fuel : nat) : term
     (animateOneConjGuardList (getListConjGuardCon fooTerm)). 
 
 
-Definition soundness (f : (nat -> nat -> option (list nat))) : Type :=
+(* Definition soundness (f : (nat -> nat -> option (list nat))) : Type :=
   forall n1 n2 : nat,
     {l : (option (list nat)) |
      match l with
      | Some ([n3 ; n4 ; n5]) => (foo n1 n2 n3 n4 n5  /\ Some ([n3 ; n4 ; n5]) = f n1 n2)
      | None => ((forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False)) /\ None = f n1 n2)
      | _   => False
-     end}.
+     end}. *)
+
+
+Definition soundness' (f : (nat -> nat -> option (list nat))) (n1 : nat) (n2 : nat) : Type :=
+ let r := (f n1 n2) in 
+   match r with
+    | Some ([n3 ; n4 ; n5]) => (foo n1 n2 n3 n4 n5)
+    | None =>  (forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False))
+    | _ => False
+    end. 
+Definition soundness'' (f : (nat -> nat -> option (list nat))) : Type :=
+ forall n1 n2, soundness' f n1 n2 .       
 
 (** Definition animate'' (kn : kername) (inputVars : (list string)) (fuel : nat) : TemplateMonad unit :=
   mut <- tmQuoteInductive kn ;;
@@ -698,7 +709,7 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : T
   t' <- DB.deBruijn (genFun conjs inputVars fuel)  ;;
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;;
   lemma1_name <- tmFreshName "lemma" ;;
-  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness f) ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
   tmMsg "done".
 
 
@@ -707,17 +718,14 @@ MetaCoq Run (animate'' fooTerm ["a" ; "b"] 10).
 
 
 Next Obligation.
-Proof. exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2).
+Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
 remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
 + split.
-++ apply cstr. apply beq_nat_eq in HeqH. rewrite -> HeqH.
-auto.
-++ reflexivity.
-+ split.
-++ intros. inversion H; subst. assert (H' : g1 (g3 n1 n2) = g2 n1).
-- auto. destruct H0. rewrite H0 in H1. destruct H1.
+++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
+auto. 
++ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
+*  auto.
+* destruct H0. rewrite H0 in H1. destruct H1.
 rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
-- apply beq_nat_neq in HeqH.
-* assumption.
-* assumption.
-++ reflexivity. Qed.
+ Qed.
+
