@@ -1037,7 +1037,153 @@ Fixpoint makeConjSimpl (l1 : list (list term)) : list term :=
  end.
  
 Compute (makeConjSimpl (deconTypeConGen'' (deConConj1 trial2) (deConConj2 trial2) 20)).  
+
+
+Definition deCons (a : nat) : list nat :=
+ let r := [a ; 2] in 
+ match r with 
+ | [S c ; S d] => [c ; d]
+ | _ => []
+ end.
+
+Definition deCons' (x : (list nat)) : list nat :=
+ let r := x in
+ match r with
+ | [S c ; S d] => [c ; d]
+ | _ => []
+ end.
+
+(* Error 
+Definition deCons'' (x : (list nat)) : list nat :=
+ let [a ; b] := x in [b ; a]. *) 
+
+Check list.
+Check (cons nat). 
+
+Parameter consFn : nat -> nat.
+
+Definition deCons'' (x : nat) : option nat :=
+ match x with
+ | S c => Some c 
+ | _ => None
+ end.
  
+MetaCoq Quote Definition t := (fun x => match x with
+                                        | S c => Some c
+                                        | _ => None
+                                       end).
+MetaCoq Run (t' <- DB.undeBruijn t ;; tmPrint t'). 
+
+
+
+
+Inductive myType : Set :=
+| mycr1 : nat -> myType
+| mycr2 : nat -> myType.
+
+Parameter str1 : string.
+Parameter str2 : string.
+Parameter str3 : string.
+
+
+MetaCoq Quote Definition t'' := (fun myList => match myList with
+                                        | []  =>  str1 
+                                        | h :: (h' :: t) => str2
+                                        | _ => str3
+                                       end).
+MetaCoq Run (t''' <- DB.undeBruijn t'' ;; tmPrint t'''). 
+
+MetaCoq Quote Definition t2 := (fun m P (PO : P 0) (PS : forall n, P (S n)) => 
+                                   match m as n return P n with
+                                    | 0 => PO
+                                    | S n => PS n
+                                    end).
+MetaCoq Run (t2' <- DB.undeBruijn t2 ;; tmPrint t2'). 
+
+Print bcontext.
+
+
+(* (fun x => match x with
+                                        | mycr1 a  =>  a 
+                                        | _ => 0
+                                       end). *)
+
+Definition myTypeFnTerm := 
+ (tLambda {| binder_name := nNamed "x"; binder_relevance := Relevant |}
+   (tInd {| inductive_mind := (MPfile ["animationFullExProof"], "myType"); inductive_ind := 0 |} [])
+   (tCase
+      {|
+        ci_ind :=
+          {| inductive_mind := (MPfile ["animationFullExProof"], "myType"); inductive_ind := 0 |};
+        ci_npar := 0;
+        ci_relevance := Relevant
+      |}
+      {|
+        puinst :=
+          puinst
+            {|
+              puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
+              preturn :=
+                tInd
+                  {|
+                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
+                  |} []
+            |};
+        pparams := [];
+        pcontext :=
+          pcontext
+            {|
+              puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
+              preturn :=
+                tInd
+                  {|
+                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
+                  |} []
+            |};
+        preturn :=
+          tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+            []
+      |} (tVar "x")
+      [{|
+         bcontext :=
+           bcontext
+             {|
+               bcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
+               bbody := tRel 0
+             |};
+         bbody := tVar "a"
+       |};
+       {|
+         bcontext :=
+           bcontext
+             {|
+               bcontext := [{| binder_name := nNamed "n"; binder_relevance := Relevant |}];
+               bbody :=
+                 tConstruct
+                   {|
+                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
+                   |} 0 []
+             |};
+         bbody :=
+           tConstruct
+             {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 0
+             []
+       |}])).
+
+
+
+
+Inductive baz : nat -> myType -> Prop :=
+ | bazCon : forall (a : nat), forall (x : myType), mycr1 a = x -> baz a x. 
+
+
+MetaCoq Run (animate <? baz ?>).
+ 
+  
 
 
                                                                                
