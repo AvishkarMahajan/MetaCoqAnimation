@@ -1075,23 +1075,66 @@ MetaCoq Quote Definition t := (fun x => match x with
 MetaCoq Run (t' <- DB.undeBruijn t ;; tmPrint t'). 
 
 
-
+(*Parameter myType2 : Type.*)
 
 Inductive myType : Set :=
-| mycr1 : nat -> myType
-| mycr2 : nat -> myType.
+| mycr2 : nat -> myType
+| mycr4 : string -> nat -> myType
+| mycr1 : string -> nat -> myType
+| mycr3 : myType. 
+
 
 Parameter str1 : string.
 Parameter str2 : string.
 Parameter str3 : string.
+Parameter fstr : forall A : Type, list A -> string.
 
 
-MetaCoq Quote Definition t'' := (fun myList => match myList with
-                                        | []  =>  str1 
-                                        | h :: (h' :: t) => str2
-                                        | _ => str3
-                                       end).
-MetaCoq Run (t''' <- DB.undeBruijn t'' ;; tmPrint t'''). 
+
+
+(* Pattern match for 0 element list*) 
+
+MetaCoq Quote Definition u0 := (fun myList => match myList with
+                                                | []  =>  Some myList 
+                                                | y :: l => None
+                                                
+                                                end).                                              
+(* MetaCoq Run (t''' <- DB.undeBruijn t'' ;; tmPrint t'''). *)
+
+Print u0.
+
+(* Pattern match for 1 element list *)
+MetaCoq Quote Definition u1 := (fun myList => match myList with
+                                                | []  =>  None 
+                                                | y0 :: l0 => match l0 with
+                                                             | [] => Some myList
+                                                             | y :: l => None
+                                                             end 
+                                                
+                                                end).
+Print u1.
+
+
+(* Pattern match for 2 element list *)
+MetaCoq Quote Definition u2 := (fun myList => match myList with
+                                                | []  =>  None 
+                                                | y1 :: l1 => match l1 with
+                                                             | [] => None
+                                                             | y0 :: l0 => match l0 with
+                                                                            | [] => Some (myList)
+                                                                            | y :: l => None
+                                                                           end 
+                                                             end 
+                                                
+                                                end).
+Print u2.
+
+
+MetaCoq Run (u2' <- DB.undeBruijn u2 ;; tmPrint u2'). 
+
+
+
+(* Compare u0 and u1 and u2 *) 
 
 MetaCoq Quote Definition t2 := (fun m P (PO : P 0) (PS : forall n, P (S n)) => 
                                    match m as n return P n with
@@ -1177,13 +1220,71 @@ Definition myTypeFnTerm :=
 
 
 
-Inductive baz : nat -> myType -> Prop :=
- | bazCon : forall (a : nat), forall (x : myType), mycr1 a = x -> baz a x. 
+Inductive baz : nat -> myType -> string -> Prop :=
+ | bazCon : forall (a : nat), forall (x : myType), forall (b : string), mycr1 b a = x -> baz a x b.  (*RHS of equality not v imp*)
+ 
+Print TemplateMonad.
 
+MetaCoq Quote Recursively Definition bazTerm := baz.
+
+Print bazTerm. 
+
+Print program.
+Print global_env.
+Print global_decl.
+
+Parameter error : kername × global_decl.
+
+
+Parameter error2 : one_inductive_body.
+
+Parameter error3 : constructor_body.
+
+Print one_inductive_body.
+
+Check tl.
+
+Definition extractIndDecl (x : global_decl) : option mutual_inductive_body :=
+ match x with
+  | InductiveDecl y => Some y
+  | _ => None
+ end.
+Compute (option_map ind_ctors (option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (tl (tl ((declarations (fst bazTerm))))))))))).
+
+(* Compute (option_map cstr_type (option_map (hd error3) (option_map ind_ctors(option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (declarations (fst bazTerm)))))))))). *)
+
+Compute (option_map cstr_args (option_map (hd error3) (option_map ind_ctors(option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (declarations (fst bazTerm)))))))))).
+(* 1st and 3rd computations should have all info needed to build patternmatch fn *)
+
+MetaCoq Quote Definition con3 := (fun x => match x with
+                                                | mycr1 a b  =>  Some (a, b)
+                                                | _ => None
+                                               end).
+Print con3. 
 
 MetaCoq Run (animate <? baz ?>).
+
+Fixpoint lstPatternmatch {A : Type} (n : nat) (x : (list A)) : option (list A) :=
+ match n with
+ | 0 => match x with 
+        | [] => Some x
+        | _ => None
+        end
  
-  
+ | S m => match x with
+           | [] => None
+           | (h :: t) => let r := lstPatternmatch m t in match r with
+                                                            | Some l' => Some (h :: l')
+                                                            | None => None
+                                                            end
+           
+           end                         
+  end.
+
+
+Compute (lstPatternmatch 4 [1 ; 2 ; 3 ; 4]).
+
+
 
 
                                                                                
