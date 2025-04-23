@@ -108,10 +108,10 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
                                        list ((string × term) × list string)) × list (string × term))  :=
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
- | (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs)) 
+ (*| (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))*) 
  | (str, (tRel k)) :: t => (i, t, (((str, (tRel k), nil)) :: resolvedTs), remTs)
  | (str, (tVar varStr)) :: t => (i, t, (((str, (tVar varStr ), nil)) :: resolvedTs), remTs)
- | (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))
+ (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs)) *)
  | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))
  
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
