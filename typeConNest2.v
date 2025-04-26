@@ -82,6 +82,7 @@ Print global_decl. *)
 
 (* Print one_inductive_body. *)
 
+Compute (tl (map extractIndDecl (map snd (declarations (fst baz'Term))))).
 
 Compute (map extractIndDecl ((map snd ((tl (tl (declarations (fst baz'Term)))))))).
 
@@ -161,7 +162,7 @@ Compute (rev (preProcCons 20 (
                          {|
                            inductive_mind := (MPfile ["typeConNest"%bs], "myType'"%bs);
                            inductive_ind := 0
-                         |} 0 []) [tVar "a1"%bs]; tVar "a2"%bs]))). 
+                         |} 0 []) [tVar "a"%bs]; tVar "b"%bs]))). 
 (* Function :
  fun x => match x with
           | tCon_0_myType v1 v2 =>   match v1 with
@@ -208,17 +209,206 @@ Compute (preProcConsRem 20 (
                          |} 0 []) [tRel 2]; tRel 1])).                                                   
 
 
-(* Print bazTerm.
+(* Print bazTerm. *)
 
 
 MetaCoq Quote Definition con3 := (fun x => match x with
-                                                | mycr1 a b  =>  Some true
+                                                | mycr2 a b  =>  Some true
                                                 | _ => None
                                                end).
 Print con3.
 
+MetaCoq Quote Definition con4 := (fun x => match x with
+                                                | mycr2 a b  =>  match a with
+                                                                  | mycr1' m => Some true
+                                                                  | _        => None
+                                                                 end 
+                                                | _ => None
+                                               end).
+                                               
+Print con4.
 
- Goal  (build pattern match branch) :
+
+MetaCoq Quote Definition con5 := (fun x => match x with
+                                                | mycr2 a b  =>  match b with
+                                                                  | S m => match a with
+                                                                            | mycr1' j => Some true
+                                                                            | _ => None
+                                                                           end 
+                                                                  
+                                                                  | _        => None
+                                                                 end 
+                                                                 
+                                                | _ => None
+                                               end).
+Print con5.
+
+(*MetaCoq Unquote Definition fn5' := (tLambda {| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}
+  (tInd {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |} [])
+  (tCase
+     {|
+       ci_ind := {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |};
+       ci_npar := 0;
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := [];
+       pcontext := [{| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}];
+       preturn :=
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                inductive_ind := 0
+              |} [])
+           [tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                inductive_ind := 0
+              |} []]
+     |} (tVar "x"%bs)
+     [{|
+        bcontext :=
+          [{| binder_name := nNamed "b"%bs; binder_relevance := Relevant |};
+           {| binder_name := nNamed "a"%bs; binder_relevance := Relevant |}];
+        bbody :=
+          tCase
+            {|
+              ci_ind :=
+                {|
+                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                  inductive_ind := 0
+                |};
+              ci_npar := 0;
+              ci_relevance := Relevant
+            |}
+            {|
+              puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "b"%bs; binder_relevance := Relevant |}];
+              preturn :=
+                tApp
+                  (tInd
+                     {|
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                       inductive_ind := 0
+                     |} [])
+                  [tInd
+                     {|
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                       inductive_ind := 0
+                     |} []]
+            |} (tVar "b"%bs)
+            [{|
+               bcontext := [];
+               bbody :=
+                 tApp
+                   (tConstruct
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                        inductive_ind := 0
+                      |} 1 [])
+                   [tInd
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                        inductive_ind := 0
+                      |} []]
+             |};
+             {|
+               bcontext := [{| binder_name := nNamed "m"%bs; binder_relevance := Relevant |}];
+               bbody :=
+                 tCase
+                   {|
+                     ci_ind :=
+                       {|
+                         inductive_mind := (MPfile ["typeConNest2"%bs], "myType'"%bs);
+                         inductive_ind := 0
+                       |};
+                     ci_npar := 0;
+                     ci_relevance := Relevant
+                   |}
+                   {|
+                     puinst := [];
+                     pparams := [];
+                     pcontext := [{| binder_name := nNamed "a"%bs; binder_relevance := Relevant |}];
+                     preturn :=
+                       tApp
+                         (tInd
+                            {|
+                              inductive_mind :=
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                              inductive_ind := 0
+                            |} [])
+                         [tInd
+                            {|
+                              inductive_mind :=
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                              inductive_ind := 0
+                            |} []]
+                   |} (tVar "a"%bs)
+                   [{|
+                      bcontext := [{| binder_name := nNamed "j"%bs; binder_relevance := Relevant |}];
+                      bbody :=
+                        tApp
+                          (tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                               inductive_ind := 0
+                             |} 0 [])
+                          [tInd
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} [];
+                           tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} 0 []]
+                    |};
+                    {|
+                      bcontext := [{| binder_name := nNamed "n"%bs; binder_relevance := Relevant |}];
+                      bbody :=
+                        tApp
+                          (tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                               inductive_ind := 0
+                             |} 1 [])
+                          [tInd
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} []]
+                    |}]
+             |}]
+      |};
+      {|
+        bcontext := [];
+        bbody :=
+          tApp
+            (tConstruct
+               {|
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_ind := 0
+               |} 1 [])
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                 inductive_ind := 0
+               |} []]
+      |}])). *)
+
+
+
+
+(* Goal  (build pattern match branch) :
 
 build function that goes from 
 
@@ -422,6 +612,53 @@ Definition mkLambda (scrutineeType : inductive) (scrutineeType' : inductive) (re
          retOpType
      |} (tRel 0)                                                                                                        
       brs). (*scrutineeType and scrutineeType' should be same *)                    
+                    
+                    
+Definition mkCase (scrutineeType' : inductive) (retOpType : term)
+                     (scrutineeVar : string) (brs : list (branch term)) : term :=
+  
+  (tCase
+     {|
+       ci_ind := scrutineeType';
+       ci_npar := 0;
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := [];
+       pcontext := [{| binder_name := nNamed scrutineeVar%bs; binder_relevance := Relevant |}];
+       preturn :=
+         retOpType
+     |} (tRel 0)                                                                                                        
+      brs). (*scrutineeType and scrutineeType' should be same *) 
+ 
+      
+Parameter identityTerm : term. (* term rep of id function*)
+Parameter optBoolTrue : term. (* term rep. of Some true *)
+Parameter mkCase' : ((string × term) × list string) -> term -> term.
+
+
+(* 
+Definition mkCase'' (s : (string × term) × list string) (retVal : term) (typeInfo : list (mutual_inductive_body))
+      (finalValType : term) (*for now always option bool *)  : term := ...
+ 
+ makeCase' s retVal = mkCase'' s retVal fixedParams...      
+ 
+ 
+ Take typeCon and retVal and some fixed params and produce a tCase where branch corresponding to typeCon returns retVal and everything else returns 
+None (bool) The error cases should just return retVal *) 
+      
+
+
+Fixpoint mkPmNested (ls : list ((string × term) × list string)) : term :=
+ match ls with
+  | [] => identityTerm
+  | (h :: nil) => mkCase' h optBoolTrue  
+  | (h :: t) => mkCase' h (mkPmNested t)
+ end. 
+                
+  
+                    
                     
                     
                     

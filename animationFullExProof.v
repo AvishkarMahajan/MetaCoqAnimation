@@ -1286,6 +1286,170 @@ Compute (lstPatternmatch 4 [1 ; 2 ; 3 ; 4]).
 
 
 
+MetaCoq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}
+  (tInd {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |} [])
+  (tCase
+     {|
+       ci_ind := {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |};
+       ci_npar := 0;
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := [];
+       pcontext := [{| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}];
+       preturn :=
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                inductive_ind := 0
+              |} [])
+           [tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                inductive_ind := 0
+              |} []]
+     |} (tVar "x")
+     [{|
+        bcontext :=
+          [{| binder_name := nNamed "b"%bs; binder_relevance := Relevant |};
+           {| binder_name := nNamed "a"%bs; binder_relevance := Relevant |}];
+        bbody :=
+          tCase
+            {|
+              ci_ind :=
+                {|
+                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                  inductive_ind := 0
+                |};
+              ci_npar := 0;
+              ci_relevance := Relevant
+            |}
+            {|
+              puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "b"%bs; binder_relevance := Relevant |}];
+              preturn :=
+                tApp
+                  (tInd
+                     {|
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                       inductive_ind := 0
+                     |} [])
+                  [tInd
+                     {|
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                       inductive_ind := 0
+                     |} []]
+            |} (tVar "b")
+            [{|
+               bcontext := [];
+               bbody :=
+                 tApp
+                   (tConstruct
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                        inductive_ind := 0
+                      |} 1 [])
+                   [tInd
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                        inductive_ind := 0
+                      |} []]
+             |};
+             {|
+               bcontext := [{| binder_name := nNamed "m"%bs; binder_relevance := Relevant |}];
+               bbody :=
+                 tCase
+                   {|
+                     ci_ind :=
+                       {|
+                         inductive_mind := (MPfile ["typeConNest2"%bs], "myType'"%bs);
+                         inductive_ind := 0
+                       |};
+                     ci_npar := 0;
+                     ci_relevance := Relevant
+                   |}
+                   {|
+                     puinst := [];
+                     pparams := [];
+                     pcontext := [{| binder_name := nNamed "a"%bs; binder_relevance := Relevant |}];
+                     preturn :=
+                       tApp
+                         (tInd
+                            {|
+                              inductive_mind :=
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                              inductive_ind := 0
+                            |} [])
+                         [tInd
+                            {|
+                              inductive_mind :=
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                              inductive_ind := 0
+                            |} []]
+                   |} (tVar "a")
+                   [{|
+                      bcontext := [{| binder_name := nNamed "j"%bs; binder_relevance := Relevant |}];
+                      bbody :=
+                        tApp
+                          (tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                               inductive_ind := 0
+                             |} 0 [])
+                          [tInd
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} [];
+                           tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} 0 []]
+                    |};
+                    {|
+                      bcontext := [{| binder_name := nNamed "n"%bs; binder_relevance := Relevant |}];
+                      bbody :=
+                        tApp
+                          (tConstruct
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                               inductive_ind := 0
+                             |} 1 [])
+                          [tInd
+                             {|
+                               inductive_mind :=
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                               inductive_ind := 0
+                             |} []]
+                    |}]
+             |}]
+      |};
+      {|
+        bcontext := [];
+        bbody :=
+          tApp
+            (tConstruct
+               {|
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_ind := 0
+               |} 1 [])
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                 inductive_ind := 0
+               |} []]
+      |}])) ;; tmPrint t).
+
+
+
 
                                                                                
                                          
