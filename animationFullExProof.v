@@ -9,7 +9,6 @@ Import monad_utils.MCMonadNotation.
 Require Import PeanoNat.
 Local Open Scope nat_scope.
 
-
   (* Recursive quoting *)
   Notation "<%% x %%>" :=
     ((ltac:(let p y := exact y in run_template_program (tmQuoteRec x) p)))
@@ -37,10 +36,6 @@ Local Open Scope nat_scope.
               | _ => fail "not a type constructor or definition name" end in
           run_template_program (tmQuote x) p))
     (only parsing).
-Compute <? option ?>.
-
-
-
 
 Definition named_term : Type := term.
 (* Alias for terms that do not contain references to local variables,
@@ -273,9 +268,26 @@ Parameter g3 : nat -> nat -> nat.
 Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (e = b /\ d = c /\ c = (g3 a e) /\ g1 d = g2 a) -> foo a b c d e.
 
+Print TemplateMonad.
+
+Definition test : TemplateMonad unit :=
+  t <- @tmQuote bool ((fun (n : nat) =>
+                         match n with
+                         | O => true
+                         | S n' => false
+                         end) 5) ;;
+  t' <- DB.undeBruijn t ;;
+  t'' <- DB.deBruijn t' ;;
+  tmMsg "BEFORE" ;;
+  tmPrint t ;;
+  tmMsg "AFTER" ;;
+  tmPrint t' ;;
+  tmMsg "ROUND TRIP" ;;
+  tmPrint t''.
+
+MetaCoq Run test.
 
 Check (tmQuoteInductive).
-Print TemplateMonad.
 Print one_inductive_body.
 MetaCoq Run (t <- tmQuoteInductive <? foo ?> ;; tmPrint t).
 
@@ -319,7 +331,7 @@ Definition animate (kn : kername) : TemplateMonad unit :=
 MetaCoq Run (animate <? foo ?>).
 
 Definition fooTerm : term :=
- (tApp <% and %>
+ tApp <% and %>
    [tApp <% @eq %>
       [<% nat %>; tVar "e"; tVar "b"];
     tApp <% and %>
@@ -335,25 +347,25 @@ Definition fooTerm : term :=
           tApp
             <% @eq %>
             [<% nat %>; tApp (tConst (MPfile ["animationFullExProof"], "g1") []) [tVar "d"];
-             tApp (tConst (MPfile ["animationFullExProof"], "g2") []) [tVar "a"]]]]]).
+             tApp (tConst (MPfile ["animationFullExProof"], "g2") []) [tVar "a"]]]]].
 
 Fixpoint isListSub (l1 l2 : list nat) : bool :=
- match l1 with
-  | nil => true
-  | (h :: t) => (inNatLst h l2) && (isListSub t l2)
- end.
+  match l1 with
+  | [] => true
+  | h :: t => inNatLst h l2 && isListSub t l2
+  end.
 
 Fixpoint inStrLst (s : string) (l1 : list string) : bool :=
- match l1 with
-  | nil => false
-  | h :: t => if (String.eqb s h) then true else (inStrLst s t)
- end.
+  match l1 with
+  | [] => false
+  | h :: t => if String.eqb s h then true else inStrLst s t
+  end.
 
 Fixpoint isListSubStr (l1 l2 : list string) : bool :=
- match l1 with
-  | nil => true
-  | h :: t => (inStrLst h l2) && (isListSubStr t l2)
- end.
+  match l1 with
+  | [] => true
+  | h :: t => inStrLst h l2 && isListSubStr t l2
+  end.
 
 (* String.eqb: string -> string -> bool *)
 
@@ -367,116 +379,69 @@ Fixpoint isListSubStr (l1 l2 : list string) : bool :=
   | _ => nil
  end. *)
 
+
+Notation "<?and?>" := (MPfile ["Logic"; "Init"; "Corelib"], "and").
+Notation "<?eq?>" := (MPfile ["Logic"; "Init"; "Corelib"], "eq").
+Notation "<?nat?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat").
+Notation "<%and%>" := (tInd {| inductive_mind := <?and?>; inductive_ind := 0 |} []).
+Notation "<%eq%>" := (tInd {| inductive_mind := <?eq?>; inductive_ind := 0 |} []).
+Notation "<%nat%>" := (tInd {| inductive_mind := <?nat?>; inductive_ind := 0 |} []).
+
 (* Extracts list of conjuncts from big conjunction *)
 Fixpoint getListConjLetBind (bigConj : term) : list term := 
- match bigConj with
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "and"); inductive_ind := 0 |} []) ls =>
-    concat (map getListConjLetBind ls)
+  match bigConj with
+  | tApp <%and%> ls => concat (map getListConjLetBind ls)
 
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tVar str2] => [tApp <% @eq %>
-          [<% nat %>; tVar str1; tVar str2]]
+  | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [tApp <% @eq %> [<%nat%>; tVar str1; tVar str2]]
 
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2; tVar str3]] =>
-      [tApp <% @eq %>
-          [<% nat %>; tVar str1; tApp fn [tVar str2; tVar str3]]]
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] =>
+      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]]]
 
-
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2]] =>
-      [tApp <% @eq %>
-          [<% nat %>; tVar str1; tApp fn [tVar str2]]]
-  | _ => nil
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
+      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]]]
+  | _ => []
  end.
 
-Fixpoint getListConjGuardCon (bigConj : term) : (list term) := (* extract list of conjuncts from big conjunction *)
- match bigConj with
-  |(tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "and"); inductive_ind := 0 |} []) ls) =>
-         concat (map getListConjGuardCon ls)
-
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             [];
-           tApp fn1
-             [tVar varStr1];
-           tApp fn2
-             [tVar varStr2]] => [tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             [];
-           tApp fn1
-             [tVar varStr1];
-           tApp fn2
-             [tVar varStr2]]]
-
-  | _ => nil
+(* extract list of conjuncts from big conjunction *)
+Fixpoint getListConjGuardCon (bigConj : term) : list term := 
+  match bigConj with
+  | tApp <%and%> ls => concat (map getListConjGuardCon ls)
+  | tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]] =>
+      [tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]]] 
+  | _ => []
  end.
 
 Compute (getListConjGuardCon fooTerm).
 
 
+(* extract ordered list of vars from conjunct *)
+Definition extractOrderedVars (t : term) : list string := 
+  match t with
+  | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [str1 ; str2]
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] => [str1 ; str2 ; str3]
 
-Definition extractOrderedVars (t : term) : (list string) := (* extract ordered list of vars from conjunct *)
- match t with
- | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tVar str2] => [str1 ; str2]
- | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2; tVar str3]] => [str1 ; str2 ; str3]
+  (* Combine the pattern matches to handle fns of arbitrary arity *)
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] => [str1 ; str2]
 
-
-(* Combine the pattern matches to handle fns of arbirary arity *)
- | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2]] => [str1 ; str2]
-
- | _ => nil
- end.
+  | _ => nil
+  end.
 
 
-(* Instantiate partialLetFun with identity*)
+(* Instantiate partialLetFun with identity *)
 
 Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : option (term -> term) :=
- match conj with
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tVar str2] => Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-            (tVar str2%bs)
-            (tInd
-               {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
-                 inductive_ind := 0
-               |} []) ) t))
+  match conj with
+  | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1; binder_relevance := Relevant |}
+                                 (tVar str2%bs) <%nat%>) t))
 
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2; tVar str3]] =>
-             Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-         (tApp fn [tVar str2%bs; tVar str3%bs])
-         (tInd
-            {|
-              inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
-              inductive_ind := 0
-            |} []) ) t))
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tApp fn [tVar str2%bs; tVar str3%bs]) <%nat%>) t))
 
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             []; tVar str1; tApp fn [tVar str2]] =>
-             Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-         (tApp fn [tVar str2%bs])
-         (tInd
-            {|
-              inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
-              inductive_ind := 0
-            |} []) ) t))
-
-
-
-
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tApp fn [tVar str2%bs]) <%nat%>) t))
 
   | _ => None
  end.
@@ -484,146 +449,86 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
 (* Instantiate partialGuard with Identity * No need to check for known vars when animating guard condition since all
 vars should be known at this point in the computation *)
 
- Definition animateOneConjSuccGuard (conj : term) (partialGuard : term ) :  term :=
+ Definition animateOneConjSuccGuard (conj : term) (partialGuard : term) :  term :=
   match conj with
-   | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-             [];
-           tApp fn1
-             [tVar varStr1];
-           tApp fn2
-             [tVar varStr2]] =>
-                (tApp (tConst (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "andb"%bs) []) [partialGuard ;
-                         tApp (tConst (MPfile ["Nat"%bs; "Init"%bs; "Coq"%bs], "eqb"%bs) []) [tApp fn1
-             [tVar varStr1];
-           tApp fn2
-             [tVar varStr2]]])
-   | _ => <% false %>
- end.
+  | tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]] =>
+    tApp (tConst <? andb ?> [])
+         [ partialGuard
+         ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 [tVar varStr1]
+         ; tApp fn2 [tVar varStr2]]]
+  | _ => <% false %>
+  end.
 
-
-
-
-
-
-Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : term -> term) : option (list string × (term -> term)) :=
- if (isListSubStr (tl (extractOrderedVars conj)) knownVar) then
-  let t' := (animateOneConjSucc conj partialProg) in
+Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : term -> term) : option (list string * (term -> term)) :=
+  if isListSubStr (tl (extractOrderedVars conj)) knownVar then
+  (let t' := animateOneConjSucc conj partialProg in
     match t' with
-     | Some t'' => Some ((app knownVar (extractOrderedVars conj)), t'')
-     | None => None
-    end
-
-    else None.
-
+    | Some t'' => Some (app knownVar (extractOrderedVars conj), t'')
+    | None => None
+    end)
+  else None.
 
 
 Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVar : list string)
-                           (fuel : nat) (partialProg : term -> term) : term -> term :=
- match fuel with
+                         (fuel : nat) (partialProg : term -> term) : term -> term :=
+  match fuel with
   | 0 => partialProg
-  | S n => match conjs with
-           | nil => match remConjs with
-                     | nil => partialProg
-                     | lst => animateListConj lst nil knownVar n partialProg
-                    end
-           | (h :: t) => let res := (animateOneConj h knownVar partialProg) in
-                             match res with
-                              | Some res' => animateListConj t remConjs (fst res') n  (snd res')
-                              | None => animateListConj t (h :: remConjs) knownVar n partialProg
-                             end
-
-           end
- end.
+  | S n =>
+    match conjs with
+    | [] =>
+      match remConjs with
+      | [] => partialProg
+      | lst => animateListConj lst nil knownVar n partialProg
+      end
+    | h :: t =>
+      let res := animateOneConj h knownVar partialProg in
+      match res with
+      | Some res' => animateListConj t remConjs (fst res') n (snd res')
+      | None => animateListConj t (h :: remConjs) knownVar n partialProg
+      end
+    end
+  end.
 
 (* Construct final function of shape fun a b : nat => ... option ([c ; d ; e]) *)
 
 Definition constrFn (letBind : term -> term) (guardCon : term) : term :=
- (tLambda {| binder_name := nNamed "a"%bs; binder_relevance := Relevant |} (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} [])
-   (tLambda {| binder_name := nNamed "b"%bs; binder_relevance := Relevant |} (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} [])
-    (letBind (tCase {| ci_ind := {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |}; ci_npar := 0; ci_relevance := Relevant |}
-                  {|
-                    puinst :=
-                      puinst
-                        {|
-                          puinst := [];
-                          pparams := [];
-                          pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
-                          preturn :=
-                            tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                              [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                                 [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]
-                        |};
-                    pparams := [];
-                    pcontext :=
-                      pcontext
-                        {|
-                          puinst := [];
-                          pparams := [];
-                          pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
-                          preturn :=
-                            tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                              [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                                 [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]
-                        |};
-                    preturn :=
-                      tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                        [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                           [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]
-                  |} (guardCon) [{|
-                     bcontext :=
-                       bcontext
-                         {|
-                           bcontext := [];
-                           bbody :=
-                             tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 0 [])
-                               [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                                  [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []];
-                                tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                                  [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tRel 2;
-                                   tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                                     [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tRel 0;
-                                      tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                                        [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tRel 1;
-                                         tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 0 [])
-                                           [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]]]]
-                         |};
-                     bbody :=
-                       tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 0 [])
-                         [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                            [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []];
-                          tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                            [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tVar "c"%bs;
-                             tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                               [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tVar "d"%bs;
-                                tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 1 [])
-                                  [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []; tVar "e"%bs;
-                                   tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} 0 [])
-                                     [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]]]]
+  tLambda {| binder_name := nNamed "a"%bs; binder_relevance := Relevant |} <%nat%>
+    (tLambda {| binder_name := nNamed "b"%bs; binder_relevance := Relevant |} (<%nat%>)
+      (letBind
+        (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
+                ; ci_npar := 0; ci_relevance := Relevant |}
+               {| puinst := []
+                ; pparams := []
+                ; pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}]
+                ; preturn := tApp <% @option %> [tApp <% @list %> [<%nat%>]]
+                |}
+                guardCon
+                [{| bcontext := []
+                  ; bbody :=
+                       tApp (tConstruct {| inductive_mind := <? option ?>; inductive_ind := 0 |} 0 [])
+                         [tApp <% @list %> [<%nat%>];
+                          tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
+                            [<%nat%>; tVar "c"%bs;
+                             tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
+                               [<%nat%>; tVar "d"%bs;
+                                tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
+                                  [<%nat%>; tVar "e"%bs;
+                                   tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 0 [])
+                                     [<%nat%>]]]]]
                    |};
-                   {|
-                     bcontext :=
-                       bcontext
-                         {|
-                           bcontext := [];
-                           bbody :=
-                             tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 1 [])
-                               [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                                  [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]
-                         |};
-                     bbody :=
-                       tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 1 [])
-                         [tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "list"%bs); inductive_ind := 0 |} [])
-                            [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |} []]]
-                   |}])))).
+                   {| bcontext := []
+                    ; bbody :=
+                       tApp (tConstruct {| inductive_mind := <? option ?>; inductive_ind := 0 |} 1 [])
+                         [tApp <% @list %> [<%nat%>]]
+                   |}]))).
 
 Fixpoint animateOneConjGuardList (conj : list term) : term :=
- match conj with
-  | nil => (<% true %>)
-  | h :: t => match (animateOneConjGuardList t) with
-               | gt => (animateOneConjSuccGuard h gt)
-
-              end
+  match conj with
+  | [] => <% true %>
+  | h :: t =>
+    match animateOneConjGuardList t with
+    | gt => animateOneConjSuccGuard h gt
+    end
   end.
 
 (*animateOneConjSuccGuard *)
@@ -645,19 +550,18 @@ Compute (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 10 (fun t 
   | None => None
   end. *)
 
-Compute (constrFn (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 10 (fun t : term => t)) ( (tApp (tConst (MPfile ["Datatypes"; "Init"; "Coq"], "andb") [])
-            [tConstruct
-               {|
-                 inductive_mind :=
-                   (MPfile ["Datatypes"; "Init"; "Coq"], "bool");
-                 inductive_ind := 0
-               |} 0 [];
-             tApp (tConst (MPfile ["Nat"; "Init"; "Coq"], "eqb") [])
-               [tApp (tConst (MPfile ["animationFullEx"], "g1") []) [tVar "d"];
-                tApp (tConst (MPfile ["animationFullEx"], "g2") []) [tVar "a"]]]))).
+Compute (constrFn (animateListConj (getListConjLetBind fooTerm) nil ["a" ; "b"] 10 (fun t : term => t))
+           ((tApp <% andb %>
+              [<% true %>;
+               tApp <% Nat.eqb %>
+                 [tApp (tConst (MPfile ["animationFullEx"], "g1") []) [tVar "d"];
+                  tApp (tConst (MPfile ["animationFullEx"], "g2") []) [tVar "a"]]]))).
 
 Definition animate' (t : term) : TemplateMonad (nat -> nat -> (option (list nat))) :=
-  t' <- DB.deBruijn t ;; f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;; tmReturn f.
+  t' <- DB.deBruijn t ;;
+  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;;
+  tmPrint f ;;
+  ret f.
 
 Definition genFun (fooTerm : term) (inputVars : list string) (fuel : nat) : term :=
   constrFn
@@ -705,7 +609,6 @@ Lemma beq_nat_eq : forall n m, true = (n =? m) -> n = m. Proof. Admitted.
 Lemma beq_nat_neq : forall n m, false = (n =? m) -> (n = m -> False). Proof. Admitted.
 
 Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : TemplateMonad unit :=
-
   t' <- DB.deBruijn (genFun conjs inputVars fuel)  ;;
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;;
   lemma1_name <- tmFreshName "lemma" ;;
@@ -758,14 +661,11 @@ Parameter f1 : nat -> nat.
 Parameter f2 : nat -> nat.
 
 Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
- | cstrCon : forall a b c d,  f1 a = f2 b  -> fooCon a b c d.
+| cstrCon : forall a b c d,  f1 a = f2 b  -> fooCon a b c d.
 
 
 
 MetaCoq Run (animate <? fooCon ?>).
- 
-
- 
  
 
 (* Fixpoint deconTypeCon (conj : term) : list (option string) :=
@@ -1130,7 +1030,7 @@ MetaCoq Quote Definition u2 := (fun myList => match myList with
 Print u2.
 
 
-MetaCoq Run (u2' <- DB.undeBruijn u2 ;; tmPrint u2'). 
+(* MetaCoq Run (u2' <- DB.undeBruijn u2 ;; tmPrint u2').  *)
 
 
 
@@ -1141,7 +1041,7 @@ MetaCoq Quote Definition t2 := (fun m P (PO : P 0) (PS : forall n, P (S n)) =>
                                     | 0 => PO
                                     | S n => PS n
                                     end).
-MetaCoq Run (t2' <- DB.undeBruijn t2 ;; tmPrint t2'). 
+(* MetaCoq Run (t2' <- DB.undeBruijn t2 ;; tmPrint t2').  *)
 
 Print bcontext.
 
@@ -1162,59 +1062,18 @@ Definition myTypeFnTerm :=
         ci_relevance := Relevant
       |}
       {|
-        puinst :=
-          puinst
-            {|
-              puinst := [];
-              pparams := [];
-              pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
-              preturn :=
-                tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
-                  |} []
-            |};
+        puinst := [];
         pparams := [];
-        pcontext :=
-          pcontext
-            {|
-              puinst := [];
-              pparams := [];
-              pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
-              preturn :=
-                tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
-                  |} []
-            |};
-        preturn :=
-          tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
-            []
+        pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
+        preturn := <%nat%>
       |} (tVar "x")
       [{|
-         bcontext :=
-           bcontext
-             {|
-               bcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
-               bbody := tRel 0
-             |};
+         bcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
          bbody := tVar "a"
        |};
        {|
-         bcontext :=
-           bcontext
-             {|
-               bcontext := [{| binder_name := nNamed "n"; binder_relevance := Relevant |}];
-               bbody :=
-                 tConstruct
-                   {|
-                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0
-                   |} 0 []
-             |};
-         bbody :=
-           tConstruct
-             {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 0
-             []
+         bcontext := [{| binder_name := nNamed "n"; binder_relevance := Relevant |}];
+         bbody := <% O %>
        |}])).
 
 
@@ -1245,10 +1104,11 @@ Print one_inductive_body.
 Check tl.
 
 Definition extractIndDecl (x : global_decl) : option mutual_inductive_body :=
- match x with
+  match x with
   | InductiveDecl y => Some y
   | _ => None
- end.
+  end.
+
 Compute (option_map ind_ctors (option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (tl (tl ((declarations (fst bazTerm))))))))))).
 
 (* Compute (option_map cstr_type (option_map (hd error3) (option_map ind_ctors(option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (declarations (fst bazTerm)))))))))). *)
@@ -1272,12 +1132,13 @@ Fixpoint lstPatternmatch {A : Type} (n : nat) (x : (list A)) : option (list A) :
         end
  
  | S m => match x with
-           | [] => None
-           | (h :: t) => let r := lstPatternmatch m t in match r with
-                                                            | Some l' => Some (h :: l')
-                                                            | None => None
-                                                            end
-           
+          | [] => None
+          | h :: t =>
+              let r := lstPatternmatch m t in
+              match r with
+              | Some l' => Some (h :: l')
+              | None => None
+              end
            end                         
   end.
 
@@ -1294,10 +1155,9 @@ MetaCoq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "v2"%bs; binder_
                  puinst := [];
                  pparams := [];
                  pcontext := [{| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                     [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
-               |} (tVar "v2"%bs)
+                 preturn := tApp <% @option %> [<%bool%>]
+               |}
+               (tVar "v2"%bs)
                [{|
                   bcontext :=
                     [{| binder_name := nNamed "v5"%bs; binder_relevance := Relevant |}; {| binder_name := nNamed "v4"%bs; binder_relevance := Relevant |}];
@@ -1312,16 +1172,14 @@ MetaCoq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "v2"%bs; binder_
                         puinst := [];
                         pparams := [];
                         pcontext := [{| binder_name := nNamed "v4"%bs; binder_relevance := Relevant |}];
-                        preturn :=
-                          tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                            [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
+                        preturn := <% option bool %>
                       |} (tVar "v4"%bs)
                       [{|
                          bcontext := [{| binder_name := nNamed "v6"%bs; binder_relevance := Relevant |}];
                          bbody :=
                            tCase
                              {|
-                               ci_ind := {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs); inductive_ind := 0 |};
+                               ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
                                ci_npar := 0;
                                ci_relevance := Relevant
                              |}
@@ -1329,50 +1187,23 @@ MetaCoq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "v2"%bs; binder_
                                puinst := [];
                                pparams := [];
                                pcontext := [{| binder_name := nNamed "v5"%bs; binder_relevance := Relevant |}];
-                               preturn :=
-                                 tApp (tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} [])
-                                   [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
+                               preturn := <% option bool %>
                              |} (tVar "v5"%bs)
                              [{|
                                 bcontext := [];
-                                bbody :=
-                                  tApp
-                                    (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 1 [])
-                                    [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
+                                bbody := <% Some true %>
                               |};
                               {|
                                 bcontext := [{| binder_name := nNamed "v7"%bs; binder_relevance := Relevant |}];
-                                bbody :=
-                                  tApp
-                                    (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 0 [])
-                                    [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} [];
-                                     tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} 0 []]
+                                bbody := <% Some true %>
                               |}]
                        |};
                        {|
                          bcontext := [{| binder_name := nNamed "n1"%bs; binder_relevance := Relevant |}];
-                         bbody :=
-                           tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 1 [])
-                             [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
+                         bbody := <% Some true %>
                        |}]
                 |};
                 {|
                   bcontext := [];
-                  bbody :=
-                    tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs); inductive_ind := 0 |} 1 [])
-                      [tInd {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs); inductive_ind := 0 |} []]
-                |}])) ;; tmPrint t).
-
-
-
-
-                                                                               
-                                         
-  
-            
- 
-
-     
-  
-   
-
+                  bbody := <% Some true %>
+                |}])) ;; tmEval all t >>= tmPrint).
