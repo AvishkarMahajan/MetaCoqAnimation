@@ -5,6 +5,8 @@ Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 
 Require Import Animation.utils.
+Require Import Animation.animationFullExProof.
+
 Import MetaRocqNotations.
 
 Require Import PeanoNat.
@@ -96,7 +98,7 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
  | (str, (tRel k)) :: t => (i, t, (((str, (tRel k), nil)) :: resolvedTs), remTs)
  | (str, (tVar varStr)) :: t => (i, t, (((str, (tVar varStr ), nil)) :: resolvedTs), remTs)
  (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs)) *)
- | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))
+ | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs))
  
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
  end. 
@@ -175,7 +177,7 @@ Definition reduce2 (x : nat) : (option nat) :=
 
 
 Definition preProcConsRem (fuel : nat) (t : term) : bool :=
- let r := snd ((unfoldConsStepIter fuel (0, [("x"%bs, t)], [], []))) ++ snd (fst (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))) in
+ let r := app (snd ((unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))) (snd (fst (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], []))))) in
   match r with
   | [] => true
   | _ => false
@@ -804,8 +806,18 @@ Definition mkLamfromInd (p : program) (fuel : nat) : option term :=
    if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) td) else None. 
    
 Compute (mkLamfromInd baz'Term 20).
-  
 
+Parameter errTm : term.
+
+Definition removeopTm (o : option term) : term :=
+ match o with
+  | Some t => t
+  | None => errTm
+ end.  
+
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd baz'Term 20));; tmEval all t >>= tmUnquote >>= tmPrint).
+  
+(* Print tmQuote. *)
  
  
  

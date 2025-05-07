@@ -87,23 +87,44 @@ Definition animate (kn : kername) : TemplateMonad unit :=
 MetaRocq Run (animate <? foo ?>).
 
 Definition fooTerm : term :=
- tApp <% and %>
-   [tApp <% @eq %>
-      [<% nat %>; tVar "e"; tVar "b"];
-    tApp <% and %>
+ (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "and"); inductive_ind := 0 |} [])
+   [tApp
+      (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
+         [];
+       tVar "e"; tVar "b"];
+    tApp
+      (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "and"); inductive_ind := 0 |} [])
       [tApp
-         <% @eq %>
-         [<% nat %>; tVar "d"; tVar "c"];
+         (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |}
+            [])
+         [tInd
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
+            [];
+          tVar "d"; tVar "c"];
        tApp
-         <% and %>
+         (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "and"); inductive_ind := 0 |}
+            [])
          [tApp
-            <% @eq %>
-            [<% nat %>; tVar "c";
-             tApp (tConst (MPfile ["animationFullExProof"], "g3") []) [tVar "a"; tVar "e"]];
+            (tInd
+               {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |}
+               [])
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0
+               |} [];
+             tVar "c";
+             tApp (tConst (MPfile ["animationFullExProof"; "Animation"], "g3") []) [tVar "a"; tVar "e"]];
           tApp
-            <% @eq %>
-            [<% nat %>; tApp (tConst (MPfile ["animationFullExProof"], "g1") []) [tVar "d"];
-             tApp (tConst (MPfile ["animationFullExProof"], "g2") []) [tVar "a"]]]]].
+            (tInd
+               {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |}
+               [])
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0
+               |} [];
+             tApp (tConst (MPfile ["animationFullExProof"; "Animation"], "g1") []) [tVar "d"];
+             tApp (tConst (MPfile ["animationFullExProof"; "Animation"], "g2") []) [tVar "a"]]]]]).
 
 Fixpoint isListSub (l1 l2 : list nat) : bool :=
   match l1 with
@@ -373,13 +394,13 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : T
 
 
 
-(* ERROR below:
+(*ERROR below:
 Error:
 Anomaly
 "Constant animationFullExProof.g3 does not appear in the environment."
 Please report at http://coq.inria.fr/bugs/.
 *)
-(* MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
+MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
 remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
@@ -391,7 +412,7 @@ auto.
 * destruct H0. rewrite H0 in H1. destruct H1.
 rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
  Qed.
- *)
+ 
 
 (* Definition isSome {A : Type} (y : (option A)) : bool := 
  match y with
