@@ -1,45 +1,14 @@
-Require Import Coq.Lists.List.
+From Stdlib Require Import List.
 Require Import List.
-
 
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
-(* Import MetaCoqNotations. *)
+
+Require Import Animation.utils.
+Import MetaRocqNotations.
 
 Require Import PeanoNat.
 Local Open Scope nat_scope.
-
-
-  (* Recursive quoting *)
-  Notation "<%% x %%>" :=
-    ((ltac:(let p y := exact y in run_template_program (tmQuoteRec x) p)))
-    (only parsing).
-  (* Check <%% nat %%>. *)
-
-  (* Splicing / top level antiquotation *)
-  Notation "~( x )" :=
-    (ltac:(let p y :=
-              let e := eval unfold my_projT2 in (my_projT2 y) in
-              exact e in
-          run_template_program (tmUnquote x) p))
-    (only parsing).
-  (* Check (~( <% fun (x : bool) => if x then false else true  %>)). *)
-  (* Compute (~(<% fun (x : bool) => if x then false else true %>) false). *)
-
-  (* Name resolution *)
-  Notation "<? x ?>" :=
-    (ltac:(let p y :=
-              match y with
-              | tInd {| inductive_mind := ?name |} _ =>
-                exact name
-              | tConst ?name _ =>
-                exact name
-              | _ => fail "not a type constructor or definition name" end in
-          run_template_program (tmQuote x) p))
-    (only parsing).
-Compute <? option ?>.
-
-Search (string -> string -> bool).
 
 Inductive myType' : Set :=
 | mycr1' : nat -> myType'
@@ -146,7 +115,7 @@ Definition preProcCons (fuel : nat) (t : term) :=
 Compute (preProcCons 20 (tApp
                 (tInd
                    {|
-                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                      inductive_ind := 0
                    |} [])
                 [tInd
@@ -236,13 +205,13 @@ Compute (preProcConsRem 20 (
 
 
 
-(* MetaCoq Quote Definition con3 := (fun x => match x with
+(* MetaRocq Quote Definition con3 := (fun x => match x with
                                                 | mycr2 a b  =>  Some true
                                                 | _ => None
                                                end).
 Print con3.
 
-MetaCoq Quote Definition con4 := (fun x => match x with
+MetaRocq Quote Definition con4 := (fun x => match x with
                                                 | mycr2 a b  =>  match a with
                                                                   | mycr1' m => Some true
                                                                   | _        => None
@@ -253,7 +222,7 @@ MetaCoq Quote Definition con4 := (fun x => match x with
 Print con4.
 
 
-MetaCoq Quote Definition con5 := (fun x => match x with
+MetaRocq Quote Definition con5 := (fun x => match x with
                                                 | mycr2 a b  =>  match b with
                                                                   | S m => match a with
                                                                             | mycr1' j => Some true
@@ -329,7 +298,7 @@ Fixpoint genBinderannot (ind : list term) (cxt : list context_decl) : option (li
                    match d with
                     | tApp
                        (tInd {|
-                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                         inductive_ind := 0
                                 |} [])
                         [tInd typeInfo' [];
@@ -344,7 +313,7 @@ Fixpoint genBinderannot (ind : list term) (cxt : list context_decl) : option (li
                                    
                      | tApp
                        (tInd {|
-                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                         inductive_ind := 0
                                 |} [])
                         [tInd typeInfo' [];
@@ -448,12 +417,12 @@ Definition getCstrArityLst (typeName : string) (muts : list mutual_inductive_bod
 Definition mkNoneBranch (n : nat) : branch term := mkNoneBr n (tApp
                    (tConstruct
                       {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                         inductive_ind := 0
                       |} 1 [])
                    [tInd
                       {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                         inductive_ind := 0
                       |} []]). (* Takes a arity and produces a branch term where return value is none *)
 
@@ -510,12 +479,12 @@ Definition mkCase'  (s : (string × term) × list string) (l : list mutual_induc
          (tApp
            (tInd
               {|
-                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                 inductive_ind := 0
               |} [])
            [tInd
               {|
-                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                 inductive_ind := 0
               |} []])
      |} (tVar (fst (fst s))) (* Should get changed to a tRel after deBruijning *)                                                                                                        
@@ -571,7 +540,7 @@ Definition mkLam (ls : list ((string × term) × list string)) (mut : list (opti
 (* Definition testInput1 : list ((string × term) × list string) := [("x"%bs,
          tInd
            {|
-             inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs); inductive_ind := 0
+             inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs); inductive_ind := 0
            |} [], ["v1"%bs; "v2"%bs; "v3"%bs]);
         ("v2"%bs,
          tConstruct
@@ -625,7 +594,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                              tInd
                                {|
                                  inductive_mind :=
-                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                  inductive_ind := 0
                                |} []
                          |};
@@ -651,7 +620,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                              (tInd
                                 {|
                                   inductive_mind :=
-                                    (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                    (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                   inductive_ind := 0
                                 |} []) (tRel 2));
                       cstr_arity := 2
@@ -711,7 +680,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                              tInd
                                {|
                                  inductive_mind :=
-                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                  inductive_ind := 0
                                |} []
                          |}];
@@ -721,7 +690,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                           (tInd
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                inductive_ind := 0
                              |} []) (tRel 1);
                       cstr_arity := 1
@@ -736,7 +705,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                              tInd
                                {|
                                  inductive_mind :=
-                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                   (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                  inductive_ind := 0
                                |} []
                          |}];
@@ -746,7 +715,7 @@ Definition testInput2 : list (option mutual_inductive_body) :=
                           (tInd
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                                inductive_ind := 0
                              |} []) (tRel 1);
                       cstr_arity := 1
@@ -861,7 +830,7 @@ None (bool) The error cases should just return retVal *)
                    match d with
                     | tApp
                        (tInd {|
-                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                        inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                         inductive_ind := 0
                                 |} [])
                         [tInd typeInfo' [];
@@ -938,7 +907,7 @@ Definition mkLambda (scrutineeType : inductive) (scrutineeType' : inductive) (re
                  decl_type :=
                    tInd
                      {|
-                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                        inductive_ind := 0
                      |} []
                |};
@@ -949,7 +918,7 @@ Definition mkLambda (scrutineeType : inductive) (scrutineeType' : inductive) (re
                    tInd
                      {|
                        inductive_mind :=
-                         (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                         (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                        inductive_ind := 0
                      |} []
                |}];
@@ -959,13 +928,13 @@ Definition mkLambda (scrutineeType : inductive) (scrutineeType' : inductive) (re
                 (tInd
                    {|
                      inductive_mind :=
-                       (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                       (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                      inductive_ind := 0
                    |} [])
                 (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
                    (tInd
                       {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                         inductive_ind := 0
                       |} []) (tRel 2));
             cstr_arity := 2
@@ -983,24 +952,24 @@ Definition mkLambda (scrutineeType : inductive) (scrutineeType' : inductive) (re
           tApp
             (tConstruct
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                  inductive_ind := 0
                |} 1 [])
             [tApp
                (tInd
                   {|
-                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "prod"%bs);
+                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs);
                     inductive_ind := 0
                   |} [])
                [tInd
                   {|
                     inductive_mind :=
-                      (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                      (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                     inductive_ind := 0
                   |} [];
                 tInd
                   {|
-                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                     inductive_ind := 0
                   |} []]]
       |}
@@ -1021,24 +990,24 @@ Check ( {|
           tApp
             (tConstruct
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                  inductive_ind := 0
                |} 1 [])
             [tApp
                (tInd
                   {|
-                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "prod"%bs);
+                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs);
                     inductive_ind := 0
                   |} [])
                [tInd
                   {|
                     inductive_mind :=
-                      (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                      (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                     inductive_ind := 0
                   |} [];
                 tInd
                   {|
-                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                    inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                     inductive_ind := 0
                   |} []]]
       |}). *)
@@ -1092,7 +1061,7 @@ Check length.*)
               tApp
                 (tInd
                    {|
-                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                      inductive_ind := 0
                    |} [])
                 [tInd {| inductive_mind := (MPfile ["Top"%bs], "myType"%bs); inductive_ind := 0 |} [];
@@ -1108,7 +1077,7 @@ Check length.*)
               tInd
                 {|
                   inductive_mind :=
-                    (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                    (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                   inductive_ind := 0
                 |} []
           |};
@@ -1124,13 +1093,13 @@ Check length.*)
             decl_type :=
               tInd
                 {|
-                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                   inductive_ind := 0
                 |} []
           |}]). *)  
           
           
-(*MetaCoq Unquote Definition fn5' := (tLambda {| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}
+(*MetaRocq Unquote Definition fn5' := (tLambda {| binder_name := nNamed "x"%bs; binder_relevance := Relevant |}
   (tInd {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |} [])
   (tCase
      {|
@@ -1146,12 +1115,12 @@ Check length.*)
          tApp
            (tInd
               {|
-                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                 inductive_ind := 0
               |} [])
            [tInd
               {|
-                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                 inductive_ind := 0
               |} []]
      |} (tVar "x"%bs)
@@ -1164,7 +1133,7 @@ Check length.*)
             {|
               ci_ind :=
                 {|
-                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                   inductive_ind := 0
                 |};
               ci_npar := 0;
@@ -1178,12 +1147,12 @@ Check length.*)
                 tApp
                   (tInd
                      {|
-                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                        inductive_ind := 0
                      |} [])
                   [tInd
                      {|
-                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                       inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                        inductive_ind := 0
                      |} []]
             |} (tVar "b"%bs)
@@ -1193,12 +1162,12 @@ Check length.*)
                  tApp
                    (tConstruct
                       {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                         inductive_ind := 0
                       |} 1 [])
                    [tInd
                       {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                         inductive_ind := 0
                       |} []]
              |};
@@ -1224,13 +1193,13 @@ Check length.*)
                          (tInd
                             {|
                               inductive_mind :=
-                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                               inductive_ind := 0
                             |} [])
                          [tInd
                             {|
                               inductive_mind :=
-                                (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                                (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                               inductive_ind := 0
                             |} []]
                    |} (tVar "a"%bs)
@@ -1241,19 +1210,19 @@ Check length.*)
                           (tConstruct
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                                inductive_ind := 0
                              |} 0 [])
                           [tInd
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                                inductive_ind := 0
                              |} [];
                            tConstruct
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                                inductive_ind := 0
                              |} 0 []]
                     |};
@@ -1264,13 +1233,13 @@ Check length.*)
                           (tConstruct
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                                inductive_ind := 0
                              |} 1 [])
                           [tInd
                              {|
                                inductive_mind :=
-                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                                 (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                                inductive_ind := 0
                              |} []]
                     |}]
@@ -1282,12 +1251,12 @@ Check length.*)
           tApp
             (tConstruct
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                  inductive_ind := 0
                |} 1 [])
             [tInd
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                  inductive_ind := 0
                |} []]
       |}])). *)
@@ -1306,7 +1275,7 @@ build function that goes from
               tApp
                 (tInd
                    {|
-                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Coq"%bs], "eq"%bs);
+                     inductive_mind := (MPfile ["Logic"%bs; "Init"%bs; "Corelib"%bs], "eq"%bs);
                      inductive_ind := 0
                    |} [])
                 [tInd {| inductive_mind := (MPfile ["Top"%bs], "myType"%bs); inductive_ind := 0 |} [];
@@ -1322,7 +1291,7 @@ build function that goes from
               tInd
                 {|
                   inductive_mind :=
-                    (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaCoq"%bs]) "String"%bs, "t"%bs);
+                    (MPdot (MPfile ["bytestring"%bs; "Utils"%bs; "MetaRocq"%bs]) "String"%bs, "t"%bs);
                   inductive_ind := 0
                 |} []
           |};
@@ -1338,7 +1307,7 @@ build function that goes from
             decl_type :=
               tInd
                 {|
-                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "nat"%bs);
+                  inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "nat"%bs);
                   inductive_ind := 0
                 |} []
           |}] 
@@ -1354,23 +1323,18 @@ build function that goes from
           tApp
             (tConstruct
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "option"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                  inductive_ind := 0
                |} 0 [])
             [tInd
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                  inductive_ind := 0
                |} [];
              tConstruct
                {|
-                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Coq"%bs], "bool"%bs);
+                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
                  inductive_ind := 0
                |} 0 []]
       |} 
  *)
-      
-              
-          
-
-  

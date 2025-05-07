@@ -1,7 +1,7 @@
 Require Import List.
-Require Import MetaCoq.Template.All.
+Require Import MetaRocq.Template.All.
 
-Module MetaCoqNotations.
+Module MetaRocqNotations.
   (* Recursive quoting *)
   Notation "<%% x %%>" :=
     ((ltac:(let p y := exact y in run_template_program (tmQuoteRec x) p)))
@@ -30,13 +30,13 @@ Module MetaCoqNotations.
           run_template_program (tmQuote x) p))
     (only parsing).
   (* Compute <? option ?>. *)
-End MetaCoqNotations.
+End MetaRocqNotations.
 
-(* Warning: MetaCoq doesn't use the Monad notation from ExtLib,
+(* Warning: MetaRocq doesn't use the Monad notation from ExtLib,
   therefore don't expect ExtLib functions to work with TemplateMonad. *)
-Import monad_utils.MCMonadNotation
+Import monad_utils.MRMonadNotation
        ListNotations
-       MetaCoqNotations.
+       MetaRocqNotations.
 
 (* Alias to distinguish terms that are NOT in de Bruijn notation. *)
 Definition named_term : Type := term.
@@ -56,7 +56,7 @@ Definition ident_eq (x y : ident) : bool :=
 
 Module DB.
  (* Inspired by code written by John Li but changed slightly.
-     We should eventually consider making a MetaCoq_utils module. *)
+     We should eventually consider making a MetaRocq_utils module. *)
   (* Takes a named representation and converts it into the de Bruijn representation. *)
   Definition deBruijn' (ctx : list name) (t : named_term) : TemplateMonad term :=
     let fix find_in_ctx (count : nat) (id : ident) (ctx : list name) : option nat :=
@@ -238,7 +238,7 @@ Module DB.
 
   (* Example usage for deBruijn:
 
-   MetaCoq Run (t <- DB.deBruijn
+   MetaRocq Run (t <- DB.deBruijn
                       (tLambda (mkBindAnn (nNamed "x") Relevant)
                                 <% bool %> (tVar "x"))%string ;;
                 t' <- tmUnquoteTyped (bool -> bool) t ;;
@@ -247,13 +247,13 @@ Module DB.
 
   (* Example usage for undeBruijn:
 
-   MetaCoq Run (t <- DB.undeBruijn <% fun (x : bool) => x %> ;;
+   MetaRocq Run (t <- DB.undeBruijn <% fun (x : bool) => x %> ;;
                 tmPrint t).
   *)
 
   (* Round trip test:
 
-  MetaCoq Run (t <- DB.undeBruijn
+  MetaRocq Run (t <- DB.undeBruijn
                       <% fix f (x y : nat) :=
                            match x with S x' => f x' (S y) | O => y end %> ;;
                t <- DB.deBruijn t ;;

@@ -1,0 +1,25 @@
+opam-version: "2.0"
+synopsis: "Project to implement and verify an animation algorithm for the WebAssembly semantics in MetaRocq"
+homepage: "tbd"
+license: "tbd"
+bug-reports: "tbd/issues"
+depends: [
+  "ocaml"
+  "rocq-prover" {>= "9.0.0"}
+  "rocq-metarocq"
+]
+build: [make "-j%{jobs}%"]
+install: [make "-f" "Makefile.coq" "install"]
+flags: light-uninstall
+remove: ["rm" "-R" "%{lib}%/coq/user-contrib/Animation"]
+maintainer: "avishkar.mahajan@ntu.edu.sg"
+authors: [
+  "Avishkar Mahajan"
+]
+tags: [
+  "date:2025-05-07"
+  "logpath:Animation"
+  "keyword:wasm"
+  "keyword:animation"
+  "keyword:semantics"
+]

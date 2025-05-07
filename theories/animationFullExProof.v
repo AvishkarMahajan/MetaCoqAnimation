@@ -1,257 +1,13 @@
-Require Import Coq.Lists.List.
-Require Import List.
-
+From Stdlib Require Import List.
 
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
-(* Import MetaCoqNotations. *)
+
+Require Import Animation.utils.
+Import MetaRocqNotations.
 
 Require Import PeanoNat.
 Local Open Scope nat_scope.
-
-  (* Recursive quoting *)
-  Notation "<%% x %%>" :=
-    ((ltac:(let p y := exact y in run_template_program (tmQuoteRec x) p)))
-    (only parsing).
-  (* Check <%% nat %%>. *)
-
-  (* Splicing / top level antiquotation *)
-  Notation "~( x )" :=
-    (ltac:(let p y :=
-              let e := eval unfold my_projT2 in (my_projT2 y) in
-              exact e in
-          run_template_program (tmUnquote x) p))
-    (only parsing).
-  (* Check (~( <% fun (x : bool) => if x then false else true  %>)). *)
-  (* Compute (~(<% fun (x : bool) => if x then false else true %>) false). *)
-
-  (* Name resolution *)
-  Notation "<? x ?>" :=
-    (ltac:(let p y :=
-              match y with
-              | tInd {| inductive_mind := ?name |} _ =>
-                exact name
-              | tConst ?name _ =>
-                exact name
-              | _ => fail "not a type constructor or definition name" end in
-          run_template_program (tmQuote x) p))
-    (only parsing).
-
-Definition named_term : Type := term.
-(* Alias for terms that do not contain references to local variables,
-   therefore can be used in either [term]s in de Bruijn notation
-   and [named_term]s in named notation. *)
-Definition global_term : Type := term.
-(* Alias to denote that a function works with
-   either [term], [named_term] or [global_term]. *)
-Definition any_term : Type := term.
-
-Definition ident_eq (x y : ident) : bool :=
-  match compare_ident x y with
-  | Eq => true
-  | _ => false
-  end.
-
-Module DB.
- (* Inspired by code written by John Li but changed slightly.
-     We should eventually consider making a MetaCoq_utils module. *)
-  (* Takes a named representation and converts it into the de Bruijn representation. *)
-  Definition deBruijn' (ctx : list name) (t : named_term) : TemplateMonad term :=
-    let fix find_in_ctx (count : nat) (id : ident) (ctx : list name) : option nat :=
-      match ctx with
-      | nil => None
-      | nAnon :: ns => find_in_ctx (S count) id ns
-      | (nNamed id') :: ns =>
-        if ident_eq id id' then Some count else find_in_ctx (S count) id ns
-      end in
-    let fix go (ctx : list name) (t : named_term) : TemplateMonad term :=
-        let go_mfix (mf : mfixpoint named_term) : TemplateMonad (mfixpoint term) :=
-          let ctx' := map (fun x => binder_name (dname x)) mf in
-          monad_map (fun def =>
-                       dtype' <- go ctx def.(dtype) ;;
-                       dbody' <- go (rev ctx' ++ ctx) def.(dbody) ;;
-                       ret (mkdef _ def.(dname) dtype' dbody' def.(rarg))) mf in
-        let go_branches (branches : list (branch named_term))
-                        : TemplateMonad (list (branch term)):=
-          monad_map (fun br =>
-              t' <- go (map binder_name (bcontext br) ++ ctx) (bbody br) ;;
-              ret {| bcontext := bcontext br; bbody := t' |}) branches in
-        match t with
-        | tRel n => ret t
-        | tVar id =>
-            match find_in_ctx O id ctx with
-            | Some i => ret (tRel i)
-            | None => ret t (* could be a free variable *)
-            end
-        | tEvar ev args =>
-            args' <- monad_map (go ctx) args ;;
-            ret (tEvar ev args')
-        | tSort s =>
-          ret t
-        | tCast t kind v =>
-            t' <- go ctx t ;;
-            v' <- go ctx v ;;
-            ret (tCast t' kind v')
-        | tProd na ty body =>
-            ty' <- go ctx ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tProd na ty' body')
-        | tLambda na ty body =>
-            ty' <- go ctx ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tLambda na ty' body')
-        | tLetIn na def def_ty body =>
-            def' <- go ctx def ;;
-            def_ty' <- go ctx def_ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tLetIn na def' def_ty' body')
-        | tApp f args =>
-            f' <- go ctx f ;;
-            args' <- monad_map (go ctx) args ;;
-            ret (tApp f' args')
-        | tConst c u => ret t
-        | tInd ind u => ret t
-        | tConstruct ind idx u => ret t
-        | tCase ind_nbparams_relevance type_info discr branches =>
-            preturn' <- go ctx (preturn type_info) ;;
-            pparams' <- monad_map (go ctx) (pparams type_info) ;;
-            let type_info' :=
-              {| puinst := puinst type_info
-               ; pparams := pparams'
-               ; pcontext := pcontext type_info
-               ; preturn := preturn'
-               |} in
-            discr' <- go ctx discr ;;
-            branches' <- go_branches branches ;;
-            ret (tCase ind_nbparams_relevance type_info' discr' branches')
-        | tProj proj t =>
-            t' <- go ctx t ;;
-            ret (tProj proj t')
-        | tFix mfix idx =>
-            mfix' <- go_mfix mfix ;;
-            ret (tFix mfix' idx)
-        | tCoFix mfix idx =>
-            mfix' <- go_mfix mfix ;;
-            ret (tCoFix mfix' idx)
-        | tInt p => ret (tInt p)
-        | tFloat p => ret (tFloat p)
-        | tArray u arr default type =>
-             arr' <- monad_map (go ctx) arr ;;
-             default' <- go ctx default ;;
-             type' <- go ctx type ;;
-             ret (tArray u arr' default' type')
-        | tString s => ret (tString s)     
-        end
-    in go ctx t.
-
-  Definition deBruijn (t : named_term) : TemplateMonad term := deBruijn' nil t.
-
-
-
-  (* Takes a de Bruijn representation and changes [tRel]s to [tVar]s. *)
-  Definition undeBruijn' (ctx : list name) (t : term) : TemplateMonad named_term :=
-    let fix go (ctx : list name) (t : term) : TemplateMonad named_term :=
-        let go_mfix (mf : mfixpoint term) : TemplateMonad (mfixpoint named_term) :=
-          let ctx' := map (fun x => binder_name (dname x)) mf in
-          monad_map (fun def =>
-                       dtype' <- go ctx def.(dtype) ;;
-                       dbody' <- go (rev ctx' ++ ctx) def.(dbody) ;;
-                       ret (mkdef _ def.(dname) dtype' dbody' def.(rarg))) mf in
-        let go_branches (branches : list (branch term))
-                        : TemplateMonad (list (branch named_term)):=
-          monad_map (fun br =>
-              t' <- go (map binder_name (bcontext br) ++ ctx) (bbody br) ;;
-              ret {| bcontext := bcontext br; bbody := t' |}) branches in
-        match t with
-        | tRel n =>
-            match nth_error ctx n with
-            | None => ret t
-            | Some nAnon => tmFail "Reference to anonymous binding"%bs
-            | Some (nNamed id) => ret (tVar id)
-            end
-        | tVar id => ret t
-        | tEvar ev args =>
-            args' <- monad_map (go ctx) args ;;
-            ret (tEvar ev args')
-        | tSort s =>
-          ret t
-        | tCast t kind v =>
-            t' <- go ctx t ;;
-            v' <- go ctx v ;;
-            ret (tCast t' kind v')
-        | tProd na ty body =>
-            ty' <- go ctx ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tProd na ty' body')
-        | tLambda na ty body =>
-            ty' <- go ctx ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tLambda na ty' body')
-        | tLetIn na def def_ty body =>
-            def' <- go ctx def ;;
-            def_ty' <- go ctx def_ty ;;
-            body' <- go (binder_name na :: ctx) body ;;
-            ret (tLetIn na def' def_ty' body')
-        | tApp f args =>
-            f' <- go ctx f ;;
-            args' <- monad_map (go ctx) args ;;
-            ret (tApp f' args')
-        | tConst c u => ret t
-        | tInd ind u => ret t
-        | tConstruct ind idx u => ret t
-        | tCase ind_nbparams_relevance type_info discr branches =>
-            preturn' <- go ctx (preturn type_info) ;;
-            pparams' <- monad_map (go ctx) (pparams type_info) ;;
-            let type_info' :=
-              {| puinst := puinst type_info
-               ; pparams := pparams'
-               ; pcontext := pcontext type_info
-               ; preturn := preturn'
-               |} in
-            discr' <- go ctx discr ;;
-            branches' <- go_branches branches ;;
-            ret (tCase ind_nbparams_relevance type_info' discr' branches')
-        | tProj proj t =>
-            t' <- go ctx t ;;
-            ret (tProj proj t')
-        | tFix mfix idx =>
-            mfix' <- go_mfix mfix ;;
-            ret (tFix mfix' idx)
-        | tCoFix mfix idx =>
-            mfix' <- go_mfix mfix ;;
-            ret (tCoFix mfix' idx)
-        | tInt p => ret (tInt p)
-        | tFloat p => ret (tFloat p)
-        | tArray u arr default type =>
-             arr' <- monad_map (go ctx) arr ;;
-             default' <- go ctx default ;;
-             type' <- go ctx type ;;
-             ret (tArray u arr' default' type')
-        | tString s => ret (tString s)
-        end
-    in go ctx t.
-
-  Definition undeBruijn (t : term) : TemplateMonad named_term :=
-    undeBruijn' nil t.
-
-  (* Example usage for deBruijn:
-
-   MetaCoq Run (t <- DB.deBruijn
-                      (tLambda (mkBindAnn (nNamed "x") Relevant)
-                                <% bool %> (tVar "x"))%string ;;
-                t' <- tmUnquoteTyped (bool -> bool) t ;;
-                tmPrint t).
-
-Parameter prog' : list nat.
-Parameter progBool : nat -> nat -> nat -> bool.
-
-Definition boolFn (a b c : nat) : bool :=
- (progBool a b c) && (Nat.eqb (a + 2) (b + 3)).  *)
-
-End DB.
-
-(* Require Import utils. *)
-
 Open Scope bs.
 
 Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
@@ -293,7 +49,7 @@ MetaRocq Run (t <- tmQuoteInductive <? foo ?> ;; tmPrint t).
 
 Definition animate_conjunct
            (c : constructor_body) (conjunct : context_decl) : TemplateMonad named_term :=
-  (* t is the MetaCoq term for the conjunct like (e = b /\ d = c /\ c = a + e) *)
+  (* t is the MetaRocq term for the conjunct like (e = b /\ d = c /\ c = a + e) *)
   let t : term := decl_type conjunct in
   (* tl here only works because we assume there is only one, large, nested "and" conjunct *)
   t_named <- DB.undeBruijn' (tl (map (fun arg => binder_name (decl_name arg)) (cstr_args c))) t ;;
@@ -372,10 +128,10 @@ Fixpoint isListSubStr (l1 l2 : list string) : bool :=
 
 (*Fixpoint getListConj (bigConj : term) : (list term) := (* extract list of conjuncts from big conjunction *)
  match bigConj with
-  |(tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "and"); inductive_ind := 0 |} []) ls) =>
+  |(tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "and"); inductive_ind := 0 |} []) ls) =>
          concat (map getListConj ls)
-  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} []) ls' =>
-              [tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} []) ls']
+  | tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} []) ls' =>
+              [tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} []) ls']
   | _ => nil
  end. *)
 
@@ -617,9 +373,13 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : T
 
 
 
-MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
-
-
+(* ERROR below:
+Error:
+Anomaly
+"Constant animationFullExProof.g3 does not appear in the environment."
+Please report at http://coq.inria.fr/bugs/.
+*)
+(* MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
 remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
@@ -631,8 +391,7 @@ auto.
 * destruct H0. rewrite H0 in H1. destruct H1.
 rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
  Qed.
-
-
+ *)
 
 (* Definition isSome {A : Type} (y : (option A)) : bool := 
  match y with
@@ -672,8 +431,8 @@ MetaRocq Run (animate <? fooCon ?>).
  match conj with
   | tApp
       (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1 [])
-      ((tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} []) ::
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1 [])
+      ((tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} []) ::
        (tVar str :: [rest])) => (Some str :: deconTypeCon rest)
   | _ => [None] 
   end. 
@@ -761,40 +520,40 @@ Fixpoint deconTypeConGen'' (t1 : list term) (t2 : list term) (fuel : nat) : list
 
 (* Compute (deconTypeConGen ( tApp
       (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1 [])
-      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1 [])
+      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1
             []) [tVar "a"];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
             [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
             [];
           tApp
             (tConstruct
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
                1 []) [tVar "b"];
           tApp
             (tConstruct
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
                0 [])
             [tInd
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
                []]]])). *)
 
 Definition deConConj1 (t : term) : (list term) :=
  match t with
-  | (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} []) (h :: (t1 :: t2))) 
+  | (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} []) (h :: (t1 :: t2))) 
                    => [t1]
   | _ => nil
  end.  
 
 Definition deConConj2 (t : term) : (list term) :=
  match t with
-  | (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} []) (h :: (t1 :: (t2 :: t3)))) 
+  | (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} []) (h :: (t1 :: (t2 :: t3)))) 
                    => [t2]
   | _ => nil
  end. 
@@ -802,8 +561,8 @@ Definition deConConj2 (t : term) : (list term) :=
 (* trialTerm = Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon : forall a b c d,  f1 a = f2 b  -> fooCon a b c d. *)
 Definition trialTerm : term :=
- (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-   [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+ (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+   [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
     tApp (tConst (MPfile ["animationFullExProof"], "f1") []) [tVar "a"];
     tApp (tConst (MPfile ["animationFullExProof"], "f2") []) [tVar "b"]]).
 
@@ -815,58 +574,58 @@ Definition trialTerm : term :=
 *)
 
 Definition trial2 : term :=
-(tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
+(tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
    [tApp
-      (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} [])
-      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} []];
+      (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} [])
+      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} []];
     tApp
       (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1 [])
-      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1 [])
+      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1
             [])
          [tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 0
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 0
             []];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
             [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
             [];
           tApp
             (tConstruct
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
                1 []) [tVar "c"];
           tApp
             (tConstruct
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
                0 [])
             [tInd
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
                []]]];
     tApp
       (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1 [])
-      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1 [])
+      [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1
             []) [tVar "b"];
        tApp
          (tConstruct
-            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |} 1
+            {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
             [])
-         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+         [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
             []; tVar "d";
           tApp
             (tConstruct
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "list"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
                0 [])
             [tInd
-               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |}
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |}
                []]]]]).
 
 
@@ -878,38 +637,38 @@ Compute (deconTypeConGen'' (deConConj1 trialTerm) (deConConj2 trialTerm) 10).
  match l1 with
   | nil => nil
   | [_h] => nil
-  | [tVar str1] :: ([tVar str2] :: t) => (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-   [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+  | [tVar str1] :: ([tVar str2] :: t) => (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+   [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
     tVar str1; tVar str2]) :: (makeConj t)
   
   
   | [tVar str1] :: ([tApp (tConstruct
-                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1
+                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1
                             []) y] :: t) => 
-                              (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-                              [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+                              (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+                              [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
                               tVar str1;
                               tApp
                                 (tConstruct
-                                    {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1 [])
+                                    {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1 [])
                                          y]) :: makeConj t
   
   
   |([tApp (tConstruct
-                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1
+                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1
                             []) y] :: ([tVar str1] :: t)) => 
-                            (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-                              [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+                            (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+                              [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
                               tVar str1;
                               tApp
                                 (tConstruct
-                                    {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} 1 [])
+                                    {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} 1 [])
                                          y]) :: makeConj t
   
   
   | ([h1]) :: (([h2]) :: t) =>
-                          (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-                          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+                          (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+                          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
                           h1;
                           h2]) :: makeConj t  (* Is this clause too general?*)
 
@@ -926,8 +685,8 @@ Fixpoint makeConjSimpl (l1 : list (list term)) : list term :=
   | nil => nil
   | [_h] => nil
   | ([h1]) :: (([h2]) :: t) =>
-                          (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Coq"], "eq"); inductive_ind := 0 |} [])
-                          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Coq"], "nat"); inductive_ind := 0 |} [];
+                          (tApp (tInd {| inductive_mind := (MPfile ["Logic"; "Init"; "Corelib"], "eq"); inductive_ind := 0 |} [])
+                          [tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat"); inductive_ind := 0 |} [];
                           h1;
                           h2]) :: makeConjSimpl t (* Is this clause too general *)
                           
@@ -999,12 +758,12 @@ MetaRocq Quote Definition u0 := (fun myList => match myList with
                                                 | y :: l => None
                                                 
                                                 end).                                              
-(* MetaCoq Run (t''' <- DB.undeBruijn t'' ;; tmPrint t'''). *)
+(* MetaRocq Run (t''' <- DB.undeBruijn t'' ;; tmPrint t'''). *)
 
 Print u0.
 
 (* Pattern match for 1 element list *)
-MetaCoq Quote Definition u1 := (fun myList => match myList with
+MetaRocq Quote Definition u1 := (fun myList => match myList with
                                                 | []  =>  None 
                                                 | y0 :: l0 => match l0 with
                                                              | [] => Some myList
@@ -1016,7 +775,7 @@ Print u1.
 
 
 (* Pattern match for 2 element list *)
-MetaCoq Quote Definition u2 := (fun myList => match myList with
+MetaRocq Quote Definition u2 := (fun myList => match myList with
                                                 | []  =>  None 
                                                 | y1 :: l1 => match l1 with
                                                              | [] => None
@@ -1030,18 +789,18 @@ MetaCoq Quote Definition u2 := (fun myList => match myList with
 Print u2.
 
 
-(* MetaCoq Run (u2' <- DB.undeBruijn u2 ;; tmPrint u2').  *)
+(* MetaRocq Run (u2' <- DB.undeBruijn u2 ;; tmPrint u2').  *)
 
 
 
 (* Compare u0 and u1 and u2 *) 
 
-MetaCoq Quote Definition t2 := (fun m P (PO : P 0) (PS : forall n, P (S n)) => 
+MetaRocq Quote Definition t2 := (fun m P (PO : P 0) (PS : forall n, P (S n)) => 
                                    match m as n return P n with
                                     | 0 => PO
                                     | S n => PS n
                                     end).
-(* MetaCoq Run (t2' <- DB.undeBruijn t2 ;; tmPrint t2').  *)
+(* MetaRocq Run (t2' <- DB.undeBruijn t2 ;; tmPrint t2').  *)
 
 Print bcontext.
 
