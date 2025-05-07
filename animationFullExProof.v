@@ -2,8 +2,8 @@ Require Import Coq.Lists.List.
 Require Import List.
 
 
-Require Import MetaCoq.Template.All.
-Import monad_utils.MCMonadNotation.
+Require Import MetaRocq.Template.All.
+Import monad_utils.MRMonadNotation.
 (* Import MetaCoqNotations. *)
 
 Require Import PeanoNat.
@@ -285,11 +285,11 @@ Definition test : TemplateMonad unit :=
   tmMsg "ROUND TRIP" ;;
   tmPrint t''.
 
-MetaCoq Run test.
+MetaRocq Run test.
 
 Check (tmQuoteInductive).
 Print one_inductive_body.
-MetaCoq Run (t <- tmQuoteInductive <? foo ?> ;; tmPrint t).
+MetaRocq Run (t <- tmQuoteInductive <? foo ?> ;; tmPrint t).
 
 Definition animate_conjunct
            (c : constructor_body) (conjunct : context_decl) : TemplateMonad named_term :=
@@ -328,7 +328,7 @@ Definition animate (kn : kername) : TemplateMonad unit :=
   end ;;
   ret tt.
 
-MetaCoq Run (animate <? foo ?>).
+MetaRocq Run (animate <? foo ?>).
 
 Definition fooTerm : term :=
  tApp <% and %>
@@ -617,7 +617,7 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : T
 
 
 
-MetaCoq Run (animate'' fooTerm ["a" ; "b"] 10).
+MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
 
 
 Next Obligation.
@@ -665,7 +665,7 @@ Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
 
 
 
-MetaCoq Run (animate <? fooCon ?>).
+MetaRocq Run (animate <? fooCon ?>).
  
 
 (* Fixpoint deconTypeCon (conj : term) : list (option string) :=
@@ -968,11 +968,11 @@ Definition deCons'' (x : nat) : option nat :=
  | _ => None
  end.
  
-MetaCoq Quote Definition t := (fun x => match x with
+MetaRocq Quote Definition t := (fun x => match x with
                                         | S c => Some c
                                         | _ => None
                                        end).
-MetaCoq Run (t' <- DB.undeBruijn t ;; tmPrint t'). 
+MetaRocq Run (t' <- DB.undeBruijn t ;; tmPrint t'). 
 
 
 (*Parameter myType2 : Type.*)
@@ -992,9 +992,9 @@ Parameter fstr : forall A : Type, list A -> string.
 
 
 
-(* Pattern match for 0 element list*) 
+(* Pattern match for 0 element list
 
-MetaCoq Quote Definition u0 := (fun myList => match myList with
+MetaRocq Quote Definition u0 := (fun myList => match myList with
                                                 | []  =>  Some myList 
                                                 | y :: l => None
                                                 
@@ -1050,6 +1050,8 @@ Print bcontext.
                                         | mycr1 a  =>  a 
                                         | _ => 0
                                        end). *)
+                                       
+ *)                                      
 
 Definition myTypeFnTerm := 
  (tLambda {| binder_name := nNamed "x"; binder_relevance := Relevant |}
@@ -1084,7 +1086,7 @@ Inductive baz : nat -> myType -> string -> Prop :=
  
 Print TemplateMonad.
 
-MetaCoq Quote Recursively Definition bazTerm := baz.
+MetaRocq Quote Recursively Definition bazTerm := baz.
 
 Print bazTerm. 
 
@@ -1116,13 +1118,13 @@ Compute (option_map ind_ctors (option_map (hd error2) (option_map ind_bodies (ex
 Compute (option_map cstr_args (option_map (hd error3) (option_map ind_ctors(option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (declarations (fst bazTerm)))))))))).
 (* 1st and 3rd computations should have all info needed to build patternmatch fn *)
 
-MetaCoq Quote Definition con3 := (fun x => match x with
+MetaRocq Quote Definition con3 := (fun x => match x with
                                                 | mycr1 a b  =>  Some (a, b)
                                                 | _ => None
                                                end).
 Print con3. 
 
-MetaCoq Run (animate <? baz ?>).
+MetaRocq Run (animate <? baz ?>).
 
 Fixpoint lstPatternmatch {A : Type} (n : nat) (x : (list A)) : option (list A) :=
  match n with
@@ -1147,7 +1149,7 @@ Compute (lstPatternmatch 4 [1 ; 2 ; 3 ; 4]).
 
 
 
-MetaCoq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
+MetaRocq Run (t <- DB.deBruijn (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
             (tInd {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |} [])
             (tCase
                {| ci_ind := {| inductive_mind := (MPfile ["typeConNest2"%bs], "myType"%bs); inductive_ind := 0 |}; ci_npar := 0; ci_relevance := Relevant |}

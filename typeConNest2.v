@@ -2,8 +2,8 @@ Require Import Coq.Lists.List.
 Require Import List.
 
 
-Require Import MetaCoq.Template.All.
-Import monad_utils.MCMonadNotation.
+Require Import MetaRocq.Template.All.
+Import monad_utils.MRMonadNotation.
 (* Import MetaCoqNotations. *)
 
 Require Import PeanoNat.
@@ -54,7 +54,7 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
  
 
-MetaCoq Quote Recursively Definition baz'Term := baz'.
+MetaRocq Quote Recursively Definition baz'Term := baz'.
 
 Print baz'Term. 
 
@@ -236,7 +236,7 @@ Compute (preProcConsRem 20 (
 
 
 
-MetaCoq Quote Definition con3 := (fun x => match x with
+(* MetaCoq Quote Definition con3 := (fun x => match x with
                                                 | mycr2 a b  =>  Some true
                                                 | _ => None
                                                end).
@@ -265,7 +265,7 @@ MetaCoq Quote Definition con5 := (fun x => match x with
                                                                  
                                                 | _ => None
                                                end).
-Print con5.
+Print con5. *)
 
 
       
@@ -523,8 +523,8 @@ Definition mkCase'  (s : (string × term) × list string) (l : list mutual_induc
 
 
 
-MetaCoq Quote Definition idTerm := (fun x => x).
-MetaCoq Quote Definition oBoolT := (Some true).
+MetaRocq Quote Definition idTerm := (fun x => x).
+MetaRocq Quote Definition oBoolT := (Some true).
       
 Definition identityTerm : term := idTerm. (* term rep of id function*)
 
