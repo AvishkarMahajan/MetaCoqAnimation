@@ -95,7 +95,7 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
  | (str, (tVar varStr)) :: t => (i, t, (((str, (tVar varStr ), nil)) :: resolvedTs), remTs)
  (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs)) *)
  | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs))
- | (str, (tInd indType ls')) :: t => (i, t, (((str, (tInd indType ls'), nil)) :: resolvedTs), remTs) 
+(* | (str, (tInd indType ls')) :: t => (i, t, (((str, (tInd indType ls'), nil)) :: resolvedTs), remTs) *)
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
  end. 
  
@@ -825,15 +825,28 @@ Inductive myProdType :Set :=
  | myProdCr' : nat -> nat -> myProdType.
  
 Inductive tuple' : nat -> nat -> myProdType -> Prop :=
- | tupleCon' : forall (a : nat), forall (b : nat), forall (y : myProdType), myProdCr' (S a) b = y -> tuple' a b y.  (*RHS of equality not v imp*)
+ | tuple'Con' : forall (a : nat), forall (b : nat), forall (y : myProdType), myProdCr' (S a) b = y -> tuple' a b y.  (*RHS of equality not v imp*)
  
 
 
 MetaRocq Quote Recursively Definition tuple'Term := tuple'.
 MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd tuple'Term 30));; tmEval all t >>= tmUnquote >>= tmPrint).
 
+Inductive myListType :Set :=
+ | myListNil : nat -> myListType
+ | myListCons : nat -> myListType -> myListType.
+ 
+Inductive triple' : nat -> nat -> nat -> myListType -> Prop :=
+ | triple'Con : forall (a: nat), forall (b : nat), forall (c: nat), forall (y : myListType), (myListCons a (myListCons b (myListNil c))) = y -> triple' a b c y.  (*RHS of equality not v imp*)
+ 
+
+
+MetaRocq Quote Recursively Definition triple'Term := triple'.
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple'Term 40));; tmEval all t >>= tmUnquote >>= tmPrint).
+
 
 (* DOESN'T WORK FOR INSTANCES OF POLYMORPHIC TYPES
+
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
  | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, b) = y -> tuple a b y.  (*RHS of equality not v imp*)
  
@@ -850,6 +863,22 @@ MetaRocq Quote Definition prodFnTm := (fun v2 : (nat × nat) => match v2 with
                                                                end ).
 
 Print prodFnTm. 
+
+* DOESN'T WORK FOR NULLARY CONSTRUCTORS
+
+
+Inductive myListType :Set :=
+ | myListNil : myListType
+ | myListCons : nat -> myListType -> myListType.
+ 
+Inductive triple' : nat -> nat -> myListType -> Prop :=
+ | triple'Con : forall (a: nat), forall (b : nat), forall (y : myListType), (myListCons a (myListCons b (myListNil))) = y -> triple' a b y.  (*RHS of equality not v imp*)
+ 
+
+
+MetaRocq Quote Recursively Definition triple'Term := triple'.
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple'Term 40));; tmEval all t >>= tmUnquote >>= tmPrint).
+
 
 
  
