@@ -21,13 +21,9 @@ Inductive myType : Set :=
 | mycr3 : myType.
 
 
-Inductive baz' : nat -> nat -> myType -> Prop :=
- | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
- 
 
-MetaRocq Quote Recursively Definition baz'Term := baz'.
 
-Print baz'Term. 
+(* Print baz'Term. *) 
 
 Definition extractIndDecl (x : global_decl) : option mutual_inductive_body :=
  match x with
@@ -61,7 +57,7 @@ Print global_decl. *)
 
 (* Print one_inductive_body. *)
 
-Compute (tl (map extractIndDecl (map snd (declarations (fst baz'Term))))).
+(*Compute (tl (map extractIndDecl (map snd (declarations (fst baz'Term))))).*)
 
 Definition extractTypeData (p : program) : list (option mutual_inductive_body) := 
  (map extractIndDecl ((map snd ((tl (tl (declarations (fst p)))))))).
@@ -97,9 +93,9 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
  (*| (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))*) 
  | (str, (tRel k)) :: t => (i, t, (((str, (tRel k), nil)) :: resolvedTs), remTs)
  | (str, (tVar varStr)) :: t => (i, t, (((str, (tVar varStr ), nil)) :: resolvedTs), remTs)
- (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs)) *)
+ (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs)) *)
  | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs))
- 
+ | (str, (tInd indType ls')) :: t => (i, t, (((str, (tInd indType ls'), nil)) :: resolvedTs), remTs) 
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
  end. 
  
@@ -136,7 +132,7 @@ Compute (preProcCons 20 (tApp
                          |} 0 []) [tRel 2]; tRel 1]; tRel 0])). 
 
 
-Compute (rev (preProcCons 20 (
+Compute ((preProcCons 20 (
                  tApp
                    (tConstruct
                       {|
@@ -805,7 +801,7 @@ Definition mkLamfromInd (p : program) (fuel : nat) : option term :=
   let pmd := extractPatMatData p in
    if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) td) else None. 
    
-Compute (mkLamfromInd baz'Term 20).
+(* Compute (mkLamfromInd baz'Term 20).*)
 
 Parameter errTm : term.
 
@@ -814,14 +810,66 @@ Definition removeopTm (o : option term) : term :=
   | Some t => t
   | None => errTm
  end.  
+ 
+Inductive baz' : nat -> nat -> myType -> Prop :=
+ | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
+ 
+
+MetaRocq Quote Recursively Definition baz'Term := baz'. 
 
 MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd baz'Term 20));; tmEval all t >>= tmUnquote >>= tmPrint).
   
 (* Print tmQuote. *)
+
+Inductive myProdType :Set :=
+ | myProdCr' : nat -> nat -> myProdType.
  
+Inductive tuple' : nat -> nat -> myProdType -> Prop :=
+ | tupleCon' : forall (a : nat), forall (b : nat), forall (y : myProdType), myProdCr' (S a) b = y -> tuple' a b y.  (*RHS of equality not v imp*)
  
+
+
+MetaRocq Quote Recursively Definition tuple'Term := tuple'.
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd tuple'Term 30));; tmEval all t >>= tmUnquote >>= tmPrint).
+
+
+(* DOESN'T WORK FOR INSTANCES OF POLYMORPHIC TYPES
+Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
+ | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, b) = y -> tuple a b y.  (*RHS of equality not v imp*)
  
-(* 
+Check (prod nat nat).
+
+MetaRocq Quote Recursively Definition tupleTerm := tuple.
+Compute (preProcCons 25 (extractPatMatData tupleTerm)).
+
+Compute (removeopTm (mkLamfromInd tupleTerm 25)).
+
+MetaRocq Quote Definition prodFnTm := (fun v2 : (nat × nat) => match v2 with
+                                                                | (a, b) => Some true
+                                                                
+                                                               end ).
+
+Print prodFnTm. 
+
+
+ 
+
+
+Inductive list3 : nat -> nat -> nat -> list nat -> Prop :=
+ | list3Con : forall (a b c : nat), forall (y : list nat), [S a; b; c] = y -> list3 a b c y.  (*RHS of equality not v imp*)
+ 
+
+MetaRocq Quote Recursively Definition list3Term := list3.
+
+Compute (removeopTm (mkLamfromInd list3Term 25)).
+
+(* Non-terminating Computation? *)
+
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd list3Term 25));; tmEval all t (*>>= tmUnquote*) >>= tmPrint).*)
+ 
+
+ 
+(* JUNK
 Definition mkCase'' (s : (string × term) × list string) (retVal : term) (typeInfo : list (mutual_inductive_body))
       (finalValType : term) (*for now always option bool *)  : term := ...
  
