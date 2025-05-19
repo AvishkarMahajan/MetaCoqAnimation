@@ -20,6 +20,27 @@ Inductive myType : Set :=
 | mycr2 : myType' -> nat -> myType
 | mycr3 : myType.
 
+Check (@cons).
+
+Definition polylist (A : Type) (x : list A) : option bool :=
+ match x with
+  | @cons _ elt (@nil _) => Some true
+  | _ => None  
+ end.
+ 
+MetaRocq Run (t <- tmQuote (fun A : Type => (fun x : list A => match x with
+                                                              | @nil _ => Some true
+                                                              | _ => None  
+                                                             end))  ;; tmPrint t).
+
+
+MetaRocq Run (t <- tmQuote ((*fun A : Type => *)(fun x : (list (list nat)) => match x with
+                                                                               | @nil _ => Some true
+                                                                               | _ => None  
+                                                                              end))  ;; t' <- DB.deBruijn t ;; tmPrint t').
+
+
+
 
 
 
@@ -90,14 +111,17 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
                                        list ((string × term) × list string)) × list (string × term))  :=
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
- (*| (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), ((genVarlst i args) ++ remTs))*) 
+ | (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args)  remTs))
  | (str, (tRel k)) :: t => (i, t, (((str, (tRel k), nil)) :: resolvedTs), remTs)
  | (str, (tVar varStr)) :: t => (i, t, (((str, (tVar varStr ), nil)) :: resolvedTs), remTs)
  (*| (str, (tApp (tInd indType ls') args)) :: t => (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs)) *)
  | (str, (tConstruct typeInfo k [])) :: t => (i, t, (((str, (tConstruct typeInfo k []), nil)) :: resolvedTs), remTs)
-            
- | (str, (tApp func args)) :: t => (i + (length args), t, ((str, func, (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs))
-(* | (str, (tInd indType ls')) :: t => (i, t, (((str, (tInd indType ls'), nil)) :: resolvedTs), remTs) *)
+ | (str, (tApp <%eq%> args)) :: t => (i + (length args), t, ((str, (<%eq%>), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args)  remTs)) 
+
+ | (str, (tApp func args)) :: t => (i, t, (((str, (tApp func args), nil)) :: resolvedTs), remTs)           
+ 
+ (*| (str, (tApp func args)) :: t => (i + (length args), t, ((str, (func), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args)  remTs)) *)
+ | (str, (tInd indType ls')) :: t => (i, t, (((str, (tInd indType ls'), nil)) :: resolvedTs), remTs)
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
  end. 
  
@@ -199,7 +223,100 @@ Compute (preProcConsRem 20 (
 
 (* Print bazTerm. *)
 
+Fixpoint lookUpVarsOne (str : string) (ls : list ((string × term) × list string)) : list string × list term :=
+ match ls with
+  | [] => ([], [])
+  | (h :: t) => if (String.eqb str (fst (fst h))) then (let t := snd (fst h) in 
+                                                         match t with
+                                                          | tConstruct typeInfo k js => ([str], [])
+                                                          | tApp (tInd typeInfo js) args => ([], [tApp (tInd typeInfo js) args])
+                                                          | tRel k => ([str], [])
+                                                          | tVar str'' => ([str], [])
+                                                          | tInd typeInfo js => ([], [(tInd typeInfo js)])
+                                                          | _ => ([], [])
+                                                         end) 
+                                                         else lookUpVarsOne str t
+ end.
 
+Fixpoint lookUpVars (lsStr : list string) (ls : list ((string × term) × list string)) : list string × list term :=
+ match lsStr with
+  | [] => ([], [])
+  | (h :: t) => match lookUpVarsOne h ls with
+                 | ([], []) => lookUpVars t ls
+                 | ([e], []) => (e :: (fst (lookUpVars t ls)), snd (lookUpVars t ls))
+                 | ([], [e]) => (fst (lookUpVars t ls),  e :: (snd (lookUpVars t ls)))
+                 | _ => lookUpVars t ls
+                end
+ end.                                                               
+
+Fixpoint preProcConsTypeVar (ls : list ((string × term) × list string)) (ls' : list ((string × term) × list string)) : 
+                                     list (((string × term) × list string) × list term) :=
+  match ls' with
+   | [] => []
+   | (str1, <%eq%>, lstStr) :: t => preProcConsTypeVar ls t
+   | (str1, (tConstruct typeInfo k js), lstStr) :: t => 
+          (str1, (tConstruct typeInfo k js), fst (lookUpVars lstStr ls), snd (lookUpVars lstStr ls)) :: preProcConsTypeVar ls t   
+   | (_ :: t) => preProcConsTypeVar ls t
+  end. 
+Check length.                             
+
+
+(* 
+[("x", <%eq%>, ["v1"; "v2"; "v3"]);
+        ("v1",
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+              |} [])
+           [tApp
+              (tInd
+                 {|
+                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                   inductive_ind := 0
+                 |} [])
+              [<%nat%>]],
+         []);
+        ("v2",
+         tConstruct
+           {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
+           1 [],
+         ["v4"; "v5"; "v6"]);
+        ("v3", tRel 0, []);
+        ("v4",
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+              |} [])
+           [<%nat%>],
+         []);
+        ("v5",
+         tConstruct
+           {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
+           1 [],
+         ["v7"; "v8"; "v9"]);
+        ("v6",
+         tConstruct
+           {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
+           0 [],
+         ["v10"]);
+        ("v10",
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+              |} [])
+           [<%nat%>],
+         []);
+        ("v7", <%nat%>, []); ("v8", tRel 1, []);
+        ("v9",
+         tConstruct
+           {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
+           0 [],
+         ["v11"]);
+        ("v11", <%nat%>, [])] 
+*)
 
 
 
@@ -349,7 +466,8 @@ Parameter errorlstNat : list nat.
 
 
       
-Definition getCstrIndex (s : (string × term) × list string) : nat := (* Get index of typeCon *)
+Definition getCstrIndex (s : ((string × term) × list string)) : nat := (* Get index of typeCon *)
+  
   match s with
    | (str,
          tConstruct typeInfo
@@ -358,7 +476,8 @@ Definition getCstrIndex (s : (string × term) × list string) : nat := (* Get in
    | _ => error_nat        
   end. 
 
-Definition getType (s : (string × term) × list string) :=  (*Get type of scrutinee var*)
+Definition getType (s : ((string × term) × list string)) :=  (*Get type of scrutinee var*)
+  
   match s with
    | (str,
          tConstruct typeInfo
@@ -382,17 +501,22 @@ Fixpoint chkMemberStr (s : string) (lStr : list string) : bool :=
   | (h :: t) => if (String.eqb s h) then true else chkMemberStr s t
  end.   
 
-Fixpoint filterTypeCon (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : 
+Fixpoint filterTypeCon' (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : 
                          list ((string × term) × list string) := (* Delete terms not corresponding to a valid typeCon *)
    match ls with
     | [] => []
     | h :: t => match h with 
                  | (str,
                     tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
-                    k ls, lsStr) => if (chkMemberStr nmStr (map fst (extractTypeCsArlst mut))) then h :: (filterTypeCon t mut) else (filterTypeCon t mut) 
-                 | _ => (filterTypeCon t mut) 
+                    k ls, lsStr) => if (chkMemberStr nmStr (map fst (extractTypeCsArlst mut))) then h :: (filterTypeCon' t mut) else (filterTypeCon' t mut) 
+                 | _ => (filterTypeCon' t mut) 
                 end        
    end.
+
+
+Definition filterTypeCon (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : 
+                         list ((string × term) × list string) := ls.
+  
 
 
 
@@ -456,24 +580,25 @@ Fixpoint restLst (n : nat) (l : list nat) : list nat :=
  end.
 
 Definition mkBrLst (s : (string × term) × list string) (l : list mutual_inductive_body) (t : term) : list (branch term) :=
+ 
  let csArlst := (getCstrArityLst (getTypeNm s) l) in
   let index := getCstrIndex s in
   map mkNoneBranch (untilLst index csArlst) ++ [mkSomeBranch (rev (snd s)) t] ++ map mkNoneBranch (restLst index csArlst).  
    
   
       
-Definition mkCase'  (s : (string × term) × list string) (l : list mutual_inductive_body) (t : term)  
+Definition mkCase'  (s' : ((string × term) × list string) × list term ) (l : list mutual_inductive_body) (t : term)  
                       : term :=
-  
+  let s := fst s' in 
   (tCase
      {|
        ci_ind := getType s ;
-       ci_npar := 0;
+       ci_npar := length (snd s');
        ci_relevance := Relevant
      |}
      {|
        puinst := [];
-       pparams := [];
+       pparams := (snd s');
        pcontext := [{| binder_name := nNamed (fst (fst s)); binder_relevance := Relevant |}];
        preturn :=
          (tApp
@@ -491,8 +616,7 @@ Definition mkCase'  (s : (string × term) × list string) (l : list mutual_induc
       (mkBrLst s l t)). 
 
 
-
-MetaRocq Quote Definition idTerm := (fun x => x).
+Definition idTerm := <%(fun A : Type => (fun x : A => x))%>.
 MetaRocq Quote Definition oBoolT := (Some true).
       
 Definition identityTerm : term := idTerm. (* term rep of id function*)
@@ -501,18 +625,18 @@ Definition optBoolTrue : term := oBoolT. (* term rep of some true *)
 
 
 
-      
+(* Need to modify *)      
 
 
-Fixpoint mkPmNested' (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
+Fixpoint mkPmNested (ls : list (((string × term) × list string) × list term)) (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => identityTerm
   | (h :: nil) => mkCase' h mut optBoolTrue  
-  | (h :: t) => mkCase' h mut (mkPmNested' t mut)
+  | (h :: t) => mkCase' h mut (mkPmNested t mut)
  end. 
  
-Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
-   mkPmNested' (filterTypeCon ls mut) mut.
+(*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
+   mkPmNested'  (filterTypeCon ls mut) mut.*)
 
 Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
  match optls with
@@ -520,19 +644,23 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
   | (Some x :: t) => (x :: removeOpt t)
   | (None :: t) => removeOpt t
  end. 
+ 
+(* Need to modify*) 
+(*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
 
-Definition mkLam' (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : option term :=
+Definition mkLam' (ls : list (((string × term) × list string))) (mut : list mutual_inductive_body) : option term :=
  match ls with 
  | [] => None
- | ((str,
-         tConstruct typeInfo
-           k js, strs) :: t'') => Some (tLambda {| binder_name := nNamed str; binder_relevance := Relevant |}
-                                 (tInd typeInfo js) (mkPmNested ls mut))
+ | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
+                                 (typeInfo) (mkPmNested ((preProcConsTypeVar ls ls)) mut))
+
+ 
+ 
  | _ => None                                
  end.
  
-Definition mkLam (ls : list ((string × term) × list string)) (mut : list (option mutual_inductive_body)) : option term :=
-  mkLam' (filterTypeCon ls (removeOpt mut)) (removeOpt mut).    
+Definition mkLam (ls : list (((string × term) × list string))) (mut : list (option mutual_inductive_body)) : option term :=
+  mkLam' ls (removeOpt mut).    
  
 (*test inputs :*)
 
@@ -812,25 +940,60 @@ Definition removeopTm (o : option term) : term :=
   | Some t => t
   | None => errTm
  end.  
+
+Inductive list3 : nat -> list (list nat) -> Prop :=
+ | list3Con : forall (a : nat), forall (y : list (list nat)), [[a]] = y -> list3 a y.  (*RHS of equality not v imp*)
  
+
+MetaRocq Quote Recursively Definition list3Term := list3.
+
+
+ 
+
+(* Compute (preProcCons 25 (extractPatMatData list3Term)). *) 
  
 Inductive myListType :Set :=
  | myListNil : myListType
  | myListCons : nat -> myListType -> myListType.
  
-Inductive triple' : nat -> myListType -> Prop :=
- | triple'Con : forall (a : nat), forall (y : myListType), (myListCons a myListNil)  = y -> triple' a  y.  (*RHS of equality not v imp*)
+Inductive triple' : nat -> list nat -> Prop :=
+ | triple'Con : forall (a : nat), forall (y : list nat), (a :: [])  = y -> triple' a  y.  (*RHS of equality not v imp*)
+ 
+
+Inductive triple'' : nat -> myListType -> Prop :=
+ | triple''Con : forall (a : nat), forall (y : myListType), (myListCons a myListNil)  = y -> triple'' a  y.  (*RHS of equality not v imp*)
  
 
 
-MetaRocq Quote Recursively Definition triple'Term := triple'.
+MetaRocq Quote Recursively Definition triple''Term := triple''.
 
 (* Compute ((extractPatMatData triple'Term)). *)
 
 (* Compute (preProcCons 10 (extractPatMatData triple'Term)). *)
 
+Compute (mkLamfromInd triple''Term 30).
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple''Term 15));; tmEval all t >>= tmUnquote >>= tmPrint).
+ 
+
+MetaRocq Quote Recursively Definition triple'Term := triple'.
+
+
+
+(* Compute ((extractPatMatData triple'Term)). *)
+
+(*Compute (preProcCons 30 (extractPatMatData triple'Term)).
+
+Compute (removeopTm (mkLamfromInd triple'Term 30)).
+
+MetaRocq Quote Definition singletonLst := (fun x : (list nat) => match x with
+                                                                  | v1 :: nil => Some true
+                                                                  | _ => None
+                                                                 end).
+                                                                 
+Print singletonLst. *)                                                                  
+
 (* Compute (mkLamfromInd triple'Term 30). *)
-MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple'Term 15));; tmEval all t >>= tmUnquote >>= tmPrint).
+MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple'Term 25));; tmEval all t  >>=  tmUnquote >>= tmPrint).
  
  
 Inductive baz' : nat -> nat -> myType -> Prop :=
@@ -838,6 +1001,9 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  
 
 MetaRocq Quote Recursively Definition baz'Term := baz'. 
+
+Compute (preProcCons 20 (extractPatMatData baz'Term)).
+Compute (removeopTm (mkLamfromInd baz'Term 20)).
 
 MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd baz'Term 20));; tmEval all t >>= tmUnquote >>= tmPrint).
   
@@ -853,7 +1019,6 @@ Inductive tuple' : nat -> nat -> myProdType -> Prop :=
 
 MetaRocq Quote Recursively Definition tuple'Term := tuple'.
 MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd tuple'Term 30));; tmEval all t >>= tmUnquote >>= tmPrint).
-
 
 
 (* DOESN'T WORK FOR INSTANCES OF POLYMORPHIC TYPES
