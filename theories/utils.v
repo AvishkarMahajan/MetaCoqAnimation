@@ -54,6 +54,9 @@ Definition ident_eq (x y : ident) : bool :=
   | _ => false
   end.
 
+Check monad_map.
+
+
 Module DB.
  (* Inspired by code written by John Li but changed slightly.
      We should eventually consider making a MetaRocq_utils module. *)
@@ -147,6 +150,98 @@ Module DB.
     in go ctx t.
 
   Definition deBruijn (t : named_term) : TemplateMonad term := deBruijn' nil t.
+  
+
+
+Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
+    let fix find_in_ctx (count : nat) (id : ident) (ctx : list name) : option nat :=
+      match ctx with
+      | nil => None
+      | nAnon :: ns => find_in_ctx (S count) id ns
+      | (nNamed id') :: ns =>
+        if ident_eq id id' then Some count else find_in_ctx (S count) id ns
+      end in
+    let fix go (ctx : list name) (t : named_term) : option term :=
+        let go_mfix (mf : mfixpoint named_term) : option (mfixpoint term) :=
+          let ctx' := map (fun x => binder_name (dname x)) mf in
+          monad_map (fun def =>
+                       dtype' <- go ctx def.(dtype) ;;
+                       dbody' <- go (rev ctx' ++ ctx) def.(dbody) ;;
+                       Some (mkdef _ def.(dname) dtype' dbody' def.(rarg))) mf in
+        let go_branches (branches : list (branch named_term))
+                        : option (list (branch term)):=
+          monad_map (fun br =>
+              t' <- go (map binder_name (bcontext br) ++ ctx) (bbody br) ;;
+              Some {| bcontext := bcontext br; bbody := t' |}) branches in
+        match t with
+        | tRel n => Some t
+        | tVar id =>
+            match find_in_ctx O id ctx with
+            | Some i => Some (tRel i)
+            | None => Some t (* could be a free variable *)
+            end
+        | tEvar ev args =>
+            args' <- monad_map (go ctx) args ;;
+            Some (tEvar ev args')
+        | tSort s =>
+          Some t
+        | tCast t kind v =>
+            t' <- go ctx t ;;
+            v' <- go ctx v ;;
+            Some (tCast t' kind v')
+        | tProd na ty body =>
+            ty' <- go ctx ty ;;
+            body' <- go (binder_name na :: ctx) body ;;
+            Some (tProd na ty' body')
+        | tLambda na ty body =>
+            ty' <- go ctx ty ;;
+            body' <- go (binder_name na :: ctx) body ;;
+            Some (tLambda na ty' body')
+        | tLetIn na def def_ty body =>
+            def' <- go ctx def ;;
+            def_ty' <- go ctx def_ty ;;
+            body' <- go (binder_name na :: ctx) body ;;
+            Some (tLetIn na def' def_ty' body')
+        | tApp f args =>
+            f' <- go ctx f ;;
+            args' <- monad_map (go ctx) args ;;
+            Some (tApp f' args')
+        | tConst c u => Some t
+        | tInd ind u => Some t
+        | tConstruct ind idx u => Some t
+        | tCase ind_nbparams_relevance type_info discr branches =>
+            preturn' <- go ctx (preturn type_info) ;;
+            pparams' <- monad_map (go ctx) (pparams type_info) ;;
+            let type_info' :=
+              {| puinst := puinst type_info
+               ; pparams := pparams'
+               ; pcontext := pcontext type_info
+               ; preturn := preturn'
+               |} in
+            discr' <- go ctx discr ;;
+            branches' <- go_branches branches ;;
+            Some (tCase ind_nbparams_relevance type_info' discr' branches')
+        | tProj proj t =>
+            t' <- go ctx t ;;
+            Some (tProj proj t')
+        | tFix mfix idx =>
+            mfix' <- go_mfix mfix ;;
+            Some (tFix mfix' idx)
+        | tCoFix mfix idx =>
+            mfix' <- go_mfix mfix ;;
+            Some (tCoFix mfix' idx)
+        | tInt p => Some (tInt p)
+        | tFloat p => Some (tFloat p)
+        | tArray u arr default type =>
+             arr' <- monad_map (go ctx) arr ;;
+             default' <- go ctx default ;;
+             type' <- go ctx type ;;
+             Some (tArray u arr' default' type')
+        | tString s => Some (tString s)     
+        end
+    in go ctx t.
+
+  Definition deBruijnOption (t : named_term) : option term := deBruijn'Option nil t.
   
   
 

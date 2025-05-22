@@ -12,6 +12,18 @@ Import MetaRocqNotations.
 Require Import PeanoNat.
 Local Open Scope nat_scope.
 
+Definition prodify (t1 t2 : term) : term :=
+
+  tApp <% @prod %> [t1; t2].
+
+ 
+
+MetaRocq Run (tmPrint (prodify <% nat %> <% bool %>)).
+
+MetaRocq Run (tmUnquote (prodify <% nat %> <% bool %>) >>= tmPrint).
+
+MetaRocq Run (tmEval all ((prodify <% nat %> <% bool %>)) >>= tmUnquote >>= tmPrint).
+
 Inductive myType' : Set :=
 | mycr1' : nat -> myType'
 | mycr2' : nat -> myType'.
@@ -941,6 +953,23 @@ Definition removeopTm (o : option term) : term :=
   | None => errTm
  end.  
 
+Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
+ | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y.  (*RHS of equality not v imp*)
+ 
+Check (prod nat nat).
+
+MetaRocq Quote Recursively Definition tupleTerm := tuple.
+Compute (removeopTm (mkLamfromInd tupleTerm 25)).
+Compute (DB.deBruijnOption (removeopTm (mkLamfromInd tupleTerm 25))).
+(*Print DB.deBruijn. *)
+
+(*Change DB.deBruijn to return option term rather than Template term *)
+
+MetaRocq Run (t <- tmEval all  (removeopTm (DB.deBruijnOption ((removeopTm (mkLamfromInd tupleTerm 25))))) ;; tmUnquote t >>= tmPrint).
+ 
+
+
+
 Inductive list3 : nat -> list (list nat) -> Prop :=
  | list3Con : forall (a : nat), forall (y : list (list nat)), [[a]] = y -> list3 a y.  (*RHS of equality not v imp*)
  
@@ -959,6 +988,10 @@ Inductive myListType :Set :=
 Inductive triple' : nat -> list nat -> Prop :=
  | triple'Con : forall (a : nat), forall (y : list nat), (a :: [])  = y -> triple' a  y.  (*RHS of equality not v imp*)
  
+MetaRocq Quote Recursively Definition triple'Term := triple'.
+
+MetaRocq Run (t <- tmEval all  (removeopTm (DB.deBruijnOption ((removeopTm (mkLamfromInd triple'Term 30))))) ;; tmUnquote t >>= tmPrint).
+
 
 Inductive triple'' : nat -> myListType -> Prop :=
  | triple''Con : forall (a : nat), forall (y : myListType), (myListCons a myListNil)  = y -> triple'' a  y.  (*RHS of equality not v imp*)
@@ -971,11 +1004,13 @@ MetaRocq Quote Recursively Definition triple''Term := triple''.
 
 (* Compute (preProcCons 10 (extractPatMatData triple'Term)). *)
 
-Compute (mkLamfromInd triple''Term 30).
-MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple''Term 15));; tmEval all t >>= tmUnquote >>= tmPrint).
+(*Compute (mkLamfromInd triple''Term 30).*)
+
+MetaRocq Run (t <- tmEval all  (removeopTm (DB.deBruijnOption ((removeopTm (mkLamfromInd triple''Term 30))))) ;; tmUnquote t >>= tmPrint).
+ 
+(*MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple''Term 15));; tmEval all t >>= tmUnquote >>= tmPrint).*)
  
 
-MetaRocq Quote Recursively Definition triple'Term := triple'.
 
 
 
@@ -993,8 +1028,7 @@ MetaRocq Quote Definition singletonLst := (fun x : (list nat) => match x with
 Print singletonLst. *)                                                                  
 
 (* Compute (mkLamfromInd triple'Term 30). *)
-MetaRocq Run (t <- DB.deBruijn (removeopTm (mkLamfromInd triple'Term 25));; tmEval all t  >>=  tmUnquote >>= tmPrint).
- 
+
  
 Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
