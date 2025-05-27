@@ -37,7 +37,7 @@ Axiom 1 (must be assumed, cannot be proven inside Coq)
 
 Forall Coq objects e1 : T1 -> T2, e2 : T1, 
 
-quote(e1.e2) = quote(e1.e2_uninterp) [quote (e2)/quote(e2_uninterp)] 
+quote(e1 e2) = quote(e1 e2_uninterp) [quote (e2)/quote(e2_uninterp)] 
 
 where e2_uninterp is the uninterpreted object of type T1
 
