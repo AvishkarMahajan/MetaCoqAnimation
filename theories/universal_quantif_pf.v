@@ -10,7 +10,7 @@ t : nat -> nat
 
 Consider animate : term -> term 
 
-Let t_uninterp be the interpreted function of type : nat -> nat
+Let t_uninterp be the uninterpreted function of type : nat -> nat
 
 Suppose that forall t : nat -> nat 
 
@@ -31,7 +31,7 @@ Lemma 3 (to be proven inside Coq)
 forall t : nat -> nat,
 
 I (t) (inputVars, outputVars) <-> 
-(unquote (animate (quote (I(t_param))))) [t/ t_uninterp]  (inputVars) = outputVars
+  (unquote (animate (quote (I(t_uninterp))))) [t/ t_uninterp]  (inputVars) = outputVars
 
 Axiom 1 (must be assumed, cannot be proven inside Coq)
 
@@ -76,10 +76,10 @@ Lemma 3 :
 forall t : nat -> nat,
 
 I (t) (inputVars, outputVars) <-> 
-(unquote (animate (quote (I(t_param))))) [t/ t_uninterp]  (inputVars) = outputVars
+  (unquote (animate (quote (I(t_uninterp))))) [t/ t_uninterp]  (inputVars) = outputVars
 
 Therefore we are required to prove that :
-(unquote (animate (quote (I(t_param))))) [t/ t_uninterp] = unquote (animate ((quote(I (t_uninterp)))) [tConst “t” / tConst “t_uninterp”])
+  (unquote (animate (quote (I(t_uninterp))))) [t/ t_uninterp] = unquote (animate ((quote(I (t_uninterp)))) [tConst “t” / tConst “t_uninterp”])
 
 
 Let h : term -> term be such that, forall t : nat -> nat,  h (tConst "t") = animate (quote (I (t)))  
