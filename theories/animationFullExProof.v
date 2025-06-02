@@ -10,6 +10,13 @@ Require Import PeanoNat.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+Axiom functional_extensionality_dep : forall {A} {B : A -> Type},
+  forall (f g : forall x : A, B x),
+  (forall x, f x = g x) -> f = g.
+
+Lemma functional_extensionality {A B} (f g : A -> B) :
+  (forall x, f x = g x) -> f = g. Proof. Admitted.
+
 Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
  match l with
   | nil => false
@@ -360,8 +367,9 @@ Definition genFun (fooTerm : term) (inputVars : list string) (fuel : nat) : term
 Definition soundness' (f : (nat -> nat -> option (list nat))) (n1 : nat) (n2 : nat) : Type :=
  let r := (f n1 n2) in 
    match r with
-    | Some ([n3 ; n4 ; n5]) => (foo n1 n2 n3 n4 n5)
-    | None =>  (forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False))
+    | Some ([n3 ; n4 ; n5]) => forall h1, forall h2, forall h3, h1 = g1 -> h2 = g2 -> h3 = g3 -> (foo n1 n2 n3 n4 n5) 
+    | None => forall h1, forall h2, forall h3, h1 = g1 -> h2 = g2 -> h3 = g3 ->  (forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False))
+ (*  (forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False)) *)
     | _ => False
     end. 
 Definition soundness'' (f : (nat -> nat -> option (list nat))) : Type :=
@@ -407,10 +415,10 @@ remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
 + split.
 ++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
 auto. 
-+ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
++ intros. inversion H2 ; subst. apply beq_nat_neq in HeqH.
 *  auto.
-* destruct H0. rewrite H0 in H1. destruct H1.
-rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
+* destruct H3. rewrite H in H0. destruct H0.
+rewrite H0 in H1. destruct H1. rewrite H1 in H3. auto.
  Qed.
  
 
