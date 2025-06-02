@@ -449,3 +449,72 @@ Module ConstSubstitution.
     | (id, t) :: l' => named_subst_all l' (named_subst t id u)
     end.
 End ConstSubstitution.
+
+Module general. 
+
+Open Scope bs.
+Axiom functional_extensionality_dep : forall {A} {B : A -> Type},
+  forall (f g : forall x : A, B x),
+  (forall x, f x = g x) -> f = g.
+
+Lemma functional_extensionality {A B} (f g : A -> B) :
+  (forall x, f x = g x) -> f = g. Proof. Admitted.
+
+
+
+
+
+Definition test : TemplateMonad unit :=
+  t <- @tmQuote bool ((fun (n : nat) =>
+                         match n with
+                         | O => true
+                         | S n' => false
+                         end) 5) ;;
+  t' <- DB.undeBruijn t ;;
+  t'' <- DB.deBruijn t' ;;
+  tmMsg "BEFORE" ;;
+  tmPrint t ;;
+  tmMsg "AFTER" ;;
+  tmPrint t' ;;
+  tmMsg "ROUND TRIP" ;;
+  tmPrint t''.
+
+
+Definition animate_conjunct
+           (c : constructor_body) (conjunct : context_decl) : TemplateMonad named_term :=
+  (* t is the MetaRocq term for the conjunct like (e = b /\ d = c /\ c = a + e) *)
+  let t : term := decl_type conjunct in
+  (* tl here only works because we assume there is only one, large, nested "and" conjunct *)
+  t_named <- DB.undeBruijn' (tl (map (fun arg => binder_name (decl_name arg)) (cstr_args c))) t ;;
+  (* now you can work with the named representation, as you can see below: *)
+  tmPrint t_named ;;
+  ret hole.
+
+Fixpoint collect_conjuncts (cs : list constructor_body) : TemplateMonad (list named_term) :=
+  match cs with
+  | [] => ret []
+  | c :: cs =>
+      match cstr_args c with
+      | conjunct :: _ =>
+          conjunct' <- animate_conjunct c conjunct ;;
+          cs' <- collect_conjuncts cs ;;
+          ret (conjunct' :: cs')
+      | _ => tmFail "No arguments for constructor c"
+      end
+  end.
+
+
+
+Definition animate (kn : kername) : TemplateMonad unit :=
+  mut <- tmQuoteInductive kn ;;
+  match ind_bodies mut with
+  | [ one ] =>
+    conjuncts <- collect_conjuncts (ind_ctors one) ;;
+    (* sepConj <- tAppDes conjuncts ;; *)
+    (* there has to be something clever here *)
+     ret conjuncts
+  | _ => tmFail "Not one type in mutually inductive block."
+  end ;;
+  ret tt. 
+End general. 
+
