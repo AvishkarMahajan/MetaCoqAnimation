@@ -14,9 +14,14 @@ Open Scope bs.
 
 (* 1 *)
 Section s.
+(*
 Variable g1 : nat -> nat.
 Variable g2 : nat -> nat.
 Variable g3 : nat -> nat -> nat.
+*)
+
+(* Can also use context ? *) 
+Context (g1 : nat -> nat) (g2 : nat -> nat) (g3 : nat -> nat -> nat).
 
 Lemma beq_nat_eq : forall n m, true = (n =? m) -> n = m. Proof. Admitted.
 Lemma beq_nat_neq : forall n m, false = (n =? m) -> (n = m -> False). Proof. Admitted.
