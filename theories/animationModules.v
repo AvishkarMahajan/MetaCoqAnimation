@@ -170,20 +170,30 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
   | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
                                  (tApp fn [tVar str2%bs]) <%nat%>) t))
-
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lstTerm] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tApp fn lstTerm) <%nat%>) t))
+  
   | _ => None
  end.
+ 
+Definition flipConj (conj : term) : term :=
+ match conj with
+  | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => tApp <%eq%> [<%nat%>; tVar str2; tVar str1] 
+  | tApp <%eq%> [<%nat%>; tApp fn lstTerm; tVar str1] => tApp <%eq%> [<%nat%>; tVar str1; tApp fn lstTerm]
+  | t' => t'
+ end. 
 
 (* Instantiate partialGuard with Identity * No need to check for known vars when animating guard condition since all
 vars should be known at this point in the computation *)
 
  Definition animateOneConjSuccGuard (conj : term) (partialGuard : term) :  term :=
   match conj with
-  | tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]] =>
+  | tApp <%eq%> [<%nat%>; tApp fn1 lstStr1; tApp fn2 lstStr2] =>
     tApp (tConst <? andb ?> [])
          [ partialGuard
-         ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 [tVar varStr1]
-         ; tApp fn2 [tVar varStr2]]]
+         ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 lstStr1
+         ; tApp fn2 lstStr2]]
   | _ => <% false %>
   end.
 
@@ -194,7 +204,14 @@ Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : 
     | Some t'' => Some (app knownVar (extractOrderedVars conj), t'')
     | None => None
     end)
-  else None.
+  else (if isListSubStr (tl (extractOrderedVars (flipConj conj))) knownVar then
+          (let t' := animateOneConjSucc (flipConj conj) partialProg in
+           match t' with
+            | Some t'' => Some (app knownVar (extractOrderedVars (flipConj conj)), t'')
+            | None => None
+           end) 
+         else None).   
+ 
 
 
 Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVar : list string)

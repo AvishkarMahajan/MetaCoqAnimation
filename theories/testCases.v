@@ -118,7 +118,7 @@ auto.
 rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
  Qed.
      
-(* Failing test case : conjunct b = e cannot be animated since known var 'b' is on LHS not RHS *)
+(* known var 'b' is on LHS not RHS *)
 
 
 
@@ -136,8 +136,19 @@ Definition foo''Term : term :=
          [tApp <%eq%> [<%nat%>; tVar "c"; tApp (tVar "g3") [tVar "a"; tVar "e"]];
           tApp <%eq%> [<%nat%>; tVar "b"; tVar "e"]]]]).
 
-(* Fails with : no such var d  
-MetaRocq Run (animate'' foo''Term ["a" ; "b"] 30).*)
+
+MetaRocq Run (animate'' foo''Term ["a" ; "b"] 30).
+Next Obligation.
+Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
+remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
++ split.
+++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
+auto. 
++ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
+*  auto.
+* destruct H0. rewrite H0 in H1. destruct H1.
+rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
+ Qed.
 
 End s.
 
