@@ -81,6 +81,13 @@ Definition animate (kn : kername) : TemplateMonad unit :=
   | _ => tmFail "Not one type in mutually inductive block."
   end ;;
   ret tt. *) 
+  
+(* MetaRocq Run (t <- tmQuote ((fun x : nat => match x with
+                                            | S y  => Some [y; y]
+                                            | _ => None  
+                                            end))  ;; t' <- DB.undeBruijn t ;; tmPrint t').*)  
+
+
 
 
 Module animateEqual.
@@ -122,11 +129,14 @@ Fixpoint getListConjLetBind (bigConj : term) : list term :=
 
   | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [tApp <% @eq %> [<%nat%>; tVar str1; tVar str2]]
 
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] =>
-      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]]]
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst] =>
+      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst]]
+  
+  | tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1] =>
+      [tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1]]    
 
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
-      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]]]
+  (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
+      [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]]] *)
   | _ => []
  end.
 
@@ -134,23 +144,31 @@ Fixpoint getListConjLetBind (bigConj : term) : list term :=
 Fixpoint getListConjGuardCon (bigConj : term) : list term := 
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
-  | tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]] =>
-      [tApp <%eq%> [<%nat%>; tApp fn1 [tVar varStr1]; tApp fn2 [tVar varStr2]]] 
+  | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tApp fn2 lst2] =>
+      [tApp <%eq%> [<%nat%>; tApp fn1 lst1; tApp fn2 lst2]] 
   | _ => []
  end.
 
 (*Compute (getListConjGuardCon fooTerm).*)
+
+Fixpoint extractOrderedVarsHelper (ls : list term) : list string :=
+ match ls with 
+ | [] => []
+ | (tVar str) :: t => str :: (extractOrderedVarsHelper t)
+ | _ :: t => (extractOrderedVarsHelper t)
+ end. 
+ 
 
 
 (* extract ordered list of vars from conjunct *)
 Definition extractOrderedVars (t : term) : list string := 
   match t with
   | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [str1 ; str2]
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] => [str1 ; str2 ; str3]
-
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst] => str1 :: extractOrderedVarsHelper (lst)
+  | tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1] => app (extractOrderedVarsHelper (lst)) [str1]
+  
   (* Combine the pattern matches to handle fns of arbitrary arity *)
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] => [str1 ; str2]
-
+  
   | _ => nil
   end.
 
@@ -161,15 +179,15 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
   match conj with
   | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1; binder_relevance := Relevant |}
-                                 (tVar str2%bs) <%nat%>) t))
+                                 (tVar str2) <%nat%>) t))
 
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3]] =>
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3; tVar str4; tVar str5 ]] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-                                 (tApp fn [tVar str2%bs; tVar str3%bs]) <%nat%>) t))
+                                 (tApp fn [tVar str2; tVar str3; tVar str4; tVar str5]) <%nat%>) t))
 
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
+  (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-                                 (tApp fn [tVar str2%bs]) <%nat%>) t))
+                                 (tApp fn [tVar str2]) <%nat%>) t)) *)
   | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lstTerm] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
                                  (tApp fn lstTerm) <%nat%>) t))
@@ -236,11 +254,26 @@ Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVa
 
 (* Construct final function of shape fun a b : nat => ... option ([c ; d ; e]) *)
 
-Definition constrFn (letBind : term -> term) (guardCon : term) : term :=
-  tLambda {| binder_name := nNamed "a"%bs; binder_relevance := Relevant |} <%nat%>
-    (tLambda {| binder_name := nNamed "b"%bs; binder_relevance := Relevant |} (<%nat%>)
-      (letBind
-        (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
+Fixpoint constrFnStart (inputVars : list string) : term -> term :=
+ match inputVars with
+ | [] => fun t : term => t
+ | str :: rest => fun t => tLambda {| binder_name := nNamed str %bs; binder_relevance := Relevant |} <%nat%> ((constrFnStart rest) t)
+ end.
+
+Fixpoint constrRetBodylst (outputVars : list string) : term :=
+ match outputVars with
+  | [] => tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 0 [])
+                                     [<%nat%>]
+(*| [str] => tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
+                                  [<%nat%>; tVar str;
+                                   tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 0 [])
+                                     [<%nat%>]] *)
+  | str' :: rest =>  tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
+                               [<%nat%>; tVar str'; constrRetBodylst rest] 
+ end.                                                               
+
+Definition constrFn (inputVars : list string) (outputVars : list string) (letBind : term -> term) (guardCon : term) : term :=
+ (constrFnStart inputVars) (letBind (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
                 ; ci_npar := 0; ci_relevance := Relevant |}
                {| puinst := []
                 ; pparams := []
@@ -252,20 +285,16 @@ Definition constrFn (letBind : term -> term) (guardCon : term) : term :=
                   ; bbody :=
                        tApp (tConstruct {| inductive_mind := <? option ?>; inductive_ind := 0 |} 0 [])
                          [tApp <% @list %> [<%nat%>];
-                          tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
-                            [<%nat%>; tVar "c"%bs;
-                             tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
-                               [<%nat%>; tVar "d"%bs;
-                                tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 1 [])
-                                  [<%nat%>; tVar "e"%bs;
-                                   tApp (tConstruct {| inductive_mind := <? list ?>; inductive_ind := 0 |} 0 [])
-                                     [<%nat%>]]]]]
+                          (constrRetBodylst outputVars)]
                    |};
                    {| bcontext := []
                     ; bbody :=
                        tApp (tConstruct {| inductive_mind := <? option ?>; inductive_ind := 0 |} 1 [])
                          [tApp <% @list %> [<%nat%>]]
-                   |}]))).
+                   |}])). 
+
+
+
 
 Fixpoint animateOneConjGuardList (conj : list term) : term :=
   match conj with
@@ -276,19 +305,9 @@ Fixpoint animateOneConjGuardList (conj : list term) : term :=
     end
   end.
 
-(*animateOneConjSuccGuard *)
 
-
-
-
-Definition animate' (t : term) : TemplateMonad (nat -> nat -> (option (list nat))) :=
-  t' <- DB.deBruijn t ;;
-  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;;
-  tmPrint f ;;
-  ret f.
-
-Definition genFun (fooTerm : term) (inputVars : list string) (fuel : nat) : term :=
-  constrFn
+Definition genFun (fooTerm : term) (inputVars : list string) (outputVars : list string) (fuel : nat) : term :=
+  constrFn inputVars outputVars
     (animateListConj
        (getListConjLetBind fooTerm) nil inputVars fuel (fun t : term => t))
     (animateOneConjGuardList (getListConjGuardCon fooTerm)). 
@@ -723,8 +742,74 @@ Definition removeopTm (o : option term) : term :=
  match o with
   | Some t => t
   | None => errTm
- end.  
+ end. 
+ 
+(* 
+tApp
+             (tConstruct
+                {|
+                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+                |} 0 [])
+             [tApp
+                (tInd
+                   {|
+                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+                   |} [])
+                [<%nat%>];
+              tApp
+                (tConstruct
+                   {|
+                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+                   |} 1 [])
+                [<%nat%>; tVar "y";
+                 tApp
+                   (tConstruct
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                        inductive_ind := 0
+                      |} 1 [])
+                   [<%nat%>; tVar "y";
+                    tApp
+                      (tConstruct
+                         {|
+                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                           inductive_ind := 0
+                         |} 0 [])
+                      [<%nat%>]]]] 
+*)                      
 
+Fixpoint retVarVals' (lst : list string) : term :=
+ match lst with
+ | [] =>  tApp (tConstruct
+                         {|
+                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                           inductive_ind := 0
+                         |} 0 [])
+                      [<%nat%>]
+ | h :: rest => tApp
+                   (tConstruct
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                        inductive_ind := 0
+                      |} 1 [])
+                   [<%nat%>; tVar h; retVarVals' rest]                     
+                      
+ end.
+
+Definition retVarVals (lst : list string) : term :=
+ tApp (tConstruct
+                {|
+                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+                |} 0 [])
+             [tApp
+                (tInd
+                   {|
+                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+                   |} [])
+                [<%nat%>]; (retVarVals' lst)].
+             
+  
+                        
 End typeConstrPatMatch.
 
 Module typeConstrReduce.

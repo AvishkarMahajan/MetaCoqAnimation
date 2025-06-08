@@ -21,7 +21,7 @@ Variable g3 : nat -> nat -> nat.
 *)
 
 (* Can also use context ? *) 
-Context (g1 : nat -> nat) (g2 : nat -> nat) (g3 : nat -> nat -> nat).
+Context (g1 : nat -> nat) (g2 : nat -> nat) (g3 : nat -> nat -> nat) (g4 : nat -> nat -> nat -> nat -> nat).
 
 Lemma beq_nat_eq : forall n m, true = (n =? m) -> n = m. Proof. Admitted.
 Lemma beq_nat_neq : forall n m, false = (n =? m) -> (n = m -> False). Proof. Admitted.
@@ -31,7 +31,7 @@ Lemma beq_nat_neq : forall n m, false = (n =? m) -> (n = m -> False). Proof. Adm
 Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (e = b /\ d = c /\ c = (g3 a e) /\ g1 d = g2 a) -> foo a b c d e.
  
-MetaRocq Run (general.animate <? foo ?>).
+
 
 
 
@@ -53,8 +53,8 @@ Definition soundness'' (f : (nat -> nat -> option (list nat))) : Type :=
 Check soundness''. *) 
  
   
-Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : TemplateMonad unit :=
-  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars fuel)  ;; 
+Definition animate'' (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
   lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
@@ -62,7 +62,7 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (fuel : nat) : T
        
 
 
-
+MetaRocq Run (general.animate <? foo ?>).
 
 Definition fooTerm : term := 
  (tApp <%and%>
@@ -74,7 +74,7 @@ Definition fooTerm : term :=
           tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]]]]]).
 
 
-MetaRocq Run (animate'' fooTerm ["a" ; "b"] 10).
+MetaRocq Run (animate'' fooTerm ["a"; "b"] ["c"; "d";"e"] 10).
 
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
@@ -104,7 +104,7 @@ Definition foo'Term : term :=
 
 
 
-MetaRocq Run (animate'' foo'Term ["a" ; "b"] 30).
+MetaRocq Run (animate'' foo'Term ["a" ; "b"] ["c"; "d";"e"] 30).
 
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
@@ -137,7 +137,9 @@ Definition foo''Term : term :=
           tApp <%eq%> [<%nat%>; tVar "b"; tVar "e"]]]]).
 
 
-MetaRocq Run (animate'' foo''Term ["a" ; "b"] 30).
+
+
+MetaRocq Run (animate'' foo''Term ["a" ; "b"] ["c"; "d";"e"] 30).
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
 remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
@@ -149,6 +151,31 @@ auto.
 * destruct H0. rewrite H0 in H1. destruct H1.
 rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
  Qed.
+
+
+Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
+ | cstr4 : forall a b c d e, (g1 d = g2 a /\ d = b /\  (g4 a e a e) = c /\ b = e ) -> foo4 a b c d e.
+ 
+MetaRocq Run (general.animate <? foo4 ?>).
+
+Definition foo4Term : term := 
+ (tApp <%and%>
+   [tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]];
+    tApp <%and%>
+      [tApp <%eq%> [<%nat%>; tVar "d"; tVar "b"];
+       tApp <%and%>
+         [tApp <%eq%> [<%nat%>; tApp (tVar "g4") [tVar "a"; tVar "e"; tVar "a"; tVar "e"]; tVar "c"];
+          tApp <%eq%> [<%nat%>; tVar "b"; tVar "e"]]]]).
+
+
+
+
+
+
+
+
+MetaRocq Run (animate'' foo4Term ["a" ; "b"] ["c"; "d";"e"] 100). 
+  
 
 End s.
 
