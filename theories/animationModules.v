@@ -392,6 +392,7 @@ Definition preProcCons (fuel : nat) (t : term) :=
  rev (snd (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))).
  
 
+
 Definition reduce2 (x : nat) : (option nat) :=
  match x with
   | S m => match m with
@@ -530,6 +531,54 @@ Parameter errorStr : string.
 Parameter errorlstNat : list nat.
 
 
+Fixpoint retVarVals' (lst : list string) : term :=
+ match lst with
+ | [] =>  tApp (tConstruct
+                         {|
+                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                           inductive_ind := 0
+                         |} 0 [])
+                      [<%nat%>]
+ | h :: rest => tApp
+                   (tConstruct
+                      {|
+                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                        inductive_ind := 0
+                      |} 1 [])
+                   [<%nat%>; tVar h; retVarVals' rest]                     
+                      
+ end.
+
+Definition retVarVals (lst : list string) : term :=
+ tApp (tConstruct
+                {|
+                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+                |} 0 [])
+             [tApp
+                (tInd
+                   {|
+                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+                   |} [])
+                [<%nat%>]; (retVarVals' lst)].
+             
+Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
+ match lst' with
+  | [] => []
+  | (h :: rest) => match h with
+                    | (str1, (tVar y), _) => if (String.eqb y outputVar) then [str1] else sortBindersOne outputVar rest 
+                    | _ => sortBindersOne outputVar rest
+                   end 
+ end.
+(* Check concat. 
+Check map.*)
+ 
+Definition sortBinders (outputVars : list string) (lst : list ((string × term) × list string)) : ((list string)) :=
+  concat (map (fun x : string => sortBindersOne x lst) outputVars). 
+(* Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
+        ("v6", tVar "a", [])])). *) 
+        
+Compute (retVarVals ["v6"]).                      
+ 
       
 Definition getCstrIndex (s : ((string × term) × list string)) : nat := (* Get index of typeCon *)
   
@@ -601,6 +650,8 @@ Fixpoint getCstrArityLst' (typeName : string) (r : list (string × list nat)) : 
   
 Definition getCstrArityLst (typeName : string) (muts : list mutual_inductive_body) : list nat :=
  getCstrArityLst' typeName (extractTypeCsArlst muts).
+ 
+(* Compute (<% list nat %>). *)
    
 
 Definition mkNoneBranch (n : nat) : branch term := mkNoneBr n (tApp
@@ -609,11 +660,12 @@ Definition mkNoneBranch (n : nat) : branch term := mkNoneBr n (tApp
                         inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                         inductive_ind := 0
                       |} 1 [])
-                   [tInd
-                      {|
-                        inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
-                        inductive_ind := 0
-                      |} []]). (* Takes a arity and produces a branch term where return value is none *)
+                   [tApp
+         (tInd
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+            |} [])
+         [<%nat%>]]). (* Takes a arity and produces a branch term where return value is none *)
 
 Definition mkSomeBranch (l : list string) (t : term) : branch term := 
   {|
@@ -672,11 +724,12 @@ Definition mkCase'  (s' : ((string × term) × list string) × list term ) (l : 
                 inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "option"%bs);
                 inductive_ind := 0
               |} [])
-           [tInd
-              {|
-                inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "bool"%bs);
-                inductive_ind := 0
-              |} []])
+           [tApp
+         (tInd
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+            |} [])
+         [<%nat%>]])
      |} (tVar (fst (fst s))) (* Should get changed to a tRel after deBruijning *)                                                                                                        
       (mkBrLst s l t)). 
 
@@ -686,18 +739,19 @@ MetaRocq Quote Definition oBoolT := (Some true).
       
 Definition identityTerm : term := idTerm. (* term rep of id function*)
 
-Definition optBoolTrue : term := oBoolT. (* term rep of some true *)
+(*Definition optBoolTrue : term := oBoolT. (* term rep of some true *)*)
 
 
 
 (* Need to modify *)      
 
 
-Fixpoint mkPmNested (ls : list (((string × term) × list string) × list term)) (mut : list mutual_inductive_body) : term :=
+Fixpoint mkPmNested (ls : list (((string × term) × list string) × list term)) (outputVars : list string) 
+            (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => identityTerm
-  | (h :: nil) => mkCase' h mut optBoolTrue  
-  | (h :: t) => mkCase' h mut (mkPmNested t mut)
+  | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (map fst ls)))  
+  | (h :: t) => mkCase' h mut (mkPmNested t outputVars mut)
  end. 
  
 (*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
@@ -713,26 +767,32 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
 (* Need to modify*) 
 (*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
 
-Definition mkLam' (ls : list (((string × term) × list string))) (mut : list mutual_inductive_body) : option term :=
+Definition mkLam' (ls : list (((string × term) × list string))) (outputVars : list string) (mut : list mutual_inductive_body) : option term :=
  match ls with 
  | [] => None
  | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
-                                 (typeInfo) (mkPmNested ((preProcConsTypeVar ls ls)) mut))
+                                 (typeInfo) (mkPmNested ((preProcConsTypeVar ls ls)) outputVars mut))
 
  
  
  | _ => None                                
  end.
  
-Definition mkLam (ls : list (((string × term) × list string))) (mut : list (option mutual_inductive_body)) : option term :=
-  mkLam' ls (removeOpt mut).    
+Definition mkLam (ls : list (((string × term) × list string))) (outputVars : list string) (mut : list (option mutual_inductive_body)) : option term :=
+  mkLam' ls outputVars (removeOpt mut).    
  
 
 
-Definition mkLamfromInd (p : program) (fuel : nat) : option term :=
+Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : option term :=
  let td := extractTypeData p in
   let pmd := extractPatMatData p in
-   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) td) else None. 
+   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
+
+Definition mkLamfromInd2 (conjTm : term) (p : program) (outputVars : list string) (fuel : nat) : option term :=
+ let td := extractTypeData p in
+  let pmd := conjTm in
+   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
+      
    
 (* Compute (mkLamfromInd baz'Term 20).*)
 
@@ -778,36 +838,7 @@ tApp
                       [<%nat%>]]]] 
 *)                      
 
-Fixpoint retVarVals' (lst : list string) : term :=
- match lst with
- | [] =>  tApp (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [<%nat%>]
- | h :: rest => tApp
-                   (tConstruct
-                      {|
-                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                        inductive_ind := 0
-                      |} 1 [])
-                   [<%nat%>; tVar h; retVarVals' rest]                     
-                      
- end.
 
-Definition retVarVals (lst : list string) : term :=
- tApp (tConstruct
-                {|
-                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
-                |} 0 [])
-             [tApp
-                (tInd
-                   {|
-                     inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-                   |} [])
-                [<%nat%>]; (retVarVals' lst)].
-             
   
                         
 End typeConstrPatMatch.

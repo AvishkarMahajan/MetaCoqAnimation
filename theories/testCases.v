@@ -175,6 +175,8 @@ Definition foo4Term : term :=
 
 
 MetaRocq Run (animate'' foo4Term ["a" ; "b"] ["c"; "d";"e"] 100). 
+Next Obligation. Admitted.
+
   
 
 End s.
@@ -192,8 +194,27 @@ Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
          
 
 MetaRocq Quote Recursively Definition tupleTerm := tuple.
+MetaRocq Run (general.animate <? tuple ?>).
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd tupleTerm 25))))) ;; tmUnquote t >>= tmPrint).
+Definition tupleTermConj : term := 
+ (tApp <%eq%>
+   [tApp
+      (tInd
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |}
+         [])
+      [<%nat%>; <%nat%>];
+    tApp
+      (tConstruct
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |} 0
+         [])
+      [<%nat%>; <%nat%>; tVar "a";
+       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]];
+    tVar "y"]).
+
+
+
+MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; tmUnquote t >>= tmPrint).
+Compute (* typeConstrPatMatch.removeopTm (DB.deBruijnOption) *) ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))).
 
 
 
@@ -202,7 +223,7 @@ Inductive triple' : nat -> list nat -> Prop :=
  
 MetaRocq Quote Recursively Definition triple'Term := triple'.
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd triple'Term 30))))) ;; tmUnquote t >>= tmPrint).
+MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd triple'Term ["a"] 30))))) ;; tmUnquote t >>= tmPrint).
 
 (* 4 *)
 
