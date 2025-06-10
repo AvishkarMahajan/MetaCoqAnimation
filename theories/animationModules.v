@@ -746,13 +746,16 @@ Definition identityTerm : term := idTerm. (* term rep of id function*)
 (* Need to modify *)      
 
 
-Fixpoint mkPmNested (ls : list (((string × term) × list string) × list term)) (outputVars : list string) 
+Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputVars : list string) 
             (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => identityTerm
-  | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (map fst ls)))  
-  | (h :: t) => mkCase' h mut (mkPmNested t outputVars mut)
+  | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (ls')))  
+  | (h :: t) => mkCase' h mut (mkPmNested' t ls' outputVars mut)
  end. 
+Definition mkPmNested (ls' : list (((string × term) × list string))) (outputVars : list string) 
+            (mut : list mutual_inductive_body) : term :=
+            mkPmNested' (preProcConsTypeVar ls' ls') ls' outputVars mut.
  
 (*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
    mkPmNested'  (filterTypeCon ls mut) mut.*)
@@ -771,7 +774,7 @@ Definition mkLam' (ls : list (((string × term) × list string))) (outputVars : 
  match ls with 
  | [] => None
  | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
-                                 (typeInfo) (mkPmNested ((preProcConsTypeVar ls ls)) outputVars mut))
+                                 (typeInfo) (mkPmNested ls outputVars mut))
 
  
  
