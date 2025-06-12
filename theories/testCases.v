@@ -171,12 +171,41 @@ Definition foo4Term : term :=
 
 
 
+Definition justAnimate (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
+
+MetaRocq Run (justAnimate foo4Term ["a" ; "b"] ["c"; "d";"e"] 100). 
 
 
 
-MetaRocq Run (animate'' foo4Term ["a" ; "b"] ["c"; "d";"e"] 100). 
-Next Obligation. Admitted.
 
+MetaRocq Run (justAnimate foo4Term ["a" ; "d"] ["c"; "e"] 100). 
+
+
+Inductive foo5 : nat -> nat -> Prop :=
+ | cstr5 : forall a b, a = b  -> foo5 a b.
+ 
+MetaRocq Run (general.animate <? foo5 ?>).
+
+Definition foo5Term : term := 
+ (tApp <%eq%> [<%nat%>; tVar "a"; tVar "b"]).
+
+
+Definition justAnimate2 (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- @tmUnquoteTyped (nat -> (option (list nat))) t' ;; tmPrint f ;;
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
+
+MetaRocq Run (justAnimate2 foo5Term ["a"] ["b"] 100). 
+ 
   
 
 End s.
@@ -214,16 +243,37 @@ Definition tupleTermConj : term :=
 
 
 MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; tmUnquote t >>= tmPrint).
-Compute (* typeConstrPatMatch.removeopTm (DB.deBruijnOption) *) ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))).
+(*Compute (* typeConstrPatMatch.removeopTm (DB.deBruijnOption) *) ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))). *)
 
 
 
-Inductive triple' : nat -> list nat -> Prop :=
- | triple'Con : forall (a : nat), forall (y : list nat), (a :: [])  = y -> triple' a  y.  (*RHS of equality not v imp*)
+Inductive singleton : nat -> list nat -> Prop :=
+ | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
-MetaRocq Quote Recursively Definition triple'Term := triple'.
+MetaRocq Quote Recursively Definition singletonTerm := singleton.
+MetaRocq Run (general.animate <? singleton ?>).
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd triple'Term ["a"] 30))))) ;; tmUnquote t >>= tmPrint).
+Definition singletonTermConj : term :=
+ (tApp <%eq%>
+   [tApp
+      (tInd
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
+         [])
+      [<%nat%>];
+    tApp
+      (tConstruct
+         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
+         [])
+      [<%nat%>; tVar "a";
+       tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>]];
+    tVar "y"]).
+
+MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 singletonTermConj singletonTerm ["a"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 (* 4 *)
 
@@ -241,9 +291,27 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  
 
 MetaRocq Quote Recursively Definition baz'Term := baz'. 
+MetaRocq Run (general.animate <? baz' ?>).
+Definition baz'TermConj : term :=
+ (tApp <%eq%>
+   [tInd {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType"); inductive_ind := 0 |} [];
+    tApp
+      (tConstruct
+         {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType"); inductive_ind := 0 |} 0 [])
+      [tApp
+         (tConstruct
+            {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType'"); inductive_ind := 0 |} 0
+            [])
+         [tVar "a"];
+       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "x"]];
+    tVar "y"]).
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd baz'Term 30))))) ;; tmUnquote t >>= tmPrint).
 
+
+
+MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["x" ; "a"] 25))))) ;; tmUnquote t >>= tmPrint).
+
+MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["a" ; "x"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 
 
