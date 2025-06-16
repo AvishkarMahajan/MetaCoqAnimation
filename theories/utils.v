@@ -516,5 +516,19 @@ Definition animate (kn : kername) : TemplateMonad unit :=
   | _ => tmFail "Not one type in mutually inductive block."
   end ;;
   ret tt. 
+
+
+(* Definition animate2 (kn : kername) : TemplateMonad (list named_term) :=
+  mut <- tmQuoteInductive kn ;;
+  match ind_bodies mut with
+  | [ one ] =>
+    conjuncts <- collect_conjuncts (ind_ctors one) ;;
+    (*tmPrint conjuncts ;;*)
+    (* sepConj <- tAppDes conjuncts ;; *)
+    (* there has to be something clever here *)
+     ret (conjuncts)
+  | _ => tmFail "Not one type in mutually inductive block."
+  end. (*;;
+  ret tt.*)  *) 
 End general. 
 

@@ -59,10 +59,18 @@ Definition animate'' (conjs : term) (inputVars : (list string)) (outputVars : li
   lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
   tmMsg "done".
+
+MetaRocq Run (general.animate <? foo ?>).  
+
+
+  
+
+
+  
+  
+
        
 
-
-MetaRocq Run (general.animate <? foo ?>).
 
 Definition fooTerm : term := 
  (tApp <%and%>
@@ -73,6 +81,7 @@ Definition fooTerm : term :=
          [tApp <%eq%> [<%nat%>; tVar "c"; tApp (tVar "g3") [tVar "a"; tVar "e"]];
           tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]]]]]).
 
+(*MetaRocq Run (fooTerm <- general.animate2 <? foo ?> ;; animate'' fooTerm ["a"; "b"] ["c"; "d";"e"] 10). *)
 
 MetaRocq Run (animate'' fooTerm ["a"; "b"] ["c"; "d";"e"] 10).
 
@@ -434,6 +443,23 @@ Definition fooCon'Term :=
 Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooCon'Term) (typeConstrReduce.deConConj2 fooCon'Term) 20)).  
 
 (* Returns conjuncts corresponding to : b = 0 , d = S c *)
+
+(*Definition animateAuto (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  mut <- tmQuoteInductive kn ;;
+  match ind_bodies mut with
+  | [ one ] =>
+    conjs <- general.collect_conjuncts (ind_ctors one) ;;
+    
+    t' <- DB.deBruijn (animateEqual.genFun conj inputVars outputVars fuel)  ;; 
+    f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
+    lemma1_name <- tmFreshName "lemma" ;;
+    lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
+    tmMsg "done"
+    (* sepConj <- tAppDes conjuncts ;; *)
+    (* there has to be something clever here *)
+     (*ret conjuncts *)
+  | _ => tmFail "Not one type in mutually inductive block." 
+  end. *)
 
 
 
