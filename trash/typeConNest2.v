@@ -5,7 +5,7 @@ Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 
 Require Import Animation.utils.
-Require Import Animation.animationFullExProof.
+(*Require Import Animation.animationFullExProof.*)
 
 Import MetaRocqNotations.
 
@@ -40,10 +40,10 @@ Definition polylist (A : Type) (x : list A) : option bool :=
   | _ => None  
  end.
  
-MetaRocq Run (t <- tmQuote (fun A : Type => (fun x : list A => match x with
-                                                              | @nil _ => Some true
-                                                              | _ => None  
-                                                             end))  ;; tmPrint t).
+MetaRocq Run (t <- tmQuote ((fun x : list nat => match x with
+                                            | [S y ; S z ; S k] => Some [y; z; k]
+                                            | _ => None  
+                                            end))  ;; t' <- DB.undeBruijn t ;; tmPrint t').
 
 
 MetaRocq Run (t <- tmQuote ((*fun A : Type => *)(fun x : (list (list nat)) => match x with
