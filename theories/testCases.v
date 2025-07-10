@@ -444,6 +444,52 @@ Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typ
 
 (* Returns conjuncts corresponding to : b = 0 , d = S c *)
 
+
+
+(* Recursive Predicate *)
+
+Inductive recPred : nat -> nat -> Prop :=
+ | recPredBase : recPred 1 3
+ | recPredInd : forall a b, recPred a b  -> recPred (S a) (S b).
+ 
+(* Desired output function with a as input, b as output *)
+
+Fixpoint recPredfn (a : nat) : option nat :=
+ match a with
+ | 1 => Some 3
+ | S a' => match recPredfn a' with
+           | None => None
+           | Some b' => Some (S b')
+           end
+ | _ => None          
+ end. 
+ 
+(* General case 
+
+Clause : recPred a1 a2 -> recPred (cons1 a1 a2) (cons2 a1 a2) 
+
+first argument input, second argument output.
+
+=
+Fixpoint recPredfn (a1 : nat) : option type 
+...
+
+ match a1 with
+  | cons1 a1' a2' => match recPredfn a1' with
+                      | Some x => if (Eqb a2' x) then Some (cons2 a1' a2') else None
+                      | _  => None
+  
+1 Clause = 1 match statement 
+*)                      
+        
+                                  
+ 
+
+  
+ 
+
+
+
 (*Definition animateAuto (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   mut <- tmQuoteInductive kn ;;
   match ind_bodies mut with
