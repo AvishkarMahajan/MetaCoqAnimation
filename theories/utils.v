@@ -487,8 +487,8 @@ Definition animate_conjunct
   (* tl here only works because we assume there is only one, large, nested "and" conjunct *)
   t_named <- DB.undeBruijn' (tl (map (fun arg => binder_name (decl_name arg)) (cstr_args c))) t ;;
   (* now you can work with the named representation, as you can see below: *)
-  tmPrint t_named ;;
-  ret hole.
+  (*tmPrint t_named*) 
+  ret t_named.
 
 Fixpoint collect_conjuncts (cs : list constructor_body) : TemplateMonad (list named_term) :=
   match cs with
@@ -516,6 +516,21 @@ Definition animate (kn : kername) : TemplateMonad unit :=
   | _ => tmFail "Not one type in mutually inductive block."
   end ;;
   ret tt. 
+ 
+ 
+ Definition animate2 (kn : kername) : TemplateMonad (named_term):=
+  mut <- tmQuoteInductive kn ;;
+  match ind_bodies mut with
+  | [ one ] =>
+    conjuncts <- collect_conjuncts (ind_ctors one) ;;
+    (* sepConj <- tAppDes conjuncts ;; *)
+    (* there has to be something clever here *)
+    match conjuncts with
+     | [single] => ret single
+     | _ => tmFail "Not one type in mutually inductive block."
+    end 
+  | _ => tmFail "Not one type in mutually inductive block."
+  end.  
 
 
 (* Definition animate2 (kn : kername) : TemplateMonad (list named_term) :=

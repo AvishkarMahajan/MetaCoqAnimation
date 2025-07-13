@@ -53,37 +53,17 @@ Definition soundness'' (f : (nat -> nat -> option (list nat))) : Type :=
 Check soundness''. *) 
  
   
-Definition animate'' (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition animate'' (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
   lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
   tmMsg "done".
 
-MetaRocq Run (general.animate <? foo ?>).  
 
 
-  
-
-
-  
-  
-
-       
-
-
-Definition fooTerm : term := 
- (tApp <%and%>
-   [tApp <%eq%> [<%nat%>; tVar "e"; tVar "b"];
-    tApp <%and%>
-      [tApp <%eq%> [<%nat%>; tVar "d"; tVar "c"];
-       tApp <%and%>
-         [tApp <%eq%> [<%nat%>; tVar "c"; tApp (tVar "g3") [tVar "a"; tVar "e"]];
-          tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]]]]]).
-
-(*MetaRocq Run (fooTerm <- general.animate2 <? foo ?> ;; animate'' fooTerm ["a"; "b"] ["c"; "d";"e"] 10). *)
-
-MetaRocq Run (animate'' fooTerm ["a"; "b"] ["c"; "d";"e"] 10).
+MetaRocq Run (animate'' <? foo ?> ["a"; "b"] ["c"; "d";"e"] 10).
 
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
@@ -100,20 +80,8 @@ rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
 Inductive foo' : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr' : forall a b c d e, (g1 d = g2 a /\ d = c /\ c = (g3 a e) /\ e = b ) -> foo' a b c d e.
  
-MetaRocq Run (general.animate <? foo' ?>).
 
-Definition foo'Term : term := 
- (tApp <%and%>
-   [tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]];
-    tApp <%and%>
-      [tApp <%eq%> [<%nat%>; tVar "d"; tVar "c"];
-       tApp <%and%>
-         [tApp <%eq%> [<%nat%>; tVar "c"; tApp (tVar "g3") [tVar "a"; tVar "e"]];
-          tApp <%eq%> [<%nat%>; tVar "e"; tVar "b"]]]]).
-
-
-
-MetaRocq Run (animate'' foo'Term ["a" ; "b"] ["c"; "d";"e"] 30).
+MetaRocq Run (animate'' <? foo' ?> ["a" ; "b"] ["c"; "d";"e"] 30).
 
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
@@ -134,21 +102,11 @@ rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
 Inductive foo'' : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr'' : forall a b c d e, (g1 d = g2 a /\ d = c /\ c = (g3 a e) /\ b = e ) -> foo'' a b c d e.
  
-MetaRocq Run (general.animate <? foo'' ?>).
-
-Definition foo''Term : term := 
-(tApp <%and%>
-   [tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]];
-    tApp <%and%>
-      [tApp <%eq%> [<%nat%>; tVar "d"; tVar "c"];
-       tApp <%and%>
-         [tApp <%eq%> [<%nat%>; tVar "c"; tApp (tVar "g3") [tVar "a"; tVar "e"]];
-          tApp <%eq%> [<%nat%>; tVar "b"; tVar "e"]]]]).
 
 
 
 
-MetaRocq Run (animate'' foo''Term ["a" ; "b"] ["c"; "d";"e"] 30).
+MetaRocq Run (animate'' <? foo'' ?> ["a" ; "b"] ["c"; "d";"e"] 30).
 Next Obligation.
 Proof. unfold soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
 remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
@@ -165,22 +123,13 @@ rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
 Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr4 : forall a b c d e, (g1 d = g2 a /\ d = b /\  (g4 a e a e) = c /\ b = e ) -> foo4 a b c d e.
  
-MetaRocq Run (general.animate <? foo4 ?>).
-
-Definition foo4Term : term := 
- (tApp <%and%>
-   [tApp <%eq%> [<%nat%>; tApp (tVar "g1") [tVar "d"]; tApp (tVar "g2") [tVar "a"]];
-    tApp <%and%>
-      [tApp <%eq%> [<%nat%>; tVar "d"; tVar "b"];
-       tApp <%and%>
-         [tApp <%eq%> [<%nat%>; tApp (tVar "g4") [tVar "a"; tVar "e"; tVar "a"; tVar "e"]; tVar "c"];
-          tApp <%eq%> [<%nat%>; tVar "b"; tVar "e"]]]]).
 
 
 
 
 
-Definition justAnimate (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
@@ -188,24 +137,22 @@ Definition justAnimate (conjs : term) (inputVars : (list string)) (outputVars : 
   tmMsg "done". 
 
 
-MetaRocq Run (justAnimate foo4Term ["a" ; "b"] ["c"; "d";"e"] 100). 
+MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] 100). 
 
 
 
 
-MetaRocq Run (justAnimate foo4Term ["a" ; "d"] ["c"; "e"] 100). 
+MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "d"] ["c"; "e"] 100). 
 
 
 Inductive foo5 : nat -> nat -> Prop :=
  | cstr5 : forall a b, a = b  -> foo5 a b.
  
-MetaRocq Run (general.animate <? foo5 ?>).
-
-Definition foo5Term : term := 
- (tApp <%eq%> [<%nat%>; tVar "a"; tVar "b"]).
 
 
-Definition justAnimate2 (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+
+Definition justAnimate2 (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
   f <- @tmUnquoteTyped (nat -> (option (list nat))) t' ;; tmPrint f ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
@@ -213,7 +160,7 @@ Definition justAnimate2 (conjs : term) (inputVars : (list string)) (outputVars :
   tmMsg "done". 
 
 
-MetaRocq Run (justAnimate2 foo5Term ["a"] ["b"] 100). 
+MetaRocq Run (justAnimate2 <? foo5 ?> ["a"] ["b"] 100). 
  
   
 
