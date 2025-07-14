@@ -56,10 +56,11 @@ Check soundness''. *)
 Definition animate'' (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
+  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;; tmDefinition (String.append (snd kn) "Fn") f ;;
   lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;;
   tmMsg "done".
+  
 
 
 
@@ -131,7 +132,7 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
 Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;;
+  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; (*tmPrint f ;;*) tmDefinition (String.append (snd kn) "Fn") f ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
@@ -142,7 +143,7 @@ MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] 100).
 
 
 
-MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "d"] ["c"; "e"] 100). 
+(*MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "d"] ["c"; "e"] 100). *)
 
 
 Inductive foo5 : nat -> nat -> Prop :=
@@ -154,7 +155,7 @@ Inductive foo5 : nat -> nat -> Prop :=
 Definition justAnimate2 (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- @tmUnquoteTyped (nat -> (option (list nat))) t' ;; tmPrint f ;;
+  f <- @tmUnquoteTyped (nat -> (option (list nat))) t' ;; tmDefinition (String.append (snd kn) "Fn") f ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
@@ -165,6 +166,10 @@ MetaRocq Run (justAnimate2 <? foo5 ?> ["a"] ["b"] 100).
   
 
 End s.
+
+Check foo4Fn.
+
+Print TemplateMonad.
 
           
 
@@ -177,29 +182,15 @@ End s.
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
  | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y.  (*RHS of equality not v imp*)
          
-
+(*MetaRocq Run (prog <- tmQuoteRecTransp <? tuple ?> false ;; tmPrint prog).
+Compute (declarations (fst tupleTerm)). *)
 MetaRocq Quote Recursively Definition tupleTerm := tuple.
-MetaRocq Run (general.animate <? tuple ?>).
-
-Definition tupleTermConj : term := 
- (tApp <%eq%>
-   [tApp
-      (tInd
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |}
-         [])
-      [<%nat%>; <%nat%>];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |} 0
-         [])
-      [<%nat%>; <%nat%>; tVar "a";
-       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]];
-    tVar "y"]).
 
 
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; tmUnquote t >>= tmPrint).
-(*Compute (* typeConstrPatMatch.removeopTm (DB.deBruijnOption) *) ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))). *)
+
+
+MetaRocq Run (tupleTermConj <- general.animate2 <? tuple ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 
 
@@ -207,29 +198,9 @@ Inductive singleton : nat -> list nat -> Prop :=
  | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
 MetaRocq Quote Recursively Definition singletonTerm := singleton.
-MetaRocq Run (general.animate <? singleton ?>).
 
-Definition singletonTermConj : term :=
- (tApp <%eq%>
-   [tApp
-      (tInd
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
-         [])
-      [<%nat%>];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
-         [])
-      [<%nat%>; tVar "a";
-       tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>]];
-    tVar "y"]).
 
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 singletonTermConj singletonTerm ["a"] 25))))) ;; tmUnquote t >>= tmPrint).
+MetaRocq Run (singletonTermConj <- general.animate2 <? singleton ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 singletonTermConj singletonTerm ["a"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 (* 4 *)
 
@@ -247,27 +218,11 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  
 
 MetaRocq Quote Recursively Definition baz'Term := baz'. 
-MetaRocq Run (general.animate <? baz' ?>).
-Definition baz'TermConj : term :=
- (tApp <%eq%>
-   [tInd {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType"); inductive_ind := 0 |} [];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType"); inductive_ind := 0 |} 0 [])
-      [tApp
-         (tConstruct
-            {| inductive_mind := (MPfile ["testCases"; "Animation"], "myType'"); inductive_ind := 0 |} 0
-            [])
-         [tVar "a"];
-       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "x"]];
-    tVar "y"]).
 
 
+MetaRocq Run (baz'TermConj <- general.animate2 <? baz' ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["x" ; "a"] 25))))) ;; tmUnquote t >>= tmPrint).
 
-
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["x" ; "a"] 25))))) ;; tmUnquote t >>= tmPrint).
-
-MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["a" ; "x"] 25))))) ;; tmUnquote t >>= tmPrint).
+MetaRocq Run (baz'TermConj <- general.animate2 <? baz' ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["a" ; "x"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 
 
@@ -282,52 +237,8 @@ MetaRocq Run (t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption
 Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon : forall a b c d,  [1 ; S c]  = [S b ; d]  -> fooCon a b c d.
  
-MetaRocq Run (general.animate <? fooCon ?>).
+MetaRocq Run (t<- general.animate2 <? fooCon ?> ;; tmDefinition "fooConTerm" t).
 
-Definition fooConTerm : term :=
- (tApp <%eq%>
-   [tApp
-      (tInd
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
-         [])
-      [<%nat%>];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
-         [])
-      [<%nat%>;
-       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-         [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []];
-       tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-            |} 1 [])
-         [<%nat%>;
-          tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "c"];
-          tApp
-            (tConstruct
-               {|
-                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-               |} 0 [])
-            [<%nat%>]]];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
-         [])
-      [<%nat%>; tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"];
-       tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-            |} 1 [])
-         [<%nat%>; tVar "d";
-          tApp
-            (tConstruct
-               {|
-                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-               |} 0 [])
-            [<%nat%>]]]]).
 
 
 Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooConTerm) (typeConstrReduce.deConConj2 fooConTerm) 20)).  
@@ -339,52 +250,9 @@ Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typ
 Inductive fooCon' : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon' : forall a b c d, [S b ; d] = [1 ; S c]  -> fooCon' a b c d.
  
-MetaRocq Run (general.animate <? fooCon' ?>).
+MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;; tmDefinition "fooCon'Term" t).
 
-Definition fooCon'Term := 
- (tApp <%eq%>
-   [tApp
-      (tInd
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |}
-         [])
-      [<%nat%>];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
-         [])
-      [<%nat%>; tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"];
-       tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-            |} 1 [])
-         [<%nat%>; tVar "d";
-          tApp
-            (tConstruct
-               {|
-                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-               |} 0 [])
-            [<%nat%>]]];
-    tApp
-      (tConstruct
-         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1
-         [])
-      [<%nat%>;
-       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-         [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []];
-       tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-            |} 1 [])
-         [<%nat%>;
-          tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "c"];
-          tApp
-            (tConstruct
-               {|
-                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
-               |} 0 [])
-            [<%nat%>]]]]).
+
 
 
 Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooCon'Term) (typeConstrReduce.deConConj2 fooCon'Term) 20)).  
