@@ -132,13 +132,15 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
 Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; (*tmPrint f ;;*) tmDefinition (String.append (snd kn) "Fn") f ;;
+  f <- tmUnquote t' ;; (*tmPrint f ;;*) tmDefinition (String.append (snd kn) "Fn") f ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
 
 
 MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] 100). 
+
+Print foo4Fn.
 
 
 
@@ -152,16 +154,14 @@ Inductive foo5 : nat -> nat -> Prop :=
 
 
 
-Definition justAnimate2 (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
-  conjs <- general.animate2 kn ;;
-  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- @tmUnquoteTyped (nat -> (option (list nat))) t' ;; tmDefinition (String.append (snd kn) "Fn") f ;;
-  (* lemma1_name <- tmFreshName "lemma" ;;
-  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
-  tmMsg "done". 
 
 
-MetaRocq Run (justAnimate2 <? foo5 ?> ["a"] ["b"] 100). 
+MetaRocq Run (justAnimate <? foo5 ?> ["a"] ["b"] 100).
+
+Print foo5Fn.
+
+Example testfoo5 : (my_projT2 foo5Fn) 1 = Some [1]. 
+Proof. reflexivity. Qed.
  
   
 
@@ -169,7 +169,6 @@ End s.
 
 Check foo4Fn.
 
-Print TemplateMonad.
 
           
 
@@ -229,33 +228,42 @@ MetaRocq Run (baz'TermConj <- general.animate2 <? baz' ?> ;; t <- tmEval all  (t
 
 
 
+Definition justAnimate' (kn : kername) (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  (* conjs <- general.animate2 kn ;; *)
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- tmUnquote t' ;; tmDefinition (String.append (snd kn) "Fn") f ;;
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
 
 
 
 
 
 Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
- | cstrCon : forall a b c d,  [1 ; S c]  = [S b ; d]  -> fooCon a b c d.
+ | cstrCon : forall a b c d,  [S a ; S c]  = [S b ; d]  -> fooCon a b c d.
  
-MetaRocq Run (t<- general.animate2 <? fooCon ?> ;; tmDefinition "fooConTerm" t).
+MetaRocq Run (t <- general.animate2 <? fooCon ?> ;;  justAnimate' <? fooCon ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["a" ; "c"] ["b" ; "d"] 70) .
+
+Print fooConFn.
 
 
 
-Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooConTerm) (typeConstrReduce.deConConj2 fooConTerm) 20)).  
+(* Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooConTerm) (typeConstrReduce.deConConj2 fooConTerm) 20)).  *)
 
 (* Returns conjuncts corresponding to : 0 = b , S c = d *)
 
 
 
 Inductive fooCon' : nat -> nat -> nat -> nat -> Prop :=
- | cstrCon' : forall a b c d, [S b ; d] = [1 ; S c]  -> fooCon' a b c d.
+ | cstrCon' : forall a b c d, [S b ; d] = [S a ; S c]  -> fooCon' a b c d.
  
-MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;; tmDefinition "fooCon'Term" t).
+MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;;  justAnimate' <? fooCon' ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["c" ; "b"] ["a" ; "d"] 70) .
+
+Print fooCon'Fn.
 
 
-
-
-Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooCon'Term) (typeConstrReduce.deConConj2 fooCon'Term) 20)).  
 
 (* Returns conjuncts corresponding to : b = 0 , d = S c *)
 
