@@ -139,7 +139,7 @@ Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : 
 
 
 MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] 100). 
-
+(*Use tmEval *)
 Print foo4Fn.
 
 
@@ -181,25 +181,26 @@ Check foo4Fn.
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
  | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y.  (*RHS of equality not v imp*)
          
-(*MetaRocq Run (prog <- tmQuoteRecTransp <? tuple ?> false ;; tmPrint prog).
-Compute (declarations (fst tupleTerm)). *)
-MetaRocq Quote Recursively Definition tupleTerm := tuple.
+(* MetaRocq Run (prog <- tmQuoteRecTransp  tuple  false ;; tmPrint prog).
 
+MetaRocq Quote Definition tupleTerm := tuple.
 
+Print tupleTerm. *)
+(* Print TemplateMonad.
 
+Check tuple. *)
 
+MetaRocq Run (tupleTermConj <- general.animate2 <? tuple ?> ;; tupleTerm <- tmQuoteRecTransp  tuple  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "tupleFn" f).
 
-MetaRocq Run (tupleTermConj <- general.animate2 <? tuple ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; tmUnquote t >>= tmPrint).
-
-
+Print tupleFn.
 
 Inductive singleton : nat -> list nat -> Prop :=
  | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
-MetaRocq Quote Recursively Definition singletonTerm := singleton.
+MetaRocq Run (termConj <- general.animate2 <? singleton ?> ;; termFull <- tmQuoteRecTransp  singleton  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull ["a"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "singletonFn" f).
 
+Print singletonFn.
 
-MetaRocq Run (singletonTermConj <- general.animate2 <? singleton ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 singletonTermConj singletonTerm ["a"] 25))))) ;; tmUnquote t >>= tmPrint).
 
 (* 4 *)
 
@@ -216,14 +217,12 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
  
 
-MetaRocq Quote Recursively Definition baz'Term := baz'. 
+
+MetaRocq Run (termConj <- general.animate2 <? baz' ?> ;; termFull <- tmQuoteRecTransp  baz'  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull ["x" ; "a"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "baz'Fn" f).
 
 
-MetaRocq Run (baz'TermConj <- general.animate2 <? baz' ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["x" ; "a"] 25))))) ;; tmUnquote t >>= tmPrint).
 
-MetaRocq Run (baz'TermConj <- general.animate2 <? baz' ?> ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 baz'TermConj baz'Term ["a" ; "x"] 25))))) ;; tmUnquote t >>= tmPrint).
-
-
+Print baz'Fn.
 
 
 
