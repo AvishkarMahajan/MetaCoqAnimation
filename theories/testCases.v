@@ -132,7 +132,10 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
 Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- tmUnquote t' ;; (*tmPrint f ;;*) tmDefinition (String.append (snd kn) "Fn") f ;;
+  f <- tmUnquote t' ;;
+  (*tmPrint f ;;*)
+  tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (String.append (snd kn) "Fn") (Some hnf) ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
@@ -160,7 +163,7 @@ MetaRocq Run (justAnimate <? foo5 ?> ["a"] ["b"] 100).
 
 Print foo5Fn.
 
-Example testfoo5 : (my_projT2 foo5Fn) 1 = Some [1]. 
+Example testfoo5 : foo5Fn 1 = Some [1]. 
 Proof. reflexivity. Qed.
  
   
