@@ -129,19 +129,19 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
 
 
 
-Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
   f <- tmUnquote t' ;;
   (*tmPrint f ;;*)
   tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append (snd kn) "Fn") (Some hnf) ;;
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
 
 
-MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] 100). 
+MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] "foo4Fn" 100). 
 (*Use tmEval *)
 Print foo4Fn.
 
@@ -159,7 +159,7 @@ Inductive foo5 : nat -> nat -> Prop :=
 
 
 
-MetaRocq Run (justAnimate <? foo5 ?> ["a"] ["b"] 100).
+MetaRocq Run (justAnimate <? foo5 ?> ["a"] ["b"] "foo5Fn" 100).
 
 Print foo5Fn.
 
@@ -172,9 +172,28 @@ End s.
 
 Check foo4Fn.
 
+Parameter errorPath : prod modpath ident.
+
+Definition getPathIdent (t : term) : prod modpath ident :=
+ match t with
+  | tInd p l => inductive_mind p
+  | _ => errorPath
+ end. 
+
 
           
 
+
+Definition justAnimatePatMat {A : Type} (induct : A) (outputVar : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+ indTm <- tmQuote induct ;; 
+ termConj <- general.animate2 (getPathIdent indTm) ;; 
+ termFull <- tmQuoteRecTransp  induct  false ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull outputVar fuel))))) ;; 
+ f <- tmUnquote t ;; 
+ tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+ tmMsg "done".
 
  
   
@@ -182,27 +201,18 @@ Check foo4Fn.
 
 
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
- | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y.  (*RHS of equality not v imp*)
+ | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y. (*RHS of equality not v imp*)
+ 
+MetaRocq Run (justAnimatePatMat tuple ["a" ; "b"] "tupleFn" 25).
+
+Print tupleFn. 
          
-(* MetaRocq Run (prog <- tmQuoteRecTransp  tuple  false ;; tmPrint prog).
 
-MetaRocq Quote Definition tupleTerm := tuple.
-
-Print tupleTerm. *)
-(* Print TemplateMonad.
-
-Check tuple. *)
-
-MetaRocq Run (tupleTermConj <- general.animate2 <? tuple ?> ;; tupleTerm <- tmQuoteRecTransp  tuple  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 tupleTermConj tupleTerm ["a" ; "b"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "tupleFn" f).
-
-Print tupleFn.
 
 Inductive singleton : nat -> list nat -> Prop :=
  | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
-MetaRocq Run (termConj <- general.animate2 <? singleton ?> ;; termFull <- tmQuoteRecTransp  singleton  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull ["a"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "singletonFn" f).
 
-Print singletonFn.
 
 
 (* 4 *)
@@ -221,19 +231,22 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  
 
 
-MetaRocq Run (termConj <- general.animate2 <? baz' ?> ;; termFull <- tmQuoteRecTransp  baz'  false ;; t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull ["x" ; "a"] 25))))) ;; f <- tmUnquote t ;; tmDefinition "baz'Fn" f).
-
-
-
-Print baz'Fn.
 
 
 
 
-Definition justAnimate' (kn : kername) (conjs : term) (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   (* conjs <- general.animate2 kn ;; *)
+  t <- general.animate2 kn ;;
+  let conjs := (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
+
+  
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
-  f <- tmUnquote t' ;; tmDefinition (String.append (snd kn) "Fn") f ;;
+  f <- tmUnquote t' ;; (* tmDefinition (String.append (snd kn) "Fn") f ;; *)
+  tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+  
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
@@ -246,8 +259,10 @@ Definition justAnimate' (kn : kername) (conjs : term) (inputVars : (list string)
 Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon : forall a b c d,  [S a ; S c]  = [S b ; d]  -> fooCon a b c d.
  
-MetaRocq Run (t <- general.animate2 <? fooCon ?> ;;  justAnimate' <? fooCon ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["a" ; "c"] ["b" ; "d"] 70) .
+(* MetaRocq Run (t <- general.animate2 <? fooCon ?> ;;  justAnimate' <? fooCon ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["a" ; "c"] ["b" ; "d"] 70) .
+*)
 
+MetaRocq Run (justAnimateElimConstr <? fooCon ?> ["a" ; "c"] ["b" ; "d"] "fooConFn" 50).
 Print fooConFn.
 
 
@@ -261,9 +276,9 @@ Print fooConFn.
 Inductive fooCon' : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon' : forall a b c d, [S b ; d] = [S a ; S c]  -> fooCon' a b c d.
  
-MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;;  justAnimate' <? fooCon' ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["c" ; "b"] ["a" ; "d"] 70) .
+(* MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;;  justAnimate' <? fooCon' ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["c" ; "b"] ["a" ; "d"] 70) .
 
-Print fooCon'Fn.
+Print fooCon'Fn. *)
 
 
 
