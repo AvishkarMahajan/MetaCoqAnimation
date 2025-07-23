@@ -313,6 +313,43 @@ Definition genFun (fooTerm : term) (inputVars : list string) (outputVars : list 
     (animateOneConjGuardList (getListConjGuardCon fooTerm)). 
 
 
+Definition soundness' (f : (nat -> nat -> option (list nat))) (induct : nat -> nat -> nat -> nat -> nat -> Prop) (n1 : nat) (n2 : nat) : Type :=
+ let r := (f n1 n2) in 
+   match r with
+    | Some ([n3 ; n4 ; n5]) => (* forall h1, forall h2, forall h3, h1 = g1 -> h2 = g2 -> h3 = g3 -> *) (induct n1 n2 n3 n4 n5) 
+    | None => (forall n3 n4 n5 : nat, (induct n1 n2 n3 n4 n5 -> False))
+ (*  (forall n3 n4 n5 : nat, (foo n1 n2 n3 n4 n5 -> False)) *)
+    | _ => False
+    end. 
+Definition soundness'' (f : (nat -> nat -> option (list nat))) (induct : nat -> nat -> nat -> nat -> nat -> Prop) : Type :=
+ forall n1 n2, soundness' f induct n1 n2 .
+ 
+
+(* Check foo. 
+Check soundness''. *) 
+ 
+  
+Definition animate'' (kn : kername) (induct : nat -> nat -> nat -> nat -> nat -> Prop)  (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  conjs <- general.animate2 kn ;;
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;; tmDefinition (String.append (snd kn) "Fn") f ;;
+  lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f induct) ;;
+  tmMsg "done".
+      
+
+
+Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+  conjs <- general.animate2 kn ;;
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- tmUnquote t' ;;
+  (*tmPrint f ;;*)
+  tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
 End animateEqual.
 
 
@@ -841,6 +878,28 @@ tApp
                       [<%nat%>]]]] 
 *)                      
 
+Parameter errorPath : prod modpath ident.
+
+Definition getPathIdent (t : term) : prod modpath ident :=
+ match t with
+  | tInd p l => inductive_mind p
+  | _ => errorPath
+ end. 
+
+
+          
+
+
+Definition justAnimatePatMat {A : Type} (induct : A) (outputVar : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+ indTm <- tmQuote induct ;; 
+ termConj <- general.animate2 (getPathIdent indTm) ;; 
+ termFull <- tmQuoteRecTransp  induct  false ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull outputVar fuel))))) ;; 
+ f <- tmUnquote t ;; 
+ tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+ tmMsg "done".
 
   
                         
@@ -910,7 +969,66 @@ Fixpoint makeConjSimpl (l1 : list (list term)) : list term :=
 
  end.
  
+Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+  (* conjs <- general.animate2 kn ;; *)
+  t <- general.animate2 kn ;;
+  let conjs := (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
+
+  
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- tmUnquote t' ;; (* tmDefinition (String.append (snd kn) "Fn") f ;; *)
+  tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+  
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
+ 
 End typeConstrReduce.  
+
+
+(*
+
+(* Recursive Predicate *)
+
+Inductive recPred : nat -> nat -> Prop :=
+ | recPredBase : recPred 1 3
+ | recPredInd : forall a b, recPred a b  -> recPred (S a) (S b).
+ 
+(* Desired output function with a as input, b as output *)
+
+Fixpoint recPredfn (a : nat) : option nat :=
+ match a with
+ | 1 => Some 3
+ | S a' => match recPredfn a' with
+           | None => None
+           | Some b' => Some (S b')
+           end
+ | _ => None          
+ end. 
+ 
+(* General case 
+
+Clause : recPred a1 a2 -> recPred (cons1 a1 a2) (cons2 a1 a2) 
+
+first argument input, second argument output.
+
+=
+Fixpoint recPredfn (a1 : nat) : option type 
+...
+
+ match a1 with
+  | cons1 a1' a2' => match recPredfn a1' with
+                      | Some x => if (Eqb a2' x) then Some (cons2 a1' a2') else None
+                      | _  => None
+  
+1 Clause = 1 match statement 
+*)                      
+        
+                                  
+*)
 
 
 
