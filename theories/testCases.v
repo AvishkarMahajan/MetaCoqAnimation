@@ -121,10 +121,15 @@ rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
  Qed.
 
 
+(*
 Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr4 : forall a b c d e, (g1 d = g2 a /\ d = b /\  (g4 a e a e) = c /\ b = e ) -> foo4 a b c d e.
- 
 
+*)
+ 
+Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
+ | cstr4 : forall a b c d e, ((fun x => x) d = (fun x => x + 1) a /\ d = b /\  ((fun x y w z => x + w) a e a e) = c /\ b = e ) -> foo4 a b c d e.
+ 
 
 
 
@@ -144,6 +149,15 @@ Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : 
 MetaRocq Run (justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] "foo4Fn" 100). 
 (*Use tmEval *)
 Print foo4Fn.
+
+Example testfoo4 : foo4Fn 2 3 = Some [4; 3; 3].
+Proof. reflexivity. Qed.
+
+Example test2foo4 : foo4Fn 1 1 = None.
+Proof. reflexivity. Qed.
+
+Example test3foo4 : foo4Fn 3 4 = Some [6; 4; 4].
+Proof. reflexivity. Qed.
 
 
 
@@ -165,12 +179,14 @@ Print foo5Fn.
 
 Example testfoo5 : foo5Fn 1 = Some [1]. 
 Proof. reflexivity. Qed.
- 
+
+Example test2foo5 : foo5Fn 3 = Some [3]. 
+Proof. reflexivity. Qed. 
   
 
 End s.
 
-Check foo4Fn.
+
 
 Parameter errorPath : prod modpath ident.
 
@@ -205,13 +221,37 @@ Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
  
 MetaRocq Run (justAnimatePatMat tuple ["a" ; "b"] "tupleFn" 25).
 
-Print tupleFn. 
+Print tupleFn.
+
+Example testtupleFn : tupleFn (2, 4) = Some [2 ; 3].
+Proof. reflexivity. Qed. 
+
+Example test2tupleFn : tupleFn (3, 1) = Some [3 ; 0].
+Proof. reflexivity. Qed.
+
+Example test3tupleFn : tupleFn (1, 0) = None.
+Proof. reflexivity. Qed.
+ 
+
          
 
 
 Inductive singleton : nat -> list nat -> Prop :=
  | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
+
+MetaRocq Run (justAnimatePatMat singleton ["a"] "singletonFn" 25).
+
+Example testsingletonFn : singletonFn [4] = Some [4].
+Proof. reflexivity. Qed.
+
+Example test2singletonFn : singletonFn [] = None.
+Proof. reflexivity. Qed.
+
+Example test3singletonFn : singletonFn [4 ; 5] = None.
+Proof. reflexivity. Qed.
+
+
 
 
 
@@ -229,9 +269,15 @@ Inductive myType : Set :=
 Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
  
+MetaRocq Run (justAnimatePatMat baz' ["a"; "x"] "baz'Fn" 25).
 
 
 
+Example testbaz'Fn : baz'Fn (mycr2 (mycr1' 4) 3) = Some [4; 2].
+Proof. reflexivity. Qed.
+
+Example test2baz'Fn : baz'Fn (mycr2 (mycr1' 4) 0) = None.
+Proof. reflexivity. Qed.
 
 
 
@@ -265,6 +311,16 @@ Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
 MetaRocq Run (justAnimateElimConstr <? fooCon ?> ["a" ; "c"] ["b" ; "d"] "fooConFn" 50).
 Print fooConFn.
 
+Example testfooConFn : fooConFn 2 3 = Some [2 ; 4].
+Proof. reflexivity. Qed.
+
+Example test2fooConFn : fooConFn 4 3 = Some [4 ; 4].
+Proof. reflexivity. Qed.
+
+
+
+
+
 
 
 (* Compute (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooConTerm) (typeConstrReduce.deConConj2 fooConTerm) 20)).  *)
@@ -276,15 +332,17 @@ Print fooConFn.
 Inductive fooCon' : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon' : forall a b c d, [S b ; d] = [S a ; S c]  -> fooCon' a b c d.
  
-(* MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;;  justAnimate' <? fooCon' ?> (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) 20))) ["c" ; "b"] ["a" ; "d"] 70) .
-
-Print fooCon'Fn. *)
+MetaRocq Run (justAnimateElimConstr <? fooCon' ?> ["b" ; "c"] ["a" ; "d"] "fooCon'Fn" 50).
 
 
+Example testfooCon'Fn : fooConFn 2 3 = Some [2 ; 4].
+Proof. reflexivity. Qed.
 
-(* Returns conjuncts corresponding to : b = 0 , d = S c *)
+Example test2fooCon'Fn : fooConFn 4 3 = Some [4 ; 4].
+Proof. reflexivity. Qed.
 
 
+(*
 
 (* Recursive Predicate *)
 
@@ -323,7 +381,7 @@ Fixpoint recPredfn (a1 : nat) : option type
 *)                      
         
                                   
- 
+*)
 
   
  
