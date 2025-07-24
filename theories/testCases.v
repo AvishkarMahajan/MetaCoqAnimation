@@ -125,6 +125,23 @@ Proof. reflexivity. Qed.
 Example test2foo5 : foo5Fn 3 = Some [3]. 
 Proof. reflexivity. Qed. 
   
+Inductive foo6 : nat -> Prop :=
+ | cstr6 : forall a, 6 = a  -> foo6 a.
+ 
+
+MetaRocq Run (animateEqual.justAnimate <? foo6 ?> [] ["a"] "foo6Fn" 100).
+
+Example testfoo6 : foo6Fn  = Some [6]. 
+Proof. reflexivity. Qed. 
+
+Inductive foo7 : nat -> Prop :=
+ | cstr7 : forall a, a = 6  -> foo7 a.
+
+MetaRocq Run (animateEqual.justAnimate <? foo7 ?> [] ["a"] "foo7Fn" 100). 
+
+Example testfoo7 : foo7Fn  = Some [6]. 
+Proof. reflexivity. Qed. 
+
 
 End s.
 

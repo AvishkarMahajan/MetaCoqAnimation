@@ -181,9 +181,9 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1; binder_relevance := Relevant |}
                                  (tVar str2) <%nat%>) t))
 
-  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3; tVar str4; tVar str5 ]] =>
+  (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2; tVar str3; tVar str4; tVar str5 ]] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
-                                 (tApp fn [tVar str2; tVar str3; tVar str4; tVar str5]) <%nat%>) t))
+                                 (tApp fn [tVar str2; tVar str3; tVar str4; tVar str5]) <%nat%>) t)) *)
 
   (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
@@ -191,6 +191,12 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
   | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lstTerm] =>
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
                                  (tApp fn lstTerm) <%nat%>) t))
+  
+  | tApp <%eq%> [<%nat%>; tApp fn lstTerm; tVar str1] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tApp fn lstTerm) <%nat%>) t))                               
+  
+  
   
   | _ => None
  end.
@@ -349,6 +355,10 @@ Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : 
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
+
+(*
+MetaRocq Quote Definition constTm := 2.
+Print constTm. *)  
 
 End animateEqual.
 
