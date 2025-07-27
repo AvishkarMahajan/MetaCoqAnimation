@@ -239,23 +239,28 @@ Proof. reflexivity. Qed.
 
 
 Inductive fooCon' : nat -> Prop :=
- | cstrCon' : forall c,   [S c] = [4]  -> fooCon' c.
+ | cstrCon' : forall c,   [S c] = [1]  -> fooCon' c.
  
 MetaRocq Run (typeConstrReduce.justAnimateElimConstr <? fooCon' ?> [] ["c"] "fooCon'Fn" 50).
 
 
 
-Example testfooCon'Fn : fooCon'Fn = Some [3].
+Example testfooCon'Fn : fooCon'Fn = Some [0].
 Proof. reflexivity. Qed.
 
 
-(* Failing test case
+
 Inductive foo0 : nat -> Prop :=
  | cstr0 : forall a, 0 = a  -> foo0 a.
  
 
-MetaRocq Run (animateEqual.justAnimate <? foo0 ?> [] ["a"] "foo0Fn" 100).
-*)
+MetaRocq Run (animateEqual.justAnimate <? foo0 ?> [] ["a"] "foo0Fn" 25).
+
+Example testfoo0Fn : foo0Fn = Some [0].
+Proof. reflexivity. Qed.
+
+
+
 
 
 

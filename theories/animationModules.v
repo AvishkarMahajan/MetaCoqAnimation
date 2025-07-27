@@ -133,7 +133,14 @@ Fixpoint getListConjLetBind (bigConj : term) : list term :=
       [tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst]]
   
   | tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1] =>
-      [tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1]]    
+      [tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1]] 
+      
+  | tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst] =>
+      [tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst]]
+  
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1] =>
+      [tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1]]    
+         
 
   (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
       [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]]] *)
@@ -158,6 +165,8 @@ Fixpoint extractOrderedVarsHelper (ls : list term) : list string :=
  | _ :: t => (extractOrderedVarsHelper t)
  end. 
  
+Print Instance.t.
+ 
 
 
 (* extract ordered list of vars from conjunct *)
@@ -166,7 +175,9 @@ Definition extractOrderedVars (t : term) : list string :=
   | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst] => str1 :: extractOrderedVarsHelper (lst)
   | tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1] => app (extractOrderedVarsHelper (lst)) [str1]
-  
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1] => [str1]
+  | tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst] =>  [str1]
+ 
   (* Combine the pattern matches to handle fns of arbitrary arity *)
   
   | _ => nil
@@ -196,6 +207,13 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
     Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
                                  (tApp fn lstTerm) <%nat%>) t))                               
   
+  | tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tConstruct ind_type k lst) <%nat%>) t))
+  
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1] =>
+    Some (fun t => partialLetfn ((tLetIn {| binder_name := nNamed str1%bs; binder_relevance := Relevant |}
+                                 (tConstruct ind_type k lst) <%nat%>) t))                               
   
   
   | _ => None
@@ -205,6 +223,7 @@ Definition flipConj (conj : term) : term :=
  match conj with
   | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => tApp <%eq%> [<%nat%>; tVar str2; tVar str1] 
   | tApp <%eq%> [<%nat%>; tApp fn lstTerm; tVar str1] => tApp <%eq%> [<%nat%>; tVar str1; tApp fn lstTerm]
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1] => tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst]
   | t' => t'
  end. 
 
