@@ -142,6 +142,16 @@ MetaRocq Run (animateEqual.justAnimate <? foo7 ?> [] ["a"] "foo7Fn" 100).
 Example testfoo7 : foo7Fn  = Some [6]. 
 Proof. reflexivity. Qed. 
 
+Inductive foo8 : nat -> nat -> Prop :=
+ | cstr8 : forall a b, g1 a = b  -> foo8 a b.
+
+MetaRocq Run (animateEqual.justAnimate <? foo8 ?> ["a"] ["b"] "foo8Fn" 100). 
+
+Print foo8Fn.
+
+Example testfoo8 : foo8Fn 1  = Some [g1 1]. 
+Proof. reflexivity. Qed. 
+
 
 End s.
 
@@ -226,17 +236,31 @@ Example test2fooConFn : fooConFn 4 3 = Some [4 ; 4].
 Proof. reflexivity. Qed.
 
 
-Inductive fooCon' : nat -> nat -> nat -> nat -> Prop :=
- | cstrCon' : forall a b c d, [S b ; d] = [S a ; S c]  -> fooCon' a b c d.
+
+
+Inductive fooCon' : nat -> Prop :=
+ | cstrCon' : forall c,   [S c] = [4]  -> fooCon' c.
  
-MetaRocq Run (typeConstrReduce.justAnimateElimConstr <? fooCon' ?> ["b" ; "c"] ["a" ; "d"] "fooCon'Fn" 50).
+MetaRocq Run (typeConstrReduce.justAnimateElimConstr <? fooCon' ?> [] ["c"] "fooCon'Fn" 50).
 
 
-Example testfooCon'Fn : fooConFn 2 3 = Some [2 ; 4].
+
+Example testfooCon'Fn : fooCon'Fn = Some [3].
 Proof. reflexivity. Qed.
 
-Example test2fooCon'Fn : fooConFn 4 3 = Some [4 ; 4].
-Proof. reflexivity. Qed.
+
+(* Failing test case
+Inductive foo0 : nat -> Prop :=
+ | cstr0 : forall a, 0 = a  -> foo0 a.
+ 
+
+MetaRocq Run (animateEqual.justAnimate <? foo0 ?> [] ["a"] "foo0Fn" 100).
+*)
+
+
+
+ 
+
 
 
 

@@ -360,6 +360,18 @@ Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : 
 MetaRocq Quote Definition constTm := 2.
 Print constTm. *)  
 
+Definition justAnimateFmConj (conjs : term) (inputVars : (list string)) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+  (*conjs <- general.animate2 kn ;;*)
+  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  f <- tmUnquote t' ;;
+  (*tmPrint f ;;*)
+  tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+  (* lemma1_name <- tmFreshName "lemma" ;;
+  lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
+  tmMsg "done". 
+
+
 End animateEqual.
 
 
@@ -942,7 +954,7 @@ Fixpoint deconTypeConGen'' (t1 : list term) (t2 : list term) (fuel : nat) : list
   
             | (h1 :: rest1) => match t2 with
                                 | h2 :: rest2 => ([h1] :: ([h2] :: (deconTypeConGen'' rest1 rest2 m)))
-                                | _ => [t1 ; t2] 
+                                | _ => [t1 ; t2]
                                end 
             
             | _ => [t1 ; t2]
@@ -978,11 +990,18 @@ Fixpoint makeConjSimpl (l1 : list (list term)) : list term :=
   | _ => nil                        
 
  end.
+
+Definition mkBigConj (lst : list term) : term :=
+ match lst with 
+  | [] => <%true%>
+  | [elt] => elt
+  | xs => (tApp <%and%> xs)
+ end. 
  
 Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   (* conjs <- general.animate2 kn ;; *)
   t <- general.animate2 kn ;;
-  let conjs := (tApp <%and%> (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
+  let conjs := (mkBigConj (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
 
   
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
@@ -994,11 +1013,43 @@ Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outpu
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
+  
+  
+Definition justAnimateElimConstr' (kn : kername) (inputVars : list string) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+  (* conjs <- general.animate2 kn ;; *)
+  t <- general.animate2 kn ;;
+  let conjs := (mkBigConj (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
 
+  
+  animateEqual.justAnimateFmConj conjs inputVars outputVars nameFn fuel. 
  
-End typeConstrReduce.  
+End typeConstrReduce. 
 
+(*
+Inductive fooCon' : nat -> Prop :=
+ | cstrCon' : forall c,  c = 0  -> fooCon' c .
+ 
+MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;; tmPrint t).  
 
+Definition fooCon'tm : term := 
+      (tApp <%eq%> [<%nat%>; tVar "c"; tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]).
+      
+*)      
+(*      
+MetaRocq Run (animateEqual.justAnimate <? fooCon' ?> [] ["c"] "fooCon'Fn" 50).        
+MetaRocq Run (animateEqual.justAnimateFmConj fooCon'tm [] ["c"] "fooCon'Fn" 50).      
+      
+Compute (typeConstrReduce.deConConj2 fooCon'tm).  
+
+Compute (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooCon'tm) (typeConstrReduce.deConConj2 fooCon'tm) 25).    
+ 
+Compute (typeConstrReduce.makeConjSimpl ([[tVar "c"]; [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]; []; []])).
+    
+Compute (typeConstrReduce.mkBigConj ([tApp <%eq%>
+          [<%nat%>; tVar "c"; tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]])). 
+          
+*)
+     
 (*
 
 (* Recursive Predicate *)
