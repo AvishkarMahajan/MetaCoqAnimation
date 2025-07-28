@@ -273,7 +273,7 @@ Proof. reflexivity. Qed.
 
 
 Inductive foo10 : nat -> Prop :=
- | cstr10 : forall a, 0 = (fun x => x - 1) a  -> foo10 a.
+ | cstr10 : forall a, (fun x => x - 1) a = 0  -> foo10 a.
  
 
 MetaRocq Run (animateEqual.justAnimate <? foo10 ?> ["a"] ["a"] "foo10Fn" 25).
