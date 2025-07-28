@@ -259,8 +259,30 @@ MetaRocq Run (animateEqual.justAnimate <? foo0 ?> [] ["a"] "foo0Fn" 25).
 Example testfoo0Fn : foo0Fn = Some [0].
 Proof. reflexivity. Qed.
 
+Inductive foo9 : nat -> Prop :=
+ | cstr9 : forall a, 9 = (fun x => x + 1) a  -> foo9 a.
+ 
+
+MetaRocq Run (animateEqual.justAnimate <? foo9 ?> ["a"] ["a"] "foo9Fn" 25).
+
+Example testfoo9Fn : foo9Fn 8 = Some [8].
+Proof. reflexivity. Qed.
+
+Example test2foo9Fn : foo9Fn 6 = None.
+Proof. reflexivity. Qed.
 
 
+Inductive foo10 : nat -> Prop :=
+ | cstr10 : forall a, 0 = (fun x => x - 1) a  -> foo10 a.
+ 
+
+MetaRocq Run (animateEqual.justAnimate <? foo10 ?> ["a"] ["a"] "foo10Fn" 25).
+
+Example testfoo10Fn : foo10Fn 1 = Some [1].
+Proof. reflexivity. Qed.
+
+Example test2foo10Fn : foo10Fn 6 = None.
+Proof. reflexivity. Qed.
 
 
 

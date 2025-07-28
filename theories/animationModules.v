@@ -153,6 +153,15 @@ Fixpoint getListConjGuardCon (bigConj : term) : list term :=
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
   | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tApp fn2 lst2] =>
       [tApp <%eq%> [<%nat%>; tApp fn1 lst1; tApp fn2 lst2]] 
+  | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tConstruct ind_type k lst] =>
+      [tApp <%eq%> [<%nat%>; tApp fn1 lst1; tConstruct ind_type k lst]]
+  
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tApp fn1 lst1] =>
+      [tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tApp fn1 lst1]]    
+             
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2] =>
+      [tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2]]    
+                        
   | _ => []
  end.
 
@@ -237,6 +246,21 @@ vars should be known at this point in the computation *)
          [ partialGuard
          ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 lstStr1
          ; tApp fn2 lstStr2]]
+  | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tConstruct ind_type k lst] => 
+    tApp (tConst <? andb ?> [])
+         [ partialGuard
+         ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 lst1
+         ; tConstruct ind_type k lst]]
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tApp fn1 lst1] => 
+    tApp (tConst <? andb ?> [])
+         [ partialGuard
+         ; tApp (tConst <? Nat.eqb ?> []) [tApp fn1 lst1
+         ; tConstruct ind_type k lst]]    
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2] => 
+    tApp (tConst <? andb ?> [])
+         [ partialGuard
+         ; tApp (tConst <? Nat.eqb ?> []) [tConstruct ind_type2 k2 lst2
+         ; tConstruct ind_type k lst]]              
   | _ => <% false %>
   end.
 
