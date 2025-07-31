@@ -93,6 +93,8 @@ Definition animate (kn : kername) : TemplateMonad unit :=
 Module animateEqual.
 
 
+Parameter inValidConj : term.
+
 
 Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
  match l with
@@ -164,6 +166,47 @@ Fixpoint getListConjGuardCon (bigConj : term) : list term :=
                         
   | _ => []
  end.
+
+Fixpoint filterListConj (bigConj : term) : list bool :=
+ match bigConj with
+  | tApp <%and%> ls => concat (map filterListConj ls)
+
+  | tApp <%eq%> [<%nat%>; tVar str1; tVar str2] => [true]
+
+  | tApp <%eq%> [<%nat%>; tVar str1; tApp fn lst] =>
+      [true]
+  
+  | tApp <%eq%> [<%nat%>; tApp fn lst; tVar str1] =>
+      [true]
+      
+  | tApp <%eq%> [<%nat%>; tVar str1; tConstruct ind_type k lst] =>
+      [true]
+  
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tVar str1] =>
+      [true] 
+
+  
+  | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tApp fn2 lst2] =>
+      [true]  
+  | tApp <%eq%> [<%nat%>; tApp fn1 lst1; tConstruct ind_type k lst] =>
+      [true]
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tApp fn1 lst1] =>
+      [true]      
+  | tApp <%eq%> [<%nat%>; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2] =>
+      [true]                
+  | _ => [false]
+ end.
+ 
+Fixpoint checkBool (lst : list bool) : bool :=
+ match lst with
+ | [] => true
+ | h :: t => andb h (checkBool t)
+end. 
+
+
+ 
+ 
+
 
 (*Compute (getListConjGuardCon fooTerm).*)
 
@@ -356,10 +399,11 @@ Fixpoint animateOneConjGuardList (conj : list term) : term :=
 
 
 Definition genFun (fooTerm : term) (inputVars : list string) (outputVars : list string) (fuel : nat) : term :=
+  if checkBool (filterListConj fooTerm) then
   constrFn inputVars outputVars
     (animateListConj
        (getListConjLetBind fooTerm) nil inputVars fuel (fun t : term => t))
-    (animateOneConjGuardList (getListConjGuardCon fooTerm)). 
+    (animateOneConjGuardList (getListConjGuardCon fooTerm)) else inValidConj.
 
 
 Definition soundness' (f : (nat -> nat -> option (list nat))) (induct : nat -> nat -> nat -> nat -> nat -> Prop) (n1 : nat) (n2 : nat) : Type :=
@@ -1093,13 +1137,20 @@ Compute (typeConstrReduce.mkBigConj ([tApp <%eq%>
           
 *)
      
-(*
+
 
 (* Recursive Predicate *)
 
 Inductive recPred : nat -> nat -> Prop :=
- | recPredBase : recPred 1 3
- | recPredInd : forall a b, recPred a b  -> recPred (S a) (S b).
+ | recPredBase : recPred 1 3 
+ | recPredInd : forall a b, recPred a b  -> recPred ((S a)) (S b).
+(*
+MetaRocq Run (t <- tmQuoteRecTransp recPred false ;; tmDefinition "recPredProg" t).
+
+Print recPredProg.
+Compute ((declarations ((fst recPredProg)))).  
+*)
+ 
  
 (* Desired output function with a as input, b as output *)
 
@@ -1113,6 +1164,62 @@ Fixpoint recPredfn (a : nat) : option nat :=
  | _ => None          
  end. 
  
+ 
+(* MetaRocq Run (t <- tmQuoteRecTransp recPredfn false ;; tmPrint t). *)
+ 
+
+
+(* Cases requiring function inversion *)
+Inductive recPred' : nat -> nat -> Prop :=
+ | recPred'Ind : forall a b, recPred' a b -> recPred' (a + S b) (S a + b).
+
+(* Need to know how to invert the function fun x y => x + S y *) 
+
+Inductive recPred'' : nat -> nat -> Prop :=
+ | recPred''Ind : forall a b, recPred' a b -> recPred'' (S b) (S a).
+
+(* Need to know how to invert functions  
+Fixpoint recPred''fn (a : nat) : option nat :=
+ match a with
+ 
+ | S b => match recPred''fn (inv) b with
+           | None => None
+           | Some a' => Some (S a')
+           end
+ | _ => None          
+ end. 
+ 
+*)
+
+(* Semms like the most general case that can be handled (for now) is :
+
+recPred (typeCons1 inputVars) typeCons2 (outputVars) -> recPred (typeCons1' inputVars) (typeCons2' outputVars) 
+
+i.e. no mixing of input output vars in the type constructors and no functions 
+
+=
+
+Fixpoint recPredFn...
+ match x with
+  | typeCons1' inputVars => match recPredFn (typeCons1 inputVars) with
+                             | typeCons2 outputVars => typeCons2' outputVars 
+                             ...
+                                   
+So typeCons1 blah needs to always give a subterm typeCons1' blah otherwise this is no longer structurally recursive
+
+*)                                   
+
+
+
+
+
+
+
+
+
+
+
+
 (* General case 
 
 Clause : recPred a1 a2 -> recPred (cons1 a1 a2) (cons2 a1 a2) 
@@ -1129,10 +1236,78 @@ Fixpoint recPredfn (a1 : nat) : option type
                       | _  => None
   
 1 Clause = 1 match statement 
-*)                      
-        
-                                  
+*) 
+  
+(*  
+Fixpoint add (a b : nat) : nat :=
+  match a with
+    | 0 => b
+    | S a => S (add a b)
+  end.
+Eval vm_compute in add.
+
+Fixpoint add' (a b : nat) : nat :=
+  match b with
+    | 0 => a
+    | S b => S (add' a b)
+  end.
+
+Fixpoint even (a : nat) : bool :=
+  match a with
+    | 0 => true
+    | S a => odd a
+  end
+with odd (a : nat) : bool :=
+  match a with
+    | 0 => false
+    | S a => even a
+  end.
+
+MetaRocq Quote Definition add_syntax := Eval compute in add.
+
+MetaRocq Quote Definition eo_syntax := Eval compute in even.
+
+MetaRocq Quote Definition add'_syntax := Eval compute in add'.
+
+(** Reflecting definitions **)
+Check Corelib.Init.Datatypes.nat.
+MetaRocq Unquote Definition zero_from_syntax :=
+  (Ast.tConstruct (mkInd (MPfile ["Datatypes"; "Init"; "Corelib"], "nat") 0) 0 []).
+Set Printing All.
+(* the function unquote_kn in reify.ml4 is not yet implemented *)
+MetaRocq Quote Recursively Definition addProg := add.
+Compute (declarations (fst addProg)).
+
+
+                    
+Print add_syntax.
+
+MetaRocq Unquote Definition recFun' := add_syntax.
+
+Print recFun'.
+
+
+Fixpoint recPredfn' (a : nat) : option nat :=
+ match a with
+ (*| 1 => Some 3 *)
+ | S a' => match recPredfn' a' with
+           | None => None
+           | Some b' => Some (S b')
+           end
+ | _ => None          
+ end. 
+ 
+
+
+MetaRocq Quote Definition recPredfn'Term := Eval compute in recPredfn'.
+
+Print recPredfn'Term.
 *)
+
+
+
+                                  
+
 
 
 

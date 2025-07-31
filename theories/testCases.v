@@ -271,22 +271,27 @@ Proof. reflexivity. Qed.
 Example test2foo9Fn : foo9Fn 6 = None.
 Proof. reflexivity. Qed.
 
-
 Inductive foo10 : nat -> Prop :=
  | cstr10 : forall a, (fun x => x - 1) a = 0  -> foo10 a.
  
 
-MetaRocq Run (animateEqual.justAnimate <? foo10 ?> ["a"] ["a"] "foo10Fn" 25).
-
-Example testfoo10Fn : foo10Fn 1 = Some [1].
+MetaRocq Run (animateEqual.justAnimate <? foo10 ?> ["a"] [ ] "foo10Fn" 25).
+Print foo10Fn.
+Example testfoo10Fn : foo10Fn 1 = Some [].
 Proof. reflexivity. Qed.
 
 Example test2foo10Fn : foo10Fn 6 = None.
 Proof. reflexivity. Qed.
 
 
-
+Inductive foo11 : nat -> Prop :=
+ | cstr11 : forall a, (exists b, (fun x => x - 1) a = b + 1)  -> foo11 a.
  
+(* Gives error since exists clauses not handled by animation *)
+
+(* MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25). *)
+
+
 
 
 
