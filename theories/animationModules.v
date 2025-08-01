@@ -1335,7 +1335,7 @@ Inductive recPred : nat -> nat -> Prop :=
 
 Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
  match c with
-  | 0 => Some a
+  | 0 => (* Some a *) None
   | S m => match a with
             | 1 => Some 3  
             | _ => recPredfn1 a m
@@ -1343,7 +1343,7 @@ Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
  end
  with recPredfn1 (a : nat) (c : nat) : option nat :=
   match c with
-   | 0 => Some a
+   | 0 => (* Some a *) None
    | S m => match a with
              | S a' => match recPredfnMut' a' m with
                         | Some b' => Some (S b')
