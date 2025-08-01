@@ -287,9 +287,9 @@ Proof. reflexivity. Qed.
 Inductive foo11 : nat -> Prop :=
  | cstr11 : forall a, (exists b, (fun x => x - 1) a = b + 1)  -> foo11 a.
  
-(* Gives error since exists clauses not handled by animation *)
+(* Gives error since exists clauses not handled by animation 
 
-(* MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25). *)
+MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25). *)
 
 
 

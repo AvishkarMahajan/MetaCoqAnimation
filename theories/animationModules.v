@@ -398,12 +398,12 @@ Fixpoint animateOneConjGuardList (conj : list term) : term :=
   end.
 
 
-Definition genFun (fooTerm : term) (inputVars : list string) (outputVars : list string) (fuel : nat) : term :=
+Definition genFun (fooTerm : term) (inputVars : list string) (outputVars : list string) (fuel : nat) : TemplateMonad term :=
   if checkBool (filterListConj fooTerm) then
-  constrFn inputVars outputVars
+  ret (constrFn inputVars outputVars
     (animateListConj
        (getListConjLetBind fooTerm) nil inputVars fuel (fun t : term => t))
-    (animateOneConjGuardList (getListConjGuardCon fooTerm)) else inValidConj.
+    (animateOneConjGuardList (getListConjGuardCon fooTerm))) else tmFail "cannot process conj".
 
 
 Definition soundness' (f : (nat -> nat -> option (list nat))) (induct : nat -> nat -> nat -> nat -> nat -> Prop) (n1 : nat) (n2 : nat) : Type :=
@@ -424,7 +424,10 @@ Check soundness''. *)
   
 Definition animate'' (kn : kername) (induct : nat -> nat -> nat -> nat -> nat -> Prop)  (inputVars : (list string)) (outputVars : list string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
-  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  r <- animateEqual.genFun conjs inputVars outputVars fuel  ;; 
+  
+  t' <- DB.deBruijn r ;;
+  
   f <- @tmUnquoteTyped (nat -> nat -> (option (list nat))) t' ;; tmPrint f ;; tmDefinition (String.append (snd kn) "Fn") f ;;
   lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f induct) ;;
@@ -434,7 +437,9 @@ Definition animate'' (kn : kername) (induct : nat -> nat -> nat -> nat -> nat ->
 
 Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   conjs <- general.animate2 kn ;;
-  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  
+  r <- animateEqual.genFun conjs inputVars outputVars fuel  ;;
+  t' <- DB.deBruijn r  ;; 
   f <- tmUnquote t' ;;
   (*tmPrint f ;;*)
   tmEval hnf (my_projT2 f) >>=
@@ -442,11 +447,13 @@ Definition justAnimate (kn : kername) (inputVars : (list string)) (outputVars : 
   (* lemma1_name <- tmFreshName "lemma" ;;
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
+  
+
 
 (*
 MetaRocq Quote Definition constTm := 2.
 Print constTm. *)  
-
+(*
 Definition justAnimateFmConj (conjs : term) (inputVars : (list string)) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   (*conjs <- general.animate2 kn ;;*)
   t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
@@ -458,7 +465,7 @@ Definition justAnimateFmConj (conjs : term) (inputVars : (list string)) (outputV
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
 
-
+*)
 End animateEqual.
 
 
@@ -1089,9 +1096,9 @@ Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outpu
   (* conjs <- general.animate2 kn ;; *)
   t <- general.animate2 kn ;;
   let conjs := (mkBigConj (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
-
+  r <- animateEqual.genFun conjs inputVars outputVars fuel ;;     
   
-  t' <- DB.deBruijn (animateEqual.genFun conjs inputVars outputVars fuel)  ;; 
+  t' <- DB.deBruijn r  ;; 
   f <- tmUnquote t' ;; (* tmDefinition (String.append (snd kn) "Fn") f ;; *)
   tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (nameFn) (Some hnf) ;;
@@ -1101,7 +1108,7 @@ Definition justAnimateElimConstr (kn : kername) (inputVars : list string) (outpu
   lemma1 <- tmQuote =<< tmLemma lemma1_name (soundness'' f) ;; *)
   tmMsg "done". 
   
-  
+(*  
 Definition justAnimateElimConstr' (kn : kername) (inputVars : list string) (outputVars : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
   (* conjs <- general.animate2 kn ;; *)
   t <- general.animate2 kn ;;
@@ -1109,7 +1116,7 @@ Definition justAnimateElimConstr' (kn : kername) (inputVars : list string) (outp
 
   
   animateEqual.justAnimateFmConj conjs inputVars outputVars nameFn fuel. 
- 
+*) 
 End typeConstrReduce. 
 
 (*
@@ -1238,7 +1245,7 @@ Fixpoint recPredfn (a1 : nat) : option type
 1 Clause = 1 match statement 
 *) 
   
-(*  
+ 
 Fixpoint add (a b : nat) : nat :=
   match a with
     | 0 => b
@@ -1302,7 +1309,54 @@ Fixpoint recPredfn' (a : nat) : option nat :=
 MetaRocq Quote Definition recPredfn'Term := Eval compute in recPredfn'.
 
 Print recPredfn'Term.
-*)
+
+(*
+Fixpoint recPredfnMut (a : nat) : option nat :=
+ match a with
+ | 1 => Some 3 
+ | _ => recPredfn1 a
+ end
+ with recPredfn1 (a : nat) : option nat :=
+  match a with
+  | S a' => match recPredfn a' with
+            | None => None
+            | Some b' => Some (S b')
+            end
+  | _ => None
+ end.
+ *) 
+
+(*
+Inductive recPred : nat -> nat -> Prop :=
+ | recPredBase : recPred 1 3 
+ | recPredInd : forall a b, recPred a b  -> recPred ((S a)) (S b).
+ 
+*) 
+
+Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
+ match c with
+  | 0 => Some a
+  | S m => match a with
+            | 1 => Some 3  
+            | _ => recPredfn1 a m
+           end 
+ end
+ with recPredfn1 (a : nat) (c : nat) : option nat :=
+  match c with
+   | 0 => Some a
+   | S m => match a with
+             | S a' => match recPredfnMut' a' m with
+                        | Some b' => Some (S b')
+                        | None => None
+                        end
+             | _ => None
+             end           
+  end.           
+           
+Compute (recPredfnMut' 8 20).            
+ 
+ 
+ 
 
 
 
