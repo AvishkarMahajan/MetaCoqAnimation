@@ -1332,7 +1332,7 @@ Inductive recPred : nat -> nat -> Prop :=
  | recPredInd : forall a b, recPred a b  -> recPred ((S a)) (S b).
  
 *) 
-
+(*
 Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
  match c with
   | 0 => (* Some a *) None
@@ -1354,17 +1354,303 @@ Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
   end.           
            
 Compute (recPredfnMut' 8 20).            
+*) 
+
+Fixpoint recPredfnMut'' (a : nat) (c : nat) : option nat :=
+ match c with
+  | 0 => (* Some a *) None
+  | S m =>  recPredfn0 a m 
+ end
+ with recPredfn0 (a : nat) (c : nat) : option nat :=
+  match c with
+   | 0 => None
+   | S m => match a with
+            | 1 => Some 3  
+            | _ => recPredfn1 a m
+           end 
+  end
+  with recPredfn1 (a : nat) (c : nat) : option nat :=
+  match c with
+   | 0 => (* Some a *) None
+   | S m => match a with
+             | S a' => match recPredfnMut'' a' m with
+                        | Some b' => Some (S b')
+                        | None => None
+                        end
+             | _ => None
+             end           
+  end.            
  
+
+Compute (recPredfnMut'' 12 50).
+
+Theorem helper: forall a c b : nat, recPredfnMut'' (S (S a)) c = Some (S b) -> recPredfnMut'' (S a) c = Some b.
+Proof. Admitted.
+(*
+induction a.
++ 
+intros. destruct c.
++ simpl in H. discriminate H.
++ simpl in H. destruct c.
+++ simpl in H. discriminate H.
+++ simpl in H. destruct c.
++++ simpl in H. discriminate H.
++++ simpl in H. remember (recPredfnMut'' (S a) c) as t. destruct t.
+++++ inversion H. rewrite <- H1. simpl. destruct a.
+* destruct c.
+** simpl in Heqt. discriminate Heqt.
+** simpl in Heqt. destruct c.
+*** simpl in Heqt. discriminate Heqt.
+*** simpl in Heqt. auto.
+* destruct c.
+** simpl in Heqt. discriminate Heqt.
+** destruct c. 
+*** simpl in Heqt. discriminate Heqt.
+*** simpl in Heqt. destruct c.
+-- simpl in Heqt. discriminate Heqt.
+-- remember (recPredfnMut'' (S a) (S (S (S c)))) as t'. destruct t'.
+--- destruct c.
+---- simpl in Heqt. discriminate Heqt.
+---- simpl in Heqt'.   rewrite -> Heqt. simpl.
+++++ 
+
+*)
+
+Theorem recSound : forall a c b : nat, recPredfnMut'' a c = Some b -> recPred a b.
+ Proof. induction a.
+ - destruct c.
+ + simpl. intros. discriminate H.
+ + intros. simpl in H. destruct c.
+ ++ simpl. intros. discriminate H.
+ ++ simpl in H. destruct c.
+ +++ simpl in H. discriminate H.
+ +++ simpl in H. discriminate H.
+ - intros. destruct b.
+ + destruct c.
+ ++ simpl in H. discriminate H.
+ ++ simpl in H. destruct c.
+ +++ simpl in H. discriminate H.
+ +++ simpl in H. destruct a.
+ ++++ discriminate H.
+ ++++ destruct c.
+ * simpl in H. discriminate H.
+ * simpl in H. destruct c.
+ ** simpl in H. discriminate H.
+ ** simpl in H. destruct a.
+ ***  destruct (recPredfn0 1 c); discriminate H.
+ *** destruct (recPredfn0 (S (S a)) c); discriminate H.
+ + destruct a.
+ ++ destruct c.
+ +++ simpl in H. discriminate H.
+ +++ simpl in H. destruct c. 
+ ++++ simpl in H. discriminate H.
+ ++++ simpl in H. inversion H. apply recPredBase.
+ ++ apply recPredInd. apply (IHa c). apply helper. auto. Qed.
+
+
+
+Fixpoint recPredfnMut''Str (a : nat) (c : nat) : (prod string (option nat)) :=
+ match c with
+  | 0 => (* Some a *) ("error", None)
+  | S m =>  recPredfn'0 a m 
+ end
+ with recPredfn'0 (a : nat) (c : nat) : (prod string (option nat)) :=
+  match c with
+   | 0 => ("error", None)
+   | S m => match a with
+            | 1 => ("success", Some 3)  
+            | _ => recPredfn'1 a m
+           end 
+  end
+  with recPredfn'1 (a : nat) (c : nat) : (prod string (option nat)) :=
+  match c with
+   | 0 => (* Some a *) ("error", None)
+   | S m => match a with
+             | S a' => match recPredfnMut''Str a' m with
+                        | ("success", Some b') => ("success", Some (S b'))
+                        | ("success", None) => ("success", None)
+                        | _ => ("error", None)
+                        end
+             | _ => ("success", None)
+             end           
+  end.  
+  
+Compute (recPredfnMut''Str 0 12).  
+
+Theorem recSound' : forall a c b : nat, recPredfnMut''Str a c = ("success", Some b) -> recPred a b. Proof. Admitted.
+Theorem recSound'' : forall a c : nat, (recPredfnMut''Str a c = ("success", None) -> forall b, (recPred a b -> False)). 
+Proof. Admitted.
+
+Inductive recPredFull : nat -> nat -> Prop :=
+ | recPredFullBase : recPredFull 1 3 
+ | recPredFullCons : forall a b, recPredInd1 a b -> recPredFull (S a) (S b)
+
+with recPredInd1 : nat -> nat -> Prop :=  
+ | recPredInd1Cons : forall a b, recPredFull a b  -> recPredInd1 ((S a)) (S b).
  
+
+Inductive outcome : Set :=
+ | error : outcome
+ | success : outcome.
+
+
+Fixpoint recPredFullfn (a : nat) (c : nat) : (prod outcome (option nat)) :=
+ match c with
+  | 0 => (* Some a *) (error, None)
+  | S m =>  recPredFullBasefn a m 
+ end
+ with recPredFullBasefn (a : nat) (c : nat) : (prod outcome (option nat)) :=
+  match c with
+   | 0 => (error, None)
+   | S m => match a with
+            | 1 => (success, Some 3)  
+            | _ => recPredFullConsfn a m
+           end 
+  end
+  with recPredFullConsfn (a : nat) (c : nat) : (prod outcome (option nat)) :=
+  match c with
+   | 0 => (* Some a *) (error, None)
+   | S m => match a with 
+             | S a' => match (recPredInd1fn a' m) with
+                        | (success, Some b') => (success, Some (S b'))
+                        | (success, None) => (success, None)
+                        | _ => (error, None)
+                        end
+             | _ => (success, None)          
+            end 
+  end           
+ with recPredInd1fn (a : nat) (c : nat) : (prod outcome (option nat)) :=
+ match c with
+   | 0 => (* Some a *) (error, None)
+   | S m => recPredInd1Consfn a m
+ end
+ with recPredInd1Consfn (a : nat) (c : nat) : prod outcome (option nat) :=
+  match c with
+  | 0 => (error, None)
+  | S m => match a with
+            | S a' => match recPredFullfn a' m with
+                        | (success, Some b') => (success, Some (S b'))
+                        | (success, None) => (success, None)
+                        | _ => (error, None)
+                        end
+            | _ => (success, None)
+           end                   
+  end.   
+
+Definition x : True -> recPredFull 1 3.
+Proof. intros. apply recPredFullBase. Qed.
+
+Check x.
+
+Definition verify' (a : nat) (r : prod outcome (option nat)) : Type :=
+ match r with
+  | (success, Some b) => True -> recPredFull a b
+  | (success, None) => forall b : nat, recPredFull a b -> False
+  | _ => True
+ end. 
+
+
+
+Check (True -> recPredFull 1 3).
+
+Theorem emptyType : recPredFull 1 4 -> False.
+Proof. intro. inversion H; subst. inversion H2; subst. Qed.
+
+
+Compute (recPredFullfn 9 35).
+
+MetaRocq Quote Definition recPredFullfnTerm := Eval compute in recPredFullfn.
+
+Print recPredFullfnTerm.
+
+Definition verify (a : nat) (c : nat) : Type :=
+ forall b, (recPredFullfn a c = (success, Some b) -> (recPredFull a b)).
+
+Definition verifyTotal : Type :=
+ forall a c b, (recPredFullfn a c = (success, Some b) -> (recPredFull a b)).
  
 
 
 
-                                  
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+Definition verify'' (a : nat) (r : (option nat)) : Type :=
+ match r with
+  | (Some b) => recPredFull a b
+  | (None) => forall b : nat, recPredFull a b -> False
+ 
+ end.
+
+Definition typeTrue : Type :=
+True.
+
+(**Definition soundCertType (a : nat) : Type :=
+ {b : nat | recPredFull a b } \/ . **)
+ 
+
+
+Fixpoint recPredFullfnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) (* verify' a (fst (recPredFullfnPf a c))*) Type) :=
+ match c with
+  | 0 => (* Some a *) (error, None, typeTrue)
+  | S m =>  recPredFullBasefnPf a m 
+ end
+ with recPredFullBasefnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
+  match c with
+   | 0 => (error, None, typeTrue)
+   | S m => match a with
+            | 1 => (success, Some 3, verify'' 1 (Some 3))  
+            | _ => recPredFullConsfnPf a m
+           end 
+  end
+  with recPredFullConsfnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
+  match c with
+   | 0 => (* Some a *) (error, None, typeTrue)
+   | S m => match a with 
+             | S a' => match fst (recPredInd1fnPf a' m) with
+                        | (success, Some b') => (success, Some (S b'), verify'' a (Some (S b')))
+                        | (success, None) => (success, None, verify'' a None)
+                        | _ => (error, None, typeTrue)
+                        end
+             | _ => (success, None, verify'' a None)          
+            end 
+  end           
+ with recPredInd1fnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
+ match c with
+   | 0 => (* Some a *) (error, None, typeTrue)
+   | S m => recPredInd1ConsfnPf a m
+ end
+ with recPredInd1ConsfnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
+  match c with
+  | 0 => (error, None, typeTrue)
+  | S m => match a with
+            | S a' => match fst (recPredFullfnPf a' m) with
+                        | (success, Some b') => (success, Some (S b'), verify'' a (Some (S b')))
+                        | (success, None) => (success, None, verify'' a None)
+                        | _ => (error, None, typeTrue)
+                        end
+            | _ => (success, None, verify'' a None)
+           end                   
+  end. 
+
+Compute (recPredFullfnPf 5 15).    
+ 
+Definition correct : forall a c : nat, True -> snd (recPredFullfnPf a c).
+Proof. intros. Admitted. 
+          
 
 
 
