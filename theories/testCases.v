@@ -289,8 +289,8 @@ Inductive foo11 : nat -> Prop :=
  
 (* Gives error since exists clauses not handled by animation 
 
-MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25). *)
-
+MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25).
+*)
 
 
 
