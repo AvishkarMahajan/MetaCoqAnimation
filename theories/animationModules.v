@@ -1119,61 +1119,7 @@ Definition justAnimateElimConstr' (kn : kername) (inputVars : list string) (outp
 *) 
 End typeConstrReduce. 
 
-(*
-Inductive fooCon' : nat -> Prop :=
- | cstrCon' : forall c,  c = 0  -> fooCon' c .
- 
-MetaRocq Run (t <- general.animate2 <? fooCon' ?> ;; tmPrint t).  
 
-Definition fooCon'tm : term := 
-      (tApp <%eq%> [<%nat%>; tVar "c"; tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]).
-      
-*)      
-(*      
-MetaRocq Run (animateEqual.justAnimate <? fooCon' ?> [] ["c"] "fooCon'Fn" 50).        
-MetaRocq Run (animateEqual.justAnimateFmConj fooCon'tm [] ["c"] "fooCon'Fn" 50).      
-      
-Compute (typeConstrReduce.deConConj2 fooCon'tm).  
-
-Compute (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 fooCon'tm) (typeConstrReduce.deConConj2 fooCon'tm) 25).    
- 
-Compute (typeConstrReduce.makeConjSimpl ([[tVar "c"]; [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]; []; []])).
-    
-Compute (typeConstrReduce.mkBigConj ([tApp <%eq%>
-          [<%nat%>; tVar "c"; tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]])). 
-          
-*)
-     
-
-
-(* Recursive Predicate *)
-
-Inductive recPred : nat -> nat -> Prop :=
- | recPredBase : recPred 1 3 
- | recPredInd : forall a b, recPred a b  -> recPred ((S a)) (S b).
-(*
-MetaRocq Run (t <- tmQuoteRecTransp recPred false ;; tmDefinition "recPredProg" t).
-
-Print recPredProg.
-Compute ((declarations ((fst recPredProg)))).  
-*)
- 
- 
-(* Desired output function with a as input, b as output *)
-
-Fixpoint recPredfn (a : nat) : option nat :=
- match a with
- | 1 => Some 3
- | S a' => match recPredfn a' with
-           | None => None
-           | Some b' => Some (S b')
-           end
- | _ => None          
- end. 
- 
- 
-(* MetaRocq Run (t <- tmQuoteRecTransp recPredfn false ;; tmPrint t). *)
- 
 
 
 (* Cases requiring function inversion *)
@@ -1246,240 +1192,14 @@ Fixpoint recPredfn (a1 : nat) : option type
 *) 
   
  
-Fixpoint add (a b : nat) : nat :=
-  match a with
-    | 0 => b
-    | S a => S (add a b)
-  end.
-Eval vm_compute in add.
 
-Fixpoint add' (a b : nat) : nat :=
-  match b with
-    | 0 => a
-    | S b => S (add' a b)
-  end.
-
-Fixpoint even (a : nat) : bool :=
-  match a with
-    | 0 => true
-    | S a => odd a
-  end
-with odd (a : nat) : bool :=
-  match a with
-    | 0 => false
-    | S a => even a
-  end.
-
-MetaRocq Quote Definition add_syntax := Eval compute in add.
-
-MetaRocq Quote Definition eo_syntax := Eval compute in even.
-
-MetaRocq Quote Definition add'_syntax := Eval compute in add'.
-
-(** Reflecting definitions **)
-Check Corelib.Init.Datatypes.nat.
-MetaRocq Unquote Definition zero_from_syntax :=
-  (Ast.tConstruct (mkInd (MPfile ["Datatypes"; "Init"; "Corelib"], "nat") 0) 0 []).
-Set Printing All.
-(* the function unquote_kn in reify.ml4 is not yet implemented *)
-MetaRocq Quote Recursively Definition addProg := add.
-Compute (declarations (fst addProg)).
 
 
                     
-(* Print add_syntax.
-
-MetaRocq Unquote Definition recFun' := add_syntax.
-
-Print recFun'. *)
-
-
-Fixpoint recPredfn' (a : nat) : option nat :=
- match a with
- (*| 1 => Some 3 *)
- | S a' => match recPredfn' a' with
-           | None => None
-           | Some b' => Some (S b')
-           end
- | _ => None          
- end. 
- 
-
-
-MetaRocq Quote Definition recPredfn'Term := Eval compute in recPredfn'.
-
-Print recPredfn'Term.
-
-(*
-Fixpoint recPredfnMut (a : nat) : option nat :=
- match a with
- | 1 => Some 3 
- | _ => recPredfn1 a
- end
- with recPredfn1 (a : nat) : option nat :=
-  match a with
-  | S a' => match recPredfn a' with
-            | None => None
-            | Some b' => Some (S b')
-            end
-  | _ => None
- end.
- *) 
-
-(*
-Inductive recPred : nat -> nat -> Prop :=
- | recPredBase : recPred 1 3 
- | recPredInd : forall a b, recPred a b  -> recPred ((S a)) (S b).
- 
-*) 
-(*
-Fixpoint recPredfnMut' (a : nat) (c : nat) : option nat :=
- match c with
-  | 0 => (* Some a *) None
-  | S m => match a with
-            | 1 => Some 3  
-            | _ => recPredfn1 a m
-           end 
- end
- with recPredfn1 (a : nat) (c : nat) : option nat :=
-  match c with
-   | 0 => (* Some a *) None
-   | S m => match a with
-             | S a' => match recPredfnMut' a' m with
-                        | Some b' => Some (S b')
-                        | None => None
-                        end
-             | _ => None
-             end           
-  end.           
-           
-Compute (recPredfnMut' 8 20).            
-*) 
-
-Fixpoint recPredfnMut'' (a : nat) (c : nat) : option nat :=
- match c with
-  | 0 => (* Some a *) None
-  | S m =>  recPredfn0 a m 
- end
- with recPredfn0 (a : nat) (c : nat) : option nat :=
-  match c with
-   | 0 => None
-   | S m => match a with
-            | 1 => Some 3  
-            | _ => recPredfn1 a m
-           end 
-  end
-  with recPredfn1 (a : nat) (c : nat) : option nat :=
-  match c with
-   | 0 => (* Some a *) None
-   | S m => match a with
-             | S a' => match recPredfnMut'' a' m with
-                        | Some b' => Some (S b')
-                        | None => None
-                        end
-             | _ => None
-             end           
-  end.            
- 
-
-Compute (recPredfnMut'' 12 50).
-
-Theorem helper: forall a c b : nat, recPredfnMut'' (S (S a)) c = Some (S b) -> recPredfnMut'' (S a) c = Some b.
-Proof. Admitted.
-(*
-induction a.
-+ 
-intros. destruct c.
-+ simpl in H. discriminate H.
-+ simpl in H. destruct c.
-++ simpl in H. discriminate H.
-++ simpl in H. destruct c.
-+++ simpl in H. discriminate H.
-+++ simpl in H. remember (recPredfnMut'' (S a) c) as t. destruct t.
-++++ inversion H. rewrite <- H1. simpl. destruct a.
-* destruct c.
-** simpl in Heqt. discriminate Heqt.
-** simpl in Heqt. destruct c.
-*** simpl in Heqt. discriminate Heqt.
-*** simpl in Heqt. auto.
-* destruct c.
-** simpl in Heqt. discriminate Heqt.
-** destruct c. 
-*** simpl in Heqt. discriminate Heqt.
-*** simpl in Heqt. destruct c.
--- simpl in Heqt. discriminate Heqt.
--- remember (recPredfnMut'' (S a) (S (S (S c)))) as t'. destruct t'.
---- destruct c.
----- simpl in Heqt. discriminate Heqt.
----- simpl in Heqt'.   rewrite -> Heqt. simpl.
-++++ 
-
-*)
-
-Theorem recSound : forall a c b : nat, recPredfnMut'' a c = Some b -> recPred a b.
- Proof. induction a.
- - destruct c.
- + simpl. intros. discriminate H.
- + intros. simpl in H. destruct c.
- ++ simpl. intros. discriminate H.
- ++ simpl in H. destruct c.
- +++ simpl in H. discriminate H.
- +++ simpl in H. discriminate H.
- - intros. destruct b.
- + destruct c.
- ++ simpl in H. discriminate H.
- ++ simpl in H. destruct c.
- +++ simpl in H. discriminate H.
- +++ simpl in H. destruct a.
- ++++ discriminate H.
- ++++ destruct c.
- * simpl in H. discriminate H.
- * simpl in H. destruct c.
- ** simpl in H. discriminate H.
- ** simpl in H. destruct a.
- ***  destruct (recPredfn0 1 c); discriminate H.
- *** destruct (recPredfn0 (S (S a)) c); discriminate H.
- + destruct a.
- ++ destruct c.
- +++ simpl in H. discriminate H.
- +++ simpl in H. destruct c. 
- ++++ simpl in H. discriminate H.
- ++++ simpl in H. inversion H. apply recPredBase.
- ++ apply recPredInd. apply (IHa c). apply helper. auto. Qed.
 
 
 
-Fixpoint recPredfnMut''Str (a : nat) (c : nat) : (prod string (option nat)) :=
- match c with
-  | 0 => (* Some a *) ("error", None)
-  | S m =>  recPredfn'0 a m 
- end
- with recPredfn'0 (a : nat) (c : nat) : (prod string (option nat)) :=
-  match c with
-   | 0 => ("error", None)
-   | S m => match a with
-            | 1 => ("success", Some 3)  
-            | _ => recPredfn'1 a m
-           end 
-  end
-  with recPredfn'1 (a : nat) (c : nat) : (prod string (option nat)) :=
-  match c with
-   | 0 => (* Some a *) ("error", None)
-   | S m => match a with
-             | S a' => match recPredfnMut''Str a' m with
-                        | ("success", Some b') => ("success", Some (S b'))
-                        | ("success", None) => ("success", None)
-                        | _ => ("error", None)
-                        end
-             | _ => ("success", None)
-             end           
-  end.  
-  
-Compute (recPredfnMut''Str 0 12).  
 
-Theorem recSound' : forall a c b : nat, recPredfnMut''Str a c = ("success", Some b) -> recPred a b. Proof. Admitted.
-Theorem recSound'' : forall a c : nat, (recPredfnMut''Str a c = ("success", None) -> forall b, (recPred a b -> False)). 
-Proof. Admitted.
 
 Inductive recPredFull : nat -> nat -> Prop :=
  | recPredFullBase : recPredFull 1 3 
@@ -1503,81 +1223,6 @@ Inductive outcome' : Set :=
  | success' : (nat) -> outcome'. 
 
 
-Fixpoint recPredFullfn (a : nat) (c : nat) : (prod outcome (option nat)) :=
- match c with
-  | 0 => (* Some a *) (error, None)
-  | S m =>  recPredFullBasefn a m 
- end
- with recPredFullBasefn (a : nat) (c : nat) : (prod outcome (option nat)) :=
-  match c with
-   | 0 => (error, None)
-   | S m => match a with
-            | 1 => (success, Some 3)  
-            | _ => recPredFullConsfn a m
-           end 
-  end
-  with recPredFullConsfn (a : nat) (c : nat) : (prod outcome (option nat)) :=
-  match c with
-   | 0 => (* Some a *) (error, None)
-   | S m => match a with 
-             | S a' => match (recPredInd1fn a' m) with
-                        | (success, Some b') => (success, Some (S b'))
-                        | (success, None) => (success, None)
-                        | _ => (error, None)
-                        end
-             | _ => (success, None)          
-            end 
-  end           
- with recPredInd1fn (a : nat) (c : nat) : (prod outcome (option nat)) :=
- match c with
-   | 0 => (* Some a *) (error, None)
-   | S m => recPredInd1Consfn a m
- end
- with recPredInd1Consfn (a : nat) (c : nat) : prod outcome (option nat) :=
-  match c with
-  | 0 => (error, None)
-  | S m => match a with
-            | S a' => match recPredFullfn a' m with
-                        | (success, Some b') => (success, Some (S b'))
-                        | (success, None) => (success, None)
-                        | _ => (error, None)
-                        end
-            | _ => (success, None)
-           end                   
-  end.   
-
-Definition x : True -> recPredFull 1 3.
-Proof. intros. apply recPredFullBase. Qed.
-
-Check x.
-
-Definition verify' (a : nat) (r : prod outcome (option nat)) : Type :=
- match r with
-  | (success, Some b) => True -> recPredFull a b
-  | (success, None) => forall b : nat, recPredFull a b -> False
-  | _ => True
- end. 
-
-
-
-Check (True -> recPredFull 1 3).
-
-Theorem emptyType : recPredFull 1 4 -> False.
-Proof. (*intro. inversion H; subst. inversion H2; subst. *) Admitted.
-
-
-Compute (recPredFullfn 9 35).
-
-(* MetaRocq Quote Definition recPredFullfnTerm := Eval compute in recPredFullfn.
-
-Print recPredFullfnTerm.*)
-
-Definition verify (a : nat) (c : nat) : Type :=
- forall b, (recPredFullfn a c = (success, Some b) -> (recPredFull a b)).
-
-Definition verifyTotal : Type :=
- forall a c b, (recPredFullfn a c = (success, Some b) -> (recPredFull a b)).
- 
 
 
 
@@ -1597,123 +1242,11 @@ Definition verifyTotal : Type :=
 
 
 
-Definition verify'' (a : nat) (r : (option nat)) : Type :=
- match r with
-  | (Some b) => recPredFull a b
-  | (None) => forall b : nat, recPredFull a b -> False
- 
- end.
-
-Definition typeTrue : Type :=
-True.
-
-(**Definition soundCertType (a : nat) : Type :=
- {b : nat | recPredFull a b } \/ . **)
- 
-(*
-Inductive recPredFull : nat -> nat -> Prop :=
- | recPredFullBase : recPredFull 1 3 
- | recPredFullCons : forall a b, recPredInd1 a b -> recPredFull (S a) (S b)
-
-with recPredInd1 : nat -> nat -> Prop :=  
- | recPredInd1Cons : forall a b, recPredFull a b  -> recPredInd1 ((a)) (b).
-*) 
-(*
-Fixpoint recPredFullfn (a : nat) (c : nat) : option (outcome') 
- match c with
-  | 0 => (* Some a *) (Some error')
-  | S m =>  recPredFullBasefnPf a m 
- end
- with recPredFullBasefnPf (a : nat) (c : nat) : option outcome' :=
-  match c with
-   | 0 => (Some error')
-   | S m => match a with
-            | 1 => (success, Some 3, verify'' 1 (Some 3))  
-            | _ => recPredFullConsfnPf a m
-           end 
-  end
-  with recPredFullConsfnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
-  match c with
-   | 0 => (* Some a *) (error')
-   | S m => match a with 
-             | S a' => match fst (recPredInd1fnPf a' m) with
-                        | (success, Some b') => (success, Some (S b'), verify'' a (Some (S b')))
-                        | (success, None) => (success, None, verify'' a None)
-                        | _ => (error, None, typeTrue)
-                        end
-             | _ => (success, None, verify'' a None)          
-            end 
-  end           
- with recPredInd1fnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
- match c with
-   | 0 => (* Some a *) (error, None, typeTrue)
-   | S m => recPredInd1ConsfnPf a m
- end
- with recPredInd1ConsfnPf (a : nat) (c : nat) : (prod (prod outcome (option nat)) Type) :=
-  match c with
-  | 0 => (error, None, typeTrue)
-  | S m => match a with
-            | S a' => match fst (recPredFullfnPf a' m) with
-                        | (success, Some b') => (success, Some (S b'), verify'' a (Some (S b')))
-                        | (success, None) => (success, None, verify'' a None)
-                        | _ => (error, None, typeTrue)
-                        end
-            | _ => (success, None, verify'' a None)
-           end                   
-  end. 
-*)
 
 
 
 
 
-
-
-
-
-
-
-
-
-(*
-Fixpoint recPredFullfn2 (a : nat) (d : nat) (c : nat) :  outcome'  :=
- match c with
-  | 0 =>  error'
-  | S m =>  match d with 
-            | 0 => match a with
-                   | 1 => (success' (Some 3))
-                   | _ => recPredFullfn2 a 1 m
-                   end
-            
-            | 1 => match a with 
-                    | S a' => match recPredInd1fn2 a' 0 m with
-                               | (success' (Some b)) => (success' (Some (S b)))
-                               | (success' None) => (success' None)
-                               | _ => error'
-                              end 
-                    | _  => recPredFullfn2 a 2 m
-                   end 
-            | _ =>  (success' None)
-           end 
-            
-                                   
- end
- with recPredInd1fn2 (a : nat) (d : nat) (c : nat) : outcome'  :=
-  match c with
-   | 0 => error'
-   | S m => match d with
-            | 0 => match a with 
-                    | S a' => match recPredFullfn2 a' 0 m with
-                               | (success' (Some b)) => (success' (Some (S b)))
-                               | (success' None) => (success' None)
-                               | _ => (error')
-                              end 
-                    | _ => recPredInd1fn2 a 1 m
-                   end 
-            | _ => success' None
-           end 
-  end.
-*) 
 Fixpoint dispatch {A : Type} {B : Type} (lst : list (A -> nat -> option B)) : A -> nat -> option B :=
  match lst with
  | [] => (fun x y => None)
@@ -2755,30 +2288,7 @@ tFix
   0.
 
 MetaRocq Run (t <- DB.deBruijn myTerm ;; f <- tmUnquote t ;; tmPrint f).
-(* SigT
-@sigT Type (fun obl => obl) *)
- 
 
-(*
-Fixpoint recPredFullSimpl (a : nat) (d : nat) (c : nat) :  outcome'  :=
- match c with
-  | 0 =>  error'
-  | S m =>  match d with 
-            | 0 => success' (Some 0)
-            | 1 => recPredFullSimpl a 0 m
-            | _ =>  recPredInd' a 0 m
-           end 
-            
-                                   
- end
-with recPredInd' (a : nat) (d : nat) (c : nat) : outcome' := success' None. 
- 
-MetaRocq Quote Definition simpTerm := Eval compute in recPredFullSimpl.
-
-MetaRocq Run (t <- DB.undeBruijn simpTerm ;; t' <- tmEval all t ;; tmPrint t'). 
-*)
-
-Print tl.
 
 Compute (hd default (tl (getlst myTerm))).
 
@@ -2861,37 +2371,24 @@ Definition mkTopFnTerm (nmFn : string) (consFnName : list string) (dispatchFnTm 
 Parameter A : Type.
 Parameter B : Type.
 MetaRocq Quote Definition fnTm := (A -> B).
-Print fnTm.    
+Print fnTm.   
 
-(*
-Fixpoint composeInductiveInternal (inputType : list term) (outputType : list term) (errorTm : list term) (retLst : list (list term)) (wildCardLst : list term) (names : list string) 
-                                     : TemplateMonad (list (def term)) := 
+Check map. 
+Check app.
+
+
+Definition composeClause (nameTopFn : string) (animateClauses : list (prod string term)) (inputType : term) (outputType : term) (fuelError : term) (dispatchFn : term) 
+                                     : (list (def term)) :=
+  (mkTopFnTerm nameTopFn (map fst animateClauses) dispatchFn inputType outputType fuelError) :: (map (fun p => mkConsFunTerm (fst p)  (inputType) (outputType) (fuelError) (snd p)) animateClauses).                                   
                                      
- match retLst with
- | [] => tmFail "no clauses"
- | h :: t => match wildCardLst with
-              | [] => tmFail "no wildcard return val"
-              | h' :: t' => match names with 
-                             | [] => tmFail "no function name"
-                             | h'' :: t'' => match inputType with 
-                                              | [] => tmFail "no input Type"
-                                              | h0 :: t0 => match outputType with 
-                                                             | [] => tmFail "no outputput Type"
-                                                             | h1 :: t1 => match errorTm with 
-                                                                            | [] => tmFail "no error term"
-                                                                            | h2 :: t2 =>  res <- composeInductiveInternal t0 t1 t2 t t' t'' ;; res' <- (composeClause h0 h1 h2 h h' h'');; ret (res' :: res)
-                                                                            end
-                                                             end
-                                             end                
-                            
-                            end                                            
-                            
-             end
-
- end.
  
+Fixpoint composeInductives (inds : list (prod string (list (prod string term)))) (inputType : term) (outputType : term) (fuelError : term) (dispatchFn : term) 
+                                     : (list (def term)) := 
+   match inds with
+    | [] => []
+    | h :: t => app (composeClause (fst h) (snd h) inputType outputType fuelError dispatchFn) (composeInductives t inputType outputType fuelError dispatchFn)
+   end.                                   
 
-*) 
  
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
  tFix ls j.
