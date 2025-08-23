@@ -1504,6 +1504,15 @@ Fixpoint natPatMatchBr (outputType : term) (wildCardRet : term) (retVals : list 
       {|
         bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
         bbody := wildCardRet |}]
+  
+  | [h] =>  [{|
+        bcontext := [];
+        bbody :=
+         h
+      |};
+      {|
+        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
+        bbody := wildCardRet |}]     
  
  
  
