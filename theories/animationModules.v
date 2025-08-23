@@ -1329,7 +1329,7 @@ with dispatch' (lst : list (nat -> nat -> option outcome')) (c : nat) : nat -> n
 
 *) 
 
-
+(*
 Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
 
 
@@ -1380,27 +1380,177 @@ with recPred2IndFn (a : nat) (c : nat) : option outcome' :=
              end 
               
  end.
+*)
+
+Definition recPredBaseFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' :=     
+ match c with
+  | 0 => Some error'
+  | S m =>   match a with
+                | 1 => Some (success' (3))
+                | _ => None
+              end
+ end .          
+Definition recPredIndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' := 
+
+ match c with 
+  | 0 => Some error'
+  | S m =>  match a with 
+             | S a' => match recPred2TopFn a' m with
+                        | Some (success' (b)) => Some (success' ((S b)))
+                        | None => None
+                        | _ => Some error'
+                        end 
+             | _  => None
+            end 
+           
+ end.
+  
+Definition recPred2IndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' :=  
+ match c with  
+  | 0 => Some error'
+  | S m =>   match recPredTopFn a m with
+              | Some (success' ( b)) => Some (success' ((b)))
+              | None => None
+              | _ => Some (error')
+             end 
+              
+ end.
+
+
+Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
+  match c with
+  | 0 => Some error'
+  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
+                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
+  end 
+with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
+  match c with 
+  | 0 => Some error'
+  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
+  end.
+
+
+Fixpoint recPredTopFn' (ind : nat) (a : nat) (fuel : nat) :  option outcome'  :=
+  match ind with 
+   | 0 => match fuel with
+          | 0 => Some error'
+          | S m => (dispatch [recPredBaseFn (recPredTopFn' 0) (recPredTopFn' 1)
+                    ; recPredIndFn (recPredTopFn' 0) (recPredTopFn' 1)]) a m
+  
+          end 
+  
+   | 1 => match fuel with 
+           | 0 => Some error'
+           | S m => (dispatch [recPred2IndFn (recPredTopFn' 0) (recPredTopFn' 1)]) a m
+          end
+  
+   | _ => None
+  end.  
 
 
 
 
- 
 
 
 
 
 
-
-
-
-
-Compute (recPredTopFn 7 40).  
+Compute (recPredTopFn' 0 7 40).  
 
 MetaRocq Quote Definition topFnTerm := Eval compute in recPredTopFn.
 
 MetaRocq Run (t <- DB.undeBruijn topFnTerm ;; t' <- tmEval all t ;; tmDefinition "topFnTm" t').
 
 Print topFnTm. 
+
+Definition dummy (ind : nat) : bool :=
+ match ind with 
+  | 0 => true
+  | 1 => true
+  | 2 => true
+  | _ => false
+ end.
+
+MetaRocq Quote Definition dummy_syntax := Eval compute in dummy.
+ 
+MetaRocq Run (t <- DB.undeBruijn dummy_syntax ;; t' <- tmEval all t ;; tmDefinition "dummyTm" t').
+
+Print dummyTm.
+
+Search (string -> string -> string).
+Search (nat -> string).
+
+
+Definition mkName (n : nat) : string :=
+ String.append "n" (string_of_nat n).
+ 
+
+Fixpoint natPatMatchBr (outputType : term) (wildCardRet : term) (retVals : list term) (index : nat) : list (branch term) :=
+ match retVals with
+  | [] => [{|
+        bcontext := [];
+        bbody :=
+         wildCardRet
+      |};
+      {|
+        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
+        bbody := wildCardRet |}]
+ 
+ 
+ 
+  
+  | h' :: t' => [{|
+        bcontext := [];
+        bbody :=
+          h'
+      |};
+      {|
+        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
+        bbody :=
+          tCase
+            {|
+              ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+              ci_npar := 0;
+              ci_relevance := Relevant
+            |}
+            {|
+              puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
+              preturn :=
+                outputType
+            |} (tVar (mkName index)) (natPatMatchBr (outputType) (wildCardRet) t' (index + 1)) |}]
+ end.                         
+        
+
+Definition natPatMatch (outputType : term) (wildCardRet : term) (retVals : list term) : term :=
+ tLam "ind" <%nat%>
+  (tCase
+     {|
+       ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+       ci_npar := 0;
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := [];
+       pcontext := [{| binder_name := nNamed "ind"; binder_relevance := Relevant |}];
+       preturn :=
+         outputType
+     |} (tVar "ind") (natPatMatchBr (outputType) (wildCardRet) (retVals) 0)).
+     
+ 
+  
+ 
 Parameter default : (def term).
 
 Definition getlst (t : term) : list (def term) :=
