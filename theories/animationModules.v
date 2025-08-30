@@ -727,8 +727,8 @@ Check map.*)
  
 Definition sortBinders (outputVars : list string) (lst : list ((string × term) × list string)) : ((list string)) :=
   concat (map (fun x : string => sortBindersOne x lst) outputVars). 
-(* Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
-        ("v6", tVar "a", [])])). *) 
+Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
+        ("v6", tVar "a", [])])). 
         
 Compute (retVarVals ["v6"]).                      
  
@@ -906,6 +906,9 @@ Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)
   | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (ls')))  
   | (h :: t) => mkCase' h mut (mkPmNested' t ls' outputVars mut)
  end. 
+
+
+ 
 Definition mkPmNested (ls' : list (((string × term) × list string))) (outputVars : list string) 
             (mut : list mutual_inductive_body) : term :=
             mkPmNested' (preProcConsTypeVar ls' ls') ls' outputVars mut.
@@ -1199,6 +1202,8 @@ Fixpoint recPredfn (a1 : nat) : option type
 
 
 
+Definition extractTypeData2 (p : program) : list (option mutual_inductive_body) := 
+ (map typeConstrPatMatch.extractIndDecl ((map snd (( ( (declarations (fst p)))))))).
 
 
 Inductive recPredFull : nat -> nat -> Prop :=
@@ -1208,9 +1213,75 @@ Inductive recPredFull : nat -> nat -> Prop :=
 with recPredInd1 : nat -> nat -> Prop :=  
  | recPredInd1Cons : forall a b, recPredFull a b  -> recPredInd1 a b.
 
-MetaRocq Quote Definition recPredFull_syntax := Eval compute in recPredFull.
+MetaRocq Quote Recursively Definition recPredFull_syntax := recPredFull.
 
-Print recPredFull_syntax.
+Compute (option_map ind_bodies (typeConstrPatMatch.extractIndDecl (snd (hd (typeConstrPatMatch.error) (declarations (fst recPredFull_syntax)))))).
+
+Print TemplateMonad.
+
+MetaRocq Run (t <- tmQuoteInductive <? recPredFull ?> ;; tmPrint t).
+Definition recPredFullConsTm : term :=
+ tPro "a" <%nat%>
+                     (tPro "b" <%nat%>
+                        (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                           (tApp (tRel 2) [tRel 1; tRel 0])
+                           (tApp (tRel 4)
+                              [tApp
+                                 (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                 [tRel 2];
+                               tApp
+                                 (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                 [tRel 1]]))).
+MetaRocq Run (t <- DB.undeBruijn recPredFullConsTm ;; tmPrint t).
+
+Parameter errorTm : term.
+
+Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
+ match fuel with
+  | 0 => []
+  | S m => match l with
+            | [] => []
+            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
+            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
+            | [tCase c p t l] => match replaceVars [t] dict m with
+                                  | [t'] => [tCase c p t' l]
+                                  | _ => [tCase c p t l]
+                                 end 
+     
+            |  other => other
+           end 
+       
+    
+ end. 
+ 
+Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
+ match lst' with
+  | [] => []
+  | (h :: rest) => match h with
+                    | (str1, (tVar y), _) => if (String.eqb y outputVar) then [str1] else sortBindersOne outputVar rest 
+                    | _ => sortBindersOne outputVar rest
+                   end 
+ end.
+
+Definition dict (lst': list ((string × term) × list string)) (var : string) : string :=
+ match sortBindersOne var lst' with
+  | [] => var
+  | h :: t => h
+ end.
+ 
+Definition replaceVars' (l : list term) (lst': list ((string × term) × list string)) (fuel : nat) : list term :=
+ replaceVars l (dict lst') fuel.
+ 
+Definition replaceVarsTm (t : term) (lst': list ((string × term) × list string)) (fuel : nat)  : term :=
+ match replaceVars' [t] lst' fuel with
+  | [] => errorTm
+  | [h] => h
+  | _ => errorTm
+ end.                                        
+
+Print global_declarations.
+
+(* MetaRocq Run (general.animate <? recPredFull ?>). *)  
  
  
 
@@ -1221,27 +1292,384 @@ Inductive outcome : Set :=
 Inductive outcome' : Set :=
  | error' : outcome'
  | success' : (nat) -> outcome'. 
+ 
+ 
+Definition targetFn
+  
+  (recPred2TopFn : nat -> option outcome')
+  (input : nat) : option outcome' := 
+
+   match input with 
+             | S a => match recPred2TopFn a with
+                        | Some (success' (b)) => Some (success' ((S b)))
+                        | None => None
+                        | _ => Some error'
+                        end 
+             | _  => None
+            end.  
+
+
+(* Given inductive and input term need to produce targetFn *)
+
+MetaRocq Quote Definition targetFnTerm := Eval compute in targetFn.
+Print targetFnTerm.
+MetaRocq Run (t' <- DB.undeBruijn targetFnTerm ;; t'' <- tmEval all t' ;; tmPrint t'').
+
+Check tCase.
+(*
+bbody :=
+              tCase
+                {|
+                  ci_ind :=
+                    {|
+                      inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                      inductive_ind := 0
+                    |};
+                  ci_npar := 1;
+                  ci_relevance := Relevant
+                |}
+                {|
+                  puinst := [];
+                  pparams :=
+                    [tInd
+                       {|
+                         inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+                         inductive_ind := 0
+                       |} []];
+                  pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
+                  preturn :=
+                    tApp
+                      (tInd
+                         {|
+                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                           inductive_ind := 0
+                         |} [])
+                      [tInd
+                         {|
+                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+                           inductive_ind := 0
+                         |} []]
+                |} (tApp (tVar "recPred2TopFn") [tVar "a"])
+*)
+
+
+Definition sampleInput : term := 
+(tPro "a" <%nat%>
+   (tPro "b" <%nat%>
+      (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         (tApp (tVar "recPredInd1") [tVar "a"; tVar "b"])
+         (tApp (tVar "recPredFull")
+            [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"];
+             tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]])))).
 
 
 
+Definition mkNoneBranch2 (wildCardRet : term) (n : nat)  : branch term := typeConstrPatMatch.mkNoneBr n wildCardRet. (* Takes a arity and produces a branch term where return value is none *)
+
+
+Definition mkBrLst2 (s : (string × term) × list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
+ 
+ let csArlst := (typeConstrPatMatch.getCstrArityLst (typeConstrPatMatch.getTypeNm s) l) in
+  let index := typeConstrPatMatch.getCstrIndex s in
+  map (mkNoneBranch2 wildCardRet) (typeConstrPatMatch.untilLst index csArlst) ++ [typeConstrPatMatch.mkSomeBranch (rev (snd s)) t] ++ map (mkNoneBranch2 wildCardRet) (typeConstrPatMatch.restLst index csArlst).  
+   
+ 
+Definition mkCase2'  (s' : ((string × term) × list string) × list term ) (l : list mutual_inductive_body) (t : term) (outputType : term) (wildCardRet : term) 
+                      : term :=
+  let s := fst s' in 
+  (tCase
+     {|
+       ci_ind := typeConstrPatMatch.getType s ;
+       ci_npar := length (snd s');
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := (snd s');
+       pcontext := [{| binder_name := nNamed (fst (fst s)); binder_relevance := Relevant |}];
+       preturn :=
+       outputType
+     |} (tVar (fst (fst s))) (* Should get changed to a tRel after deBruijning *)                                                                                                        
+      (mkBrLst2 s l t wildCardRet)). 
+      
+      
+
+
+Fixpoint mkPmNested2' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
+            (mut : list mutual_inductive_body) (fuel : nat) : term :=
+ match ls with
+  | [] => typeConstrPatMatch.identityTerm
+  | (h :: nil) => mkCase2' h mut (replaceVarsTm outputTerm ls' fuel) outputType wildCardRet
+  | (h :: t) => mkCase2' h mut (mkPmNested2' t ls' outputTerm outputType wildCardRet mut fuel) outputType wildCardRet
+ end. 
+ 
+ 
+Definition mkPmNested2 (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
+            (mut : list mutual_inductive_body) (fuel : nat) : term :=
+            mkPmNested2' (typeConstrPatMatch.preProcConsTypeVar ls' ls') ls' outputTerm outputType wildCardRet mut fuel.
+ 
+(*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
+   mkPmNested'  (filterTypeCon ls mut) mut.*)
+
+Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
+ match optls with
+  | [] => []
+  | (Some x :: t) => (x :: removeOpt t)
+  | (None :: t) => removeOpt t
+ end. 
+ 
+(* Need to modify*) 
+(*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
+
+Definition mkLam2' (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body) (fuel : nat) : option term :=
+ match ls with 
+ | [] => None
+ | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v3"%bs; binder_relevance := Relevant |}
+                                 (typeInfo) (mkPmNested2 ls outputTerm outputType wildCardRet mut fuel))
+
+ 
+ 
+ | _ => None                                
+ end.
+ 
+Definition mkLam2 (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body)) (fuel : nat) : option term :=
+  mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut) fuel.    
+ 
+
+(*
+Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : option term :=
+ let td := extractTypeData p in
+  let pmd := extractPatMatData p in
+   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
+*)
+Definition mkLamfromInd3 (conjTm : term) (p : program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
+ let td := extractTypeData2 p in
+  let pmd := conjTm in
+   if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (typeConstrPatMatch.preProcCons fuel pmd) outputTerm outputType wildCardRet td fuel) else None. 
+      
+  
+(* Compute (mkLamfromInd baz'Term 20).*)
+
+Parameter errTm : term.
+
+Definition removeopTm (o : option term) : term :=
+ match o with
+  | Some t => t
+  | None => errTm
+ end. 
+ 
+                     
+
+Parameter errorPath : prod modpath ident.
+
+Definition getPathIdent (t : term) : prod modpath ident :=
+ match t with
+  | tInd p l => inductive_mind p
+  | _ => errorPath
+ end. 
+
+
+          
+
+(*
+Definition justAnimatePatMat {A : Type} (induct : A)  (outputVar : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+ indTm <- tmQuote induct ;; 
+ termConj <- general.animate2 (getPathIdent indTm) ;; 
+ termFull <- tmQuoteRecTransp  induct  false ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull outputVar fuel))))) ;; 
+ f <- tmUnquote t ;; 
+ tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+ tmMsg "done".
+
+*)
+
+
+Definition justAnimatePatMat2 {A : Type} (induct : A) (inputTerm : term) (outputTerm : term) (outputType : term) (wildCardRet : term) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+ (*
+ indTm <- tmQuote induct ;; 
+ 
+ termConj <- general.animate2 (getPathIdent indTm) ;;
+ *) 
+ termFull <- tmQuoteRecTransp  induct  false ;;
+  
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm termFull outputTerm outputType wildCardRet fuel))))) ;; 
+ (*tmPrint t ;;*)
+
+ 
+ f <- tmUnquote t ;; 
+ tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+ tmMsg "done".
 
 
 
+Parameter g : nat -> option outcome'.
+MetaRocq Quote Definition gterm := g.
+Print gterm.
+
+Parameter c : case_info.
+Parameter p : predicate term.
+Parameter l : list (branch term).
+
+Definition caseTm : term := tCase c p (tApp (tVar "g") [tVar "a"]) l.
 
 
+Definition outerFn (input : nat) : option outcome' :=
+ match input with
+  | S a => g a
+  | _ => None
+ end.
+
+MetaRocq Quote Definition outerFnTerm := Eval compute in outerFn.
+
+Print outerFnTerm. 
+ 
+Definition term1 : term :=
+  tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"].
+Definition term1' : term :=
+tApp <%eq%>
+  [<%nat%>; tVar "x"; tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]].
+
+ 
+       
+  
+Definition term2 : term :=
+tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tVar "a"]. 
+
+MetaRocq Run (t <- tmQuote (option outcome') ;; tmDefinition "retType" t).
+MetaRocq Run (t <- tmQuote (@None outcome') ;; tmDefinition "wildCardRet" t).
+
+Print retType.
+
+MetaRocq Run (justAnimatePatMat2 recPredFull term1' term2 retType wildCardRet "result" 50).
+
+Print result.
+
+(*
+tLam "v2" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "v3"; binder_relevance := Relevant |}];
+                 preturn :=
+                   tApp
+                     (tInd
+                        {|
+                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                          inductive_ind := 0
+                        |} [])
+                     [tInd
+                        {|
+                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+                          inductive_ind := 0
+                        |} []]
+               |} (tVar "v3")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp
+                      (tConstruct
+                         {|
+                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                           inductive_ind := 0
+                         |} 1 [])
+                      [tApp
+                         (tInd
+                            {|
+                              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                              inductive_ind := 0
+                            |} [])
+                         [<%nat%>]]
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "v4"; binder_relevance := Relevant |}];
+                  bbody := tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tVar "v4"]
+                |}])
+       
+    
+    
+tLam "input" <%nat%>
+  (tCase
+     {|
+       ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+       ci_npar := 0;
+       ci_relevance := Relevant
+     |}
+     {|
+       puinst := [];
+       pparams := [];
+       pcontext := [{| binder_name := nNamed "input"; binder_relevance := Relevant |}];
+       preturn :=
+         tApp
+           (tInd
+              {|
+                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                inductive_ind := 0
+              |} [])
+           [tInd
+              {|
+                inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+                inductive_ind := 0
+              |} []]
+     |} (tRel 0)
+     [{|
+        bcontext := [];
+        bbody :=
+          tApp
+            (tConstruct
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                 inductive_ind := 0
+               |} 1 [])
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+                 inductive_ind := 0
+               |} []]
+      |};
+      {|
+        bcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
+        bbody := tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tRel 0]
+      |}])       
+ *)      
+MetaRocq Run (t <- tmQuoteRecTransp  recPredFull  true ;; tmDefinition "termFull" t). 
+Print termFull.
+
+(* Goal : outerFn *) 
+
+Parameter x : nat.
+Parameter a : nat.
+(*MetaRocq Quote Definition term1' := (x = a).
+
+Print term1'. *)
 
 
+Compute ((mkLamfromInd3 term1' termFull term2 retType 30)). 
+Print term.
+
+Compute (typeConstrPatMatch.preProcCons 30 term1').
+
+Compute (replaceVarsTm term2 (typeConstrPatMatch.preProcCons 30 term1') 30).
 
 
+Compute (mkLam2 (typeConstrPatMatch.preProcCons 30 term1') term2 retType (extractTypeData2 termFull) 30). 
+  
+(** PROBLEM !! RETURNING EMPTY LIST **)
 
+Search (list _ -> option _).
+Search (string -> string -> bool).
 
-
-
-
-
-
-
-
+Compute ((typeConstrPatMatch.extractTypeData termFull)).
+Compute (map typeConstrPatMatch.extractIndDecl ((map snd (( ((declarations (fst termFull)))))))).
 
 
 
