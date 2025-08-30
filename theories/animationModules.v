@@ -487,11 +487,13 @@ Parameter error3 : constructor_body.
 Parameter error4 : context_decl.
 Parameter termErr : term.
 
+Definition extractTypeData (p : program) : list (option mutual_inductive_body) := 
+ (map extractIndDecl ((map snd ((((declarations (fst p)))))))).
 
-
+(*
 Definition extractTypeData (p : program) : list (option mutual_inductive_body) := 
  (map extractIndDecl ((map snd ((tl (tl (declarations (fst p)))))))).
-
+*)
 Definition extractPatMatData (p : program) : term :=
  let r := 
      (option_map decl_type (option_map (hd error4) (option_map cstr_args (option_map (hd error3) (option_map ind_ctors (option_map (hd error2) (option_map ind_bodies (extractIndDecl (snd (hd error (declarations (fst p)))))))))))) in
@@ -1202,9 +1204,9 @@ Fixpoint recPredfn (a1 : nat) : option type
 
 
 
-Definition extractTypeData2 (p : program) : list (option mutual_inductive_body) := 
+(*Definition extractTypeData2 (p : program) : list (option mutual_inductive_body) := 
  (map typeConstrPatMatch.extractIndDecl ((map snd (( ( (declarations (fst p)))))))).
-
+*)
 
 Inductive recPredFull : nat -> nat -> Prop :=
  | recPredFullBase : recPredFull 1 3 
@@ -1235,6 +1237,28 @@ Definition recPredFullConsTm : term :=
 MetaRocq Run (t <- DB.undeBruijn recPredFullConsTm ;; tmPrint t).
 
 Parameter errorTm : term.
+(*
+Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
+ match fuel with
+  | 0 => []
+  | S m => match l with
+            | [] => []
+            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
+            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
+            | [tCase c p t l] => match replaceVars [t] dict m with
+                                  | [t'] => [tCase c p t' l]
+                                  | _ => [tCase c p t l]
+                                 end 
+     
+            |  other => other
+           end 
+       
+    
+ end. 
+ *)
+
+Print predicate.
+
 
 Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
  match fuel with
@@ -1443,7 +1467,7 @@ Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : 
    if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
 *)
 Definition mkLamfromInd3 (conjTm : term) (p : program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
- let td := extractTypeData2 p in
+ let td := typeConstrPatMatch.extractTypeData p in
   let pmd := conjTm in
    if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (typeConstrPatMatch.preProcCons fuel pmd) outputTerm outputType wildCardRet td fuel) else None. 
       
@@ -1651,7 +1675,7 @@ Parameter a : nat.
 (*MetaRocq Quote Definition term1' := (x = a).
 
 Print term1'. *)
-
+(*
 
 Compute ((mkLamfromInd3 term1' termFull term2 retType 30)). 
 Print term.
@@ -1671,7 +1695,7 @@ Search (string -> string -> bool).
 Compute ((typeConstrPatMatch.extractTypeData termFull)).
 Compute (map typeConstrPatMatch.extractIndDecl ((map snd (( ((declarations (fst termFull)))))))).
 
-
+*)
 
 
 
