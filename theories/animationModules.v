@@ -965,6 +965,7 @@ Definition removeopTm (o : option term) : term :=
   | None => errTm
  end. 
  
+ 
 (* 
 tApp
              (tConstruct
@@ -1237,71 +1238,7 @@ Definition recPredFullConsTm : term :=
 MetaRocq Run (t <- DB.undeBruijn recPredFullConsTm ;; tmPrint t).
 
 Parameter errorTm : term.
-(*
-Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
- match fuel with
-  | 0 => []
-  | S m => match l with
-            | [] => []
-            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
-            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
-            | [tCase c p t l] => match replaceVars [t] dict m with
-                                  | [t'] => [tCase c p t' l]
-                                  | _ => [tCase c p t l]
-                                 end 
-     
-            |  other => other
-           end 
-       
-    
- end. 
- *)
 
-Print predicate.
-
-
-Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
- match fuel with
-  | 0 => []
-  | S m => match l with
-            | [] => []
-            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
-            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
-            | [tCase c p t l] => match replaceVars [t] dict m with
-                                  | [t'] => [tCase c p t' l]
-                                  | _ => [tCase c p t l]
-                                 end 
-     
-            |  other => other
-           end 
-       
-    
- end. 
- 
-Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
- match lst' with
-  | [] => []
-  | (h :: rest) => match h with
-                    | (str1, (tVar y), _) => if (String.eqb y outputVar) then [str1] else sortBindersOne outputVar rest 
-                    | _ => sortBindersOne outputVar rest
-                   end 
- end.
-
-Definition dict (lst': list ((string × term) × list string)) (var : string) : string :=
- match sortBindersOne var lst' with
-  | [] => var
-  | h :: t => h
- end.
- 
-Definition replaceVars' (l : list term) (lst': list ((string × term) × list string)) (fuel : nat) : list term :=
- replaceVars l (dict lst') fuel.
- 
-Definition replaceVarsTm (t : term) (lst': list ((string × term) × list string)) (fuel : nat)  : term :=
- match replaceVars' [t] lst' fuel with
-  | [] => errorTm
-  | [h] => h
-  | _ => errorTm
- end.                                        
 
 Print global_declarations.
 
@@ -1417,20 +1354,67 @@ Definition mkCase2'  (s' : ((string × term) × list string) × list term ) (l :
       (mkBrLst2 s l t wildCardRet)). 
       
       
+Fixpoint collectVarSets (l : list ((string × term) × list string)) : list string × list string :=
+ match l with
+ | [] => ([], [])
+ | h :: t => match snd (fst h) with
+              | tVar str => (str :: (fst (collectVarSets t)), (app (snd h) (fst (fst h) :: snd (collectVarSets t))))
+              | _ => ((fst (collectVarSets t)), (app (snd h) (fst (fst h) :: snd (collectVarSets t))))
+             end  
+end. 
+(* Compute (typeConstrPatMatch.preProcCons 30 term1''). *)
+
+Search (string -> list string -> bool).
+Fixpoint noRepeat (l1 : list string) (l2 : list string) : bool :=
+ match l1 with
+  | [] => true
+  | (h :: t) => negb (typeConstrPatMatch.chkMemberStr h (l2)) && (noRepeat t l2)
+ end. 
+
+
+Fixpoint origVarsMap (l : list ((string × term) × list string)) : list (string × string) :=
+match l with
+ | [] => []
+ | (str, tVar str1, lst) :: t => (str, str1) :: (origVarsMap t)
+ | _ :: t => origVarsMap t
+end.
+
+
+
+Fixpoint switchOneVar (s : string) (map : list (string × string)) : string :=
+ match map with
+  | [] => s
+  | (str, str1) :: t => if (String.eqb s str) then str1 else switchOneVar s t
+ end.  
+ 
+(*Compute (typeConstrPatMatch.preProcCons 30 term1''). 
+Check map. *)
+
+Definition switchVars  (d : list (string × string)) (o : ((string × term) × list string)) : ((string × term) × list string) :=
+ match o with
+  | (s, t, l) => ((switchOneVar s d), t, (map (fun s => switchOneVar s d) l))
+ end. 
+ 
+Definition switchVars' (d : list (string × string))  (l : list ((string × term) × list string)) := 
+ (map (switchVars d) l).
+ 
+Definition changeVars (l : list ((string × term) × list string)) : list ((string × term) × list string) :=
+ switchVars' (origVarsMap l) l.
+        
 
 
 Fixpoint mkPmNested2' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
-            (mut : list mutual_inductive_body) (fuel : nat) : term :=
+            (mut : list mutual_inductive_body)  : term :=
  match ls with
   | [] => typeConstrPatMatch.identityTerm
-  | (h :: nil) => mkCase2' h mut (replaceVarsTm outputTerm ls' fuel) outputType wildCardRet
-  | (h :: t) => mkCase2' h mut (mkPmNested2' t ls' outputTerm outputType wildCardRet mut fuel) outputType wildCardRet
+  | (h :: nil) => mkCase2' h mut (outputTerm) outputType wildCardRet
+  | (h :: t) => mkCase2' h mut (mkPmNested2' t ls' outputTerm outputType wildCardRet mut) outputType wildCardRet
  end. 
  
  
 Definition mkPmNested2 (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
-            (mut : list mutual_inductive_body) (fuel : nat) : term :=
-            mkPmNested2' (typeConstrPatMatch.preProcConsTypeVar ls' ls') ls' outputTerm outputType wildCardRet mut fuel.
+            (mut : list mutual_inductive_body)  : term :=
+            mkPmNested2' (typeConstrPatMatch.preProcConsTypeVar ls' ls') ls' outputTerm outputType wildCardRet mut.
  
 (*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
    mkPmNested'  (filterTypeCon ls mut) mut.*)
@@ -1445,19 +1429,19 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
 (* Need to modify*) 
 (*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
 
-Definition mkLam2' (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body) (fuel : nat) : option term :=
+Definition mkLam2' (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body)  : option term :=
  match ls with 
  | [] => None
- | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v3"%bs; binder_relevance := Relevant |}
-                                 (typeInfo) (mkPmNested2 ls outputTerm outputType wildCardRet mut fuel))
+ | (h :: ((str, typeInfo, []) :: ((str2, t', l') :: rest)))  => Some (tLambda {| binder_name := nNamed str2; binder_relevance := Relevant |}
+                                 (typeInfo) (mkPmNested2 ls outputTerm outputType wildCardRet mut))
 
  
  
  | _ => None                                
  end.
  
-Definition mkLam2 (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body)) (fuel : nat) : option term :=
-  mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut) fuel.    
+Definition mkLam2 (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body))  : option term :=
+  mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut).    
  
 
 (*
@@ -1469,7 +1453,7 @@ Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : 
 Definition mkLamfromInd3 (conjTm : term) (p : program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
  let td := typeConstrPatMatch.extractTypeData p in
   let pmd := conjTm in
-   if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (typeConstrPatMatch.preProcCons fuel pmd) outputTerm outputType wildCardRet td fuel) else None. 
+   if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (changeVars (typeConstrPatMatch.preProcCons fuel pmd)) outputTerm outputType wildCardRet td) else None. 
       
   
 (* Compute (mkLamfromInd baz'Term 20).*)
@@ -1495,38 +1479,30 @@ Definition getPathIdent (t : term) : prod modpath ident :=
 
           
 
-(*
-Definition justAnimatePatMat {A : Type} (induct : A)  (outputVar : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
- indTm <- tmQuote induct ;; 
- termConj <- general.animate2 (getPathIdent indTm) ;; 
- termFull <- tmQuoteRecTransp  induct  false ;; 
- t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull outputVar fuel))))) ;; 
- f <- tmUnquote t ;; 
- tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
- 
- tmMsg "done".
 
-*)
-
-
-Definition justAnimatePatMat2 {A : Type} (induct : A) (inputTerm : term) (outputTerm : term) (outputType : term) (wildCardRet : term) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
+Definition justAnimatePatMat2 {A : Type} (induct : A) (inputTerm' : term) (inputType : term) (outputTerm : term) (outputType : term) (wildCardRet : term) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
  (*
  indTm <- tmQuote induct ;; 
  
  termConj <- general.animate2 (getPathIdent indTm) ;;
  *) 
  termFull <- tmQuoteRecTransp  induct  false ;;
-  
+ 
+ let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in 
+ if noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) then 
+ 
  t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm termFull outputTerm outputType wildCardRet fuel))))) ;; 
- (*tmPrint t ;;*)
+ 
 
  
  f <- tmUnquote t ;; 
  tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (nameFn) (Some hnf) ;;
  
- tmMsg "done".
+ tmMsg "done"
+ else
+ tmFail "found clashing variables".
+ 
 
 
 
@@ -1550,14 +1526,12 @@ Definition outerFn (input : nat) : option outcome' :=
 MetaRocq Quote Definition outerFnTerm := Eval compute in outerFn.
 
 Print outerFnTerm. 
- 
-Definition term1 : term :=
-  tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"].
-Definition term1' : term :=
-tApp <%eq%>
-  [<%nat%>; tVar "x"; tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]].
 
- 
+Definition term1 : term :=
+tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"].
+  
+  
+
        
   
 Definition term2 : term :=
@@ -1568,7 +1542,7 @@ MetaRocq Run (t <- tmQuote (@None outcome') ;; tmDefinition "wildCardRet" t).
 
 Print retType.
 
-MetaRocq Run (justAnimatePatMat2 recPredFull term1' term2 retType wildCardRet "result" 50).
+MetaRocq Run (justAnimatePatMat2 recPredFull term1 <%nat%> term2 retType wildCardRet "result" 50).
 
 Print result.
 
@@ -3004,6 +2978,75 @@ Fixpoint composeInductives (inds : list (prod string (list (prod string term))))
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
  tFix ls j.
           
+          
+          
+(*
+(*
+Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
+ match fuel with
+  | 0 => []
+  | S m => match l with
+            | [] => []
+            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
+            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
+            | [tCase c p t l] => match replaceVars [t] dict m with
+                                  | [t'] => [tCase c p t' l]
+                                  | _ => [tCase c p t l]
+                                 end 
+     
+            |  other => other
+           end 
+       
+    
+ end. 
+ *)
 
+Print predicate.
+
+
+Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
+ match fuel with
+  | 0 => []
+  | S m => match l with
+            | [] => []
+            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
+            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
+            | [tCase c p t l] => match replaceVars [t] dict m with
+                                  | [t'] => [tCase c p t' l]
+                                  | _ => [tCase c p t l]
+                                 end 
+     
+            |  other => other
+           end 
+       
+    
+ end. 
+ 
+Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
+ match lst' with
+  | [] => []
+  | (h :: rest) => match h with
+                    | (str1, (tVar y), _) => if (String.eqb y outputVar) then [str1] else sortBindersOne outputVar rest 
+                    | _ => sortBindersOne outputVar rest
+                   end 
+ end.
+
+Definition dict (lst': list ((string × term) × list string)) (var : string) : string :=
+ match sortBindersOne var lst' with
+  | [] => var
+  | h :: t => h
+ end.
+ 
+Definition replaceVars' (l : list term) (lst': list ((string × term) × list string)) (fuel : nat) : list term :=
+ replaceVars l (dict lst') fuel.
+ 
+Definition replaceVarsTm (t : term) (lst': list ((string × term) × list string)) (fuel : nat)  : term :=
+ match replaceVars' [t] lst' fuel with
+  | [] => errorTm
+  | [h] => h
+  | _ => errorTm
+ end.                                                  
+
+*)
 
 

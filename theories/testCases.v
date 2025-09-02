@@ -210,7 +210,10 @@ Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
  
 MetaRocq Run (typeConstrPatMatch.justAnimatePatMat baz' ["a"; "x"] "baz'Fn" 25).
-
+(*
+MetaRocq Run (p <- tmQuoteRecTransp  baz'  false ;; tmDefinition "termFull" p).
+Compute (typeConstrPatMatch.extractPatMatData termFull).
+*)
 
 
 Example testbaz'Fn : baz'Fn (mycr2 (mycr1' 4) 3) = Some [4; 2].
