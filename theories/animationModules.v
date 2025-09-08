@@ -1216,6 +1216,7 @@ Inductive recPredFull : nat -> nat -> Prop :=
 with recPredInd1 : nat -> nat -> Prop :=  
  | recPredInd1Cons : forall a b, recPredFull a b  -> recPredInd1 a b.
 
+
 MetaRocq Quote Recursively Definition recPredFull_syntax := recPredFull.
 
 Compute (option_map ind_bodies (typeConstrPatMatch.extractIndDecl (snd (hd (typeConstrPatMatch.error) (declarations (fst recPredFull_syntax)))))).
@@ -1545,6 +1546,362 @@ Print retType.
 MetaRocq Run (justAnimatePatMat2 recPredFull term1 <%nat%> term2 retType wildCardRet "result" 50).
 
 Print result.
+
+Compute <%success'%>.
+
+Inductive recPredFullOut' : nat -> outcome' -> Prop :=
+ | recPredFullBaseOut' : recPredFullOut' 1 (success' 3)  
+ | recPredFullConsOut' : forall a b, recPredInd1Out' a (success' b) -> recPredFullOut' (S a) (success' (S b))
+
+with recPredInd1Out' : nat -> outcome' -> Prop :=  
+ | recPredInd1ConsOut' : forall a b, recPredFullOut' a (success' b)  -> recPredInd1Out' a (success' b).
+
+
+
+MetaRocq Run (justAnimatePatMat2 (recPredFullOut') (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])[tVar "b"]) <%outcome'%>    (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])
+         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+            [tVar "b"]]) <%outcome'%>  <%error'%> "result2" (50)). 
+
+Print result2.
+
+Definition recPredIndFnSimpl
+  
+  (recPred2TopFn : nat -> option outcome')
+  (a : nat) : option outcome' := 
+
+  
+                     
+                       match recPred2TopFn a with
+                        | Some (success' (b)) => Some (success' ((S b)))
+                        | None => None
+                        | _ => Some error'
+                        end.
+                         
+MetaRocq Quote Definition simplTerm := Eval compute in recPredIndFnSimpl.
+
+MetaRocq Run (t' <- DB.undeBruijn simplTerm ;; t'' <- tmEval all t' ;; tmPrint t'').
+   
+             
+           
+Definition recPredIndFnSimpl'
+  
+ 
+  (res : option outcome') : option outcome' := 
+
+  
+                     
+                       match res with
+                        | Some (success' (b)) => Some (success' ((S b)))
+                        | None => None
+                        | _ => Some error'
+                        end.
+
+
+Definition compositeTerm : term :=
+(tLam "recPred2TopFn"
+   (tProd {| binder_name := nAnon; binder_relevance := Relevant |} <%nat%>
+      (tApp
+         (tInd
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+            |} [])
+         [tInd
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} []]))
+   (tLam "a" <%nat%> (tApp <%recPredIndFnSimpl'%> [(tApp (tVar "recPred2TopFn") [tVar "a"])]))).  
+
+MetaRocq Run (t' <- DB.deBruijn compositeTerm ;; t'' <- tmEval all t' ;; f <- tmUnquote t'' ;; tmPrint f).
+                        
+                         
+MetaRocq Quote Definition simplTerm' := Eval compute in recPredIndFnSimpl'.
+
+MetaRocq Run (t' <- DB.undeBruijn simplTerm' ;; t'' <- tmEval all t' ;; tmPrint t'').
+(*   
+Fixpoint dispatchInternal (inT : Type) (outT : Type) (wildCardVal : outT) (eqChk : outT -> bool)
+                            (listFn : list (inT -> outT)) : (inT -> outT) :=
+ fun x => match listFn with
+           | [] => wildCardVal
+           | h :: t => if (eqChk (h x)) then (dispatchInternal inT outT wildCardVal eqChk t) x else (h x)
+          end .
+          
+MetaRocq Run (t <- tmQuote (dispatchInternal nat nat 0);; tmPrint t).          
+            
+*)             
+
+Fixpoint dispatchInternal (inT : Type) (outT : Type) 
+                            (listFn : list (inT -> option (outT))) : (inT -> (option outT)) :=
+ fun x => match listFn with
+           | [] => None
+           | h :: t => let r := h x in
+                       match r with
+                       | None => (dispatchInternal inT outT t) x 
+                       | _ => r
+                       end 
+          
+          
+          end .
+Compute <%(nat -> option nat)%>.
+Search ((list term) -> term).
+
+Fixpoint mkLstTm' (lst : list term) (typeofTm : term) : term := 
+ match lst with
+  | [] => tApp
+           (tConstruct
+              {|
+                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+              |} 0 []) [typeofTm]
+  
+  | h :: t =>  tApp
+               (tConstruct
+               {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0 |} 1 [])
+               [typeofTm; h; (mkLstTm' t typeofTm)]
+ end.              
+
+
+Definition defaultVal (inputType : Type) (outputType : Type) (default : outputType) (f : inputType -> option (outputType)) : (inputType -> outputType) :=
+ fun x => match f x with
+           | Some y => y
+           | None => default
+          end. 
+
+ 
+Fixpoint quoteList {A : Type} (l : list A) : TemplateMonad (list term) :=
+ match l with
+  | [] => ret []
+  | h :: rest => (t <- tmQuote h ;; l' <- quoteList rest ;; tmReturn (t :: l'))
+ end.  
+ 
+Search (bool -> bool -> bool). 
+
+Definition justAnimatePatMat4 {A : Type} (induct : A) (inputTerm' : term) (inputType : term) (outputTerm : term) (outputType : term) (wildCardRet : term)  (fuel : nat) : TemplateMonad term :=
+ (*
+ indTm <- tmQuote induct ;; 
+ 
+ termConj <- general.animate2 (getPathIdent indTm) ;;
+ *) 
+ termFull <- tmQuoteRecTransp  induct  false ;;
+ 
+ let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in 
+ if andb (noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))))  (typeConstrPatMatch.preProcConsRem fuel inputTerm) then 
+ 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm termFull outputTerm outputType wildCardRet fuel))))) ;; 
+ tmReturn t
+
+ 
+ 
+ else
+ tmFail "found clashing variables or insufficient fuel".
+ 
+MetaRocq Quote Definition optNatTm := (@None nat).
+Print optNatTm. 
+  
+ 
+Fixpoint justAnimateMultPat {A : Type} (induct : A) (branchData : list ((prod term term))) (inputType : term)  (outputType : term) (fuel : nat) : TemplateMonad (list term) :=
+ match branchData with
+  | [] => tmFail "no Branch Data"
+  | [h] => t <- justAnimatePatMat4 induct (fst (h)) inputType (tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+            |} 0 [])
+         [outputType; (snd (h))]) (tApp
+                        (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |}
+                         [])[outputType]) 
+                         (tApp (tConstruct
+                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |} 1
+                          []) [outputType]) fuel ;; tmReturn [t]
+  | h :: rest => t <- justAnimatePatMat4 induct (fst (h)) inputType (tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+            |} 0 [])
+         [outputType; (snd (h))]) (tApp
+                        (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |}
+                         [])[outputType]) 
+                         (tApp (tConstruct
+                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |} 1
+                          []) [outputType]) fuel ;; lstT <- justAnimateMultPat induct rest inputType outputType fuel ;; tmReturn (t :: lstT)  
+ end.
+(* 
+Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term) (nameFn : string)  : TemplateMonad unit :=
+f <- tmUnquote (tApp <%defaultVal%> [inputType; outputType; wildCardRet; (tApp <%dispatchInternal%> [inputType; outputType; (mkLstTm' fns)])])  ;; 
+ tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
+ 
+ tmMsg "done".
+ 
+Definition mkMulPatMatFn {A : Type} (induct : A) (branchData : list ((prod term term))) (inputType : term)  (outputType : term) (wildCardRet : term) (nmFn : string) (fuel : nat) : TemplateMonad unit :=
+ subfns <- justAnimateMultPat induct branchData inputType outputType fuel ;;
+ mkMulPatMatFn' subfns wildCardRet inputType outputType nmFn.
+ 
+ *)
+ 
+Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term)  : term :=
+ let fnType := tProd {| binder_name := nAnon; binder_relevance := Relevant |} inputType
+         (tApp
+            (tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
+                 inductive_ind := 0
+               |} [])
+            [outputType]) in
+ (tApp <%defaultVal%> [inputType; outputType; wildCardRet; (tApp <%dispatchInternal%> [inputType; outputType; (mkLstTm' fns fnType)])]).
+ 
+ 
+Definition mkMulPatMatFn {A : Type} (induct : A) (branchData : list ((prod term term))) (inputType : term)  (outputType : term) (wildCardRet : term) (fuel : nat) : TemplateMonad term :=
+ subfns <- justAnimateMultPat induct branchData inputType outputType fuel ;;
+tmReturn (mkMulPatMatFn' subfns wildCardRet inputType outputType). 
+
+Check ([((tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])[tVar "b"]),   (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])
+         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+            [tVar "b"]]))]).
+
+
+
+
+
+MetaRocq Run (t <- tmQuote (fun a : nat => S a) ;; tmPrint t).
+
+Print outcome'.
+
+(* (tApp <%recPredIndFnSimpl'%> [(tApp (tVar "recPred2TopFn") [tVar "a"])]))).  
+*)
+(*
+Definition joinPatMat (preOutToPostOutFn : term) (preIn : term) (postIn : term) (nmFnPreInPreOut : string) : term
+ tmLam nmFnPreInPreOut typeInfo (mkFn postIn (tApp preOutToPostOutFn)[tApp (tVar nmFnPreInPreOut)[preIn]).
+ 
+ with preOuttopostOutFn = mkFn preOut postOut   
+
+*)
+(*
+target : 
+targetfn (f : nat -> option') (input : nat) : (option') :=
+ match input with
+ | S a => match f a with
+           | success b => success (S b)
+           | _  => error
+
+ | _ => error
+ 
+ preIn :  a
+ postIn : S a
+ preOut : b --> success b
+ postOut : S b ---> success S b
+*)
+
+Print tLam.
+
+MetaRocq Quote Definition fnT := (nat -> (list nat)).
+Print fnT.
+
+
+
+Definition prLstToLstPr (l1 : list term) (l2: list term) (wildCardRetVal : term) : list (prod term term). Admitted.
+
+
+Definition joinPatMat {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
+                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
+                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
+ 
+let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut)]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
+
+tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]])))]) postInType postOutType wildCardRet fuel ;;
+
+
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
+              
+              
+       
+Check error'.
+
+Parameter v : nat.
+
+Compute <% (success' (S v))%>.
+Compute <% (Some v) %>.
+
+Definition preInT : term :=  (tVar "a").
+Definition preOutT : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
+Definition postInT : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]).
+Definition postOutT : term :=  (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])
+         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+            [tVar "b"]]).
+            
+MetaRocq Run (t <- justAnimatePatMat4 recPredFullOut' preOutT <%outcome'%> (tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+            |} 0 [])
+         [<%outcome'%>; postOutT]) (tApp
+                        (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |}
+                         [])[<%outcome'%>]) 
+                         (tApp (tConstruct
+                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |} 1
+                          []) [<%outcome'%>]) 50 ;; tmPrint t).            
+
+MetaRocq Run (t <- mkMulPatMatFn (recPredFullOut') [(preOutT, postOutT)] <%outcome'%> <%outcome'%> <%error'%> 50 ;; tmPrint t).
+   
+MetaRocq Run (joinPatMat (recPredFullOut') (preInT) (<%nat%>) (preOutT) (<%outcome'%>) (postInT) (<%nat%>) (postOutT) 
+                         (<%outcome'%>) (<%error'%>) ("result3") ("func") (50)).
+                         
+Print result3.                         
+
+Compute (result3 (fun x : nat => success' (S (S x))) 8).
+
+Compute (result3 (fun x : nat => success' (S (S x))) 0).
+
+
+
+Compute <%(hd 0 [1;2;3])%>.
+
+
+
+
+
+(* CODE FOR GLUING EVERYTHING TOGETHER * ________________________________________________________________ *)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
 
 (*
 tLam "v2" <%nat%>
