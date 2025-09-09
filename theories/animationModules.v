@@ -1253,8 +1253,23 @@ Inductive outcome : Set :=
  
 Inductive outcome' : Set :=
  | error' : outcome'
- | success' : (nat) -> outcome'. 
+ | success' : (nat) -> outcome'
+ | noMatch : outcome'.
  
+Check list.
+Print list. 
+
+Inductive outcomePoly (A : Type) : Type :=
+ | fuelErrorPoly : outcomePoly A
+ | successPoly : A -> outcomePoly A
+ | noMatchPoly : outcomePoly A.
+ 
+MetaRocq Quote Definition noMatchPT := noMatchPoly.
+Print noMatchPT. 
+
+MetaRocq Quote Definition pT := (successPoly nat 1).
+Print pT. 
+  
  
 Definition targetFn
   
@@ -1451,11 +1466,18 @@ Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : 
   let pmd := extractPatMatData p in
    if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
 *)
+Search (forall A : Type, list (list A) -> list A).
+(*
 Definition mkLamfromInd3 (conjTm : term) (p : program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
  let td := typeConstrPatMatch.extractTypeData p in
   let pmd := conjTm in
    if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (changeVars (typeConstrPatMatch.preProcCons fuel pmd)) outputTerm outputType wildCardRet td) else None. 
-      
+*)
+Definition mkLamfromInd3 (conjTm : term) (lstP : list program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
+ let td := concat (map (typeConstrPatMatch.extractTypeData) lstP) in
+  let pmd := conjTm in
+   if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (changeVars (typeConstrPatMatch.preProcCons fuel pmd)) outputTerm outputType wildCardRet td) else None. 
+            
   
 (* Compute (mkLamfromInd baz'Term 20).*)
 
@@ -1492,7 +1514,7 @@ Definition justAnimatePatMat2 {A : Type} (induct : A) (inputTerm' : term) (input
  let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in 
  if noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) then 
  
- t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm termFull outputTerm outputType wildCardRet fuel))))) ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm [termFull] outputTerm outputType wildCardRet fuel))))) ;; 
  
 
  
@@ -1690,11 +1712,12 @@ Definition justAnimatePatMat4 {A : Type} (induct : A) (inputTerm' : term) (input
  termConj <- general.animate2 (getPathIdent indTm) ;;
  *) 
  termFull <- tmQuoteRecTransp  induct  false ;;
+ outcome'Prog <- tmQuoteRecTransp  outcome'  false ;;
  
  let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in 
  if andb (noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))))  (typeConstrPatMatch.preProcConsRem fuel inputTerm) then 
  
- t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm termFull outputTerm outputType wildCardRet fuel))))) ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm [termFull; outcome'Prog] outputTerm outputType wildCardRet fuel))))) ;; 
  tmReturn t
 
  
@@ -1869,7 +1892,7 @@ MetaRocq Run (t <- justAnimatePatMat4 recPredFullOut' preOutT <%outcome'%> (tApp
 
 MetaRocq Run (t <- mkMulPatMatFn (recPredFullOut') [(preOutT, postOutT)] <%outcome'%> <%outcome'%> <%error'%> 50 ;; tmPrint t).
    
-MetaRocq Run (joinPatMat (recPredFullOut') (preInT) (<%nat%>) (preOutT) (<%outcome'%>) (postInT) (<%nat%>) (postOutT) 
+MetaRocq Run (joinPatMat (recPredFull) (preInT) (<%nat%>) (preOutT) (<%outcome'%>) (postInT) (<%nat%>) (postOutT) 
                          (<%outcome'%>) (<%error'%>) ("result3") ("func") (50)).
                          
 Print result3.                         
@@ -1877,6 +1900,46 @@ Print result3.
 Compute (result3 (fun x : nat => success' (S (S x))) 8).
 
 Compute (result3 (fun x : nat => success' (S (S x))) 0).
+
+
+
+Definition joinPatMat' {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
+                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
+                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
+ 
+let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut); (<%error'%>,<%error'%>) ]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
+
+tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]]))); (<%error'%>,<%error'%>) ]) postInType postOutType wildCardRet fuel ;;
+
+
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
+              
+Definition preInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "a"] ). 
+
+Definition preOutT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
+Definition postInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [(tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"])]).
+Definition postOutT' : term :=  (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])
+         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+            [tVar "b"]]).
+            
+MetaRocq Run (joinPatMat' (recPredFull) (preInT') (<%outcome'%>) (preOutT') (<%outcome'%>) (postInT') (<%outcome'%>) (postOutT') 
+                         (<%outcome'%>) (<%noMatch%>) ("result4") ("func") (50)).
+ 
+ 
+Print result4.                         
+            
+                      
 
 
 
