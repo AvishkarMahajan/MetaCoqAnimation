@@ -1712,12 +1712,13 @@ Definition justAnimatePatMat4 {A : Type} (induct : A) (inputTerm' : term) (input
  termConj <- general.animate2 (getPathIdent indTm) ;;
  *) 
  termFull <- tmQuoteRecTransp  induct  false ;;
- outcome'Prog <- tmQuoteRecTransp  outcome'  false ;;
+(* outcome'Prog <- tmQuoteRecTransp  outcome'  false ;; *)
+ outcomePolyProg <- tmQuoteRecTransp  outcomePoly  false ;;
  
  let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in 
  if andb (noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))) (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))))  (typeConstrPatMatch.preProcConsRem fuel inputTerm) then 
  
- t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm [termFull; outcome'Prog] outputTerm outputType wildCardRet fuel))))) ;; 
+ t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (mkLamfromInd3 inputTerm [termFull; outcomePolyProg (* ; outcome'Prog *)] outputTerm outputType wildCardRet fuel))))) ;; 
  tmReturn t
 
  
@@ -1839,7 +1840,7 @@ Print fnT.
 
 Definition prLstToLstPr (l1 : list term) (l2: list term) (wildCardRetVal : term) : list (prod term term). Admitted.
 
-
+(*
 Definition joinPatMat {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
                       (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
                       (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
@@ -1938,15 +1939,99 @@ MetaRocq Run (joinPatMat' (recPredFull) (preInT') (<%outcome'%>) (preOutT') (<%o
  
  
 Print result4.                         
-            
+Compute <%(hd 0 [1;2;3])%>.            
                       
+*)
+Print outcomePoly.
+
+Compute <%(successPoly nat 2)%>.
+Compute <%fuelErrorPoly nat%>.
+
+Compute <%outcomePoly nat%>.
+
+Definition joinPatMatPoly {A : Type} (induct : A) (preIn' : term) (preInType' : term) (preOut' : term) (preOutType' : term)
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmFn : string)
+                        (fuel : nat) : TemplateMonad unit :=
+let preIn := tApp <%successPoly%> [preInType'; preIn'] in
+let preInType := tApp <%outcomePoly%> [preInType'] in                      
+
+let preOut := tApp <%successPoly%> [preOutType'; preOut'] in
+let preOutType := tApp <%outcomePoly%> [preOutType'] in                      
+
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+(* let wildCardRet := <%noMatchPoly%> in *)
+let nmFnpreInpreOut := "animatePreConFn" in                    
+
+let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (preInType) (preOutType)) in
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut); ((tApp <%fuelErrorPoly%> [preOutType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (preOutType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+
+tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
 
 
 
-Compute <%(hd 0 [1;2;3])%>.
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
+              
+Definition preInT'' : term :=  (tVar "a").
+Definition preOutT'' : term := tVar "b". 
+Definition postInT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]).
+Definition postOutT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]).
+
+MetaRocq Run (joinPatMatPoly (recPredFull) (preInT'') (<%nat%>) (preOutT'') (<%nat%>) (postInT'') (<%nat%>) (postOutT'') 
+                         (<%nat%>) ("result10") (50)).
+                         
+Print result10.                         
+ 
+
+(*
+Definition joinPatMat' {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
+                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
+                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
+ 
+let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut); (<%error'%>,<%error'%>) ]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
+
+tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]]))); (<%error'%>,<%error'%>) ]) postInType postOutType wildCardRet fuel ;;
 
 
 
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
+              
+Definition preInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "a"] ). 
+
+Definition preOutT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
+Definition postInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [(tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"])]).
+Definition postOutT' : term :=  (tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
+              inductive_ind := 0
+            |} 1 [])
+         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+            [tVar "b"]]).
+            
+MetaRocq Run (joinPatMat' (recPredFull) (preInT') (<%outcome'%>) (preOutT') (<%outcome'%>) (postInT') (<%outcome'%>) (postOutT') 
+                         (<%outcome'%>) (<%noMatch%>) ("result4") ("func") (50)).
+ 
+ 
+Print result4.  
+
+
+
+*)
 
 
 (* CODE FOR GLUING EVERYTHING TOGETHER * ________________________________________________________________ *)
