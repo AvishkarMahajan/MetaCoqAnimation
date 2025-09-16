@@ -1848,6 +1848,8 @@ Compute <%fuelErrorPoly nat%>.
 
 Compute <%outcomePoly nat%>.
 
+
+
 Definition joinPatMatPoly {A : Type} (induct : A) (preIn' : term) (preInType' : term) (preOut' : term) (preOutType' : term)
                       (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmFn : string)
                         (fuel : nat) : TemplateMonad unit :=
@@ -1873,14 +1875,217 @@ tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar
 
 
 
-
 t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
 
 f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
               
+Check (2, 3).  
+Compute <%prod nat nat%>.
+Compute <% (1,2) %>.
 
+Compute (fst (1, 2, 3)).
+
+Fixpoint mklhsProdType (lhsIndPre : list (term × term)) : TemplateMonad term :=
+ match lhsIndPre with 
+  | [] => tmFail "no predicates on LHS"
+  | [h] => tmReturn (snd h)
+  | h :: t => res <- mklhsProdType t ;; tmReturn (tApp
+                                            (tInd
+                                             {|
+                                             inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                              |} []) [(snd h) ; res])
+ end.                                             
+  
+ 
+
+
+Fixpoint mklhsProdTm  (lhsIndPre : list (term × term )) : TemplateMonad term :=
+ match lhsIndPre with 
+  | [] => tmFail "no predicates on LHS"
+  | [h] => tmReturn (fst h)
+  | h :: t => res <- mklhsProdTm t ;; resT <- mklhsProdType t ;; tmReturn (tApp (tConstruct
+                                                  {|
+                                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                                   |} 0 []) [(snd h); resT ; (fst h) ; res])
+ end.  
+Check map.
+Definition mkPreConProdType  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+ mklhsProdType (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd). 
+ 
+Definition mkPreConProdTm  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+ mklhsProdTm (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd). 
+ 
+Definition mkPostConProdType  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+ mklhsProdType (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd). 
+ 
+Definition mkPostConProdTm  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+ mklhsProdTm (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd). 
+
+Definition mkOutcome (lhsInd : ((((string × term) × term) × term) × term)) : ((((string × term) × term) × term) × term) :=
+ match lhsInd with
+  | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preCon; preConT])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postCon; postConT])), (tApp <%outcomePoly%> [postConT]))
+ end.
+ 
+Definition mkOutcomeProd (lhsInd : list ((((string × term) × term) × term) × term)) : list ((((string × term) × term) × term) × term) :=
+ map (mkOutcome) lhsInd.
+ 
+
+Fixpoint mkproductAllPreInToPreOutOutcome (lhsIndOutcome : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+match lhsIndOutcome with
+ | [] => tmFail "no predicates on LHS"
+ | [h] =>  tmReturn (tApp (tVar (String.append (fst (fst (fst (fst h)))) "animatedTopFn")) [snd (fst (fst (fst h)))])
+                                                                        
+ | h :: t => res <- mkproductAllPreInToPreOutOutcome t ;; resT <- mkPostConProdType t ;; tmReturn (tApp (tConstruct
+                                                  {|
+                                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                                   |} 0 []) [(snd h); resT ; (tApp (tVar (String.append (fst (fst (fst (fst h)))) "animatedTopFn")) [snd (fst (fst (fst h)))])
+                                                                        ; res])
+
+ end.
+ 
+Print tLam. 
+
+(*
+(tLambda {| binder_name := nNamed x; binder_relevance := Relevant |} A b)
+*)
+
+ 
+Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string × term) × term) × term) × term)) (fnBody : term) : TemplateMonad term :=
+ match lhsIndOutcome with
+  | [] => tmFail "no predicates on LHS"
+  | [h] => tmReturn (tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "animatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h))  fnBody)
+  | (h :: t) => res <- mklamOverAllOutcome t fnBody ;; tmReturn ((tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "animatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h)) res))
+ end.
+                                                   
+
+
+Search (string -> string -> string). 
+
+(*
+Definition mkPreConProdTmOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+Definition mkPreConProdType list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+Definition mkPreConProdTypeOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+
+Definition mkPostConProdTm  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+Definition mkPostConProdTmOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+Definition mkPostConProdType  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+Definition mkPostConProdTypeOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+
+Definition mkproductAllPreInToPreOutOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
+
+Definition mklamOverAllOutcome  list (string × term × term × term × term) (fnBody : term) : TemplateMonad term. Admitted. 
+*)    
+              
+              
+
+
+Definition joinPatMatPolyGen {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad unit :=
+
+let lhsIndOutcome := mkOutcomeProd lhsInd in
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+lhsPostCondProdOutcomeTm <- mkPostConProdTm lhsIndOutcome ;;
+lhsPostCondProdType <- mkPostConProdType lhsInd ;;
+lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
+productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
+
+
+
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut); ((tApp <%fuelErrorPoly%> [lhsPostCondProdType]),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+
+tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+
+(* tBody has type postInType -> postOutType
+Need to convert it to nat -> postIn -> postOut 
+Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
+and the Sm case returns tBody
+*)
+
+u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmCon "animated") (Some hnf) ;; tmMsg "done".
+              
+
+
+(* Incorporating fuel *)
+
+Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (outcomePoly outputType') ) :=
+ fun x : inputType => fuelErrorPoly outputType'.
+(*
+(tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    <%fuelErrorPolyCstFn postInType postOutType'%>
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody
+                                    
+                              |}]
+                     ))
+*)              
+(*
+Definition recPred2IndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' :=  
+ match c with  
+  | 0 => Some error'
+  | S m =>   match recPredTopFn a m with
+              | Some (success' ( b)) => Some (success' ((b)))
+              | None => None
+              | _ => Some (error')
+             end 
+              
+ end.
+ 
+ 
+Definition recPredIndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' := 
+
+ match c with 
+  | 0 => Some error'
+  | S m =>  match a with 
+             | S a' => match recPred2TopFn a' m with
+                        | Some (success' (b)) => Some (success' ((S b)))
+                        | None => None
+                        | _ => Some error'
+                        end 
+             | _  => None
+            end 
+           
+ end. 
+ 
+*)              
+             
 (* __________________________Examples __________________________________ *)             
               
 (*
@@ -1975,6 +2180,8 @@ Definition animateInd1Pair (input : outcomePoly (prod nat nat)) : outcomePoly (p
 MetaRocq Run (joinPatMatPoly (recPredPair) (preInTPair) (pairNatTerm) (preOutTPair) (pairNatTerm) (postInTPair) (pairNatTerm) (postOutTPair) 
                          (pairNatTerm) ("animateRecPredPair") (50)).
                          
+                         
+Print animateRecPredPair.
                          
 Compute (animateRecPredPair animateInd1Pair (successPoly (prod nat nat) (4,4))).
 
