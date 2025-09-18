@@ -1909,8 +1909,10 @@ Fixpoint mklhsProdTm  (lhsIndPre : list (term × term )) : TemplateMonad term :=
                                                   {|
                                                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
                                                    |} 0 []) [(snd h); resT ; (fst h) ; res])
- end.  
-Check map.
+ end. 
+Compute <% (0,(0,0)) %>. 
+
+
 Definition mkPreConProdType  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
  mklhsProdType (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd). 
  
@@ -1925,9 +1927,12 @@ Definition mkPostConProdTm  (lhsInd : list ((((string × term) × term) × term)
 
 Definition mkOutcome (lhsInd : ((((string × term) × term) × term) × term)) : ((((string × term) × term) × term) × term) :=
  match lhsInd with
-  | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preCon; preConT])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postCon; postConT])), (tApp <%outcomePoly%> [postConT]))
+  | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preConT; preCon])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postConT; postCon])), (tApp <%outcomePoly%> [postConT]))
  end.
- 
+Compute <%successPoly%>.
+Compute <%successPoly nat 0%>.
+Check (successPoly nat 0).
+Compute <%outcomePoly nat%>.
 Definition mkOutcomeProd (lhsInd : list ((((string × term) × term) × term) × term)) : list ((((string × term) × term) × term) × term) :=
  map (mkOutcome) lhsInd.
  
@@ -1935,12 +1940,12 @@ Definition mkOutcomeProd (lhsInd : list ((((string × term) × term) × term) ×
 Fixpoint mkproductAllPreInToPreOutOutcome (lhsIndOutcome : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
 match lhsIndOutcome with
  | [] => tmFail "no predicates on LHS"
- | [h] =>  tmReturn (tApp (tVar (String.append (fst (fst (fst (fst h)))) "animatedTopFn")) [snd (fst (fst (fst h)))])
+ | [h] =>  tmReturn (tApp (tVar (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn")) [tVar "remFuel"; snd (fst (fst (fst h)))])
                                                                         
  | h :: t => res <- mkproductAllPreInToPreOutOutcome t ;; resT <- mkPostConProdType t ;; tmReturn (tApp (tConstruct
                                                   {|
                                                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-                                                   |} 0 []) [(snd h); resT ; (tApp (tVar (String.append (fst (fst (fst (fst h)))) "animatedTopFn")) [snd (fst (fst (fst h)))])
+                                                   |} 0 []) [(snd h); resT ; (tApp (tVar (String.append (fst (fst (fst (fst h)))) "animatedTopFn")) [tVar "remFuel"; snd (fst (fst (fst h)))])
                                                                         ; res])
 
  end.
@@ -1955,13 +1960,16 @@ Print tLam.
 Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string × term) × term) × term) × term)) (fnBody : term) : TemplateMonad term :=
  match lhsIndOutcome with
   | [] => tmFail "no predicates on LHS"
-  | [h] => tmReturn (tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "animatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h))  fnBody)
-  | (h :: t) => res <- mklamOverAllOutcome t fnBody ;; tmReturn ((tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "animatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h)) res))
+  | [h] => tmReturn (tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (<%nat%>) (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h)))  fnBody)
+  | (h :: t) => res <- mklamOverAllOutcome t fnBody ;; tmReturn ((tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "animatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (<%nat%>) (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h))) res))
  end.
                                                    
 
 
 Search (string -> string -> string). 
+
+Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (outcomePoly outputType') ) :=
+ fun x : inputType => fuelErrorPoly outputType'.
 
 (*
 Definition mkPreConProdTmOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
@@ -1997,11 +2005,58 @@ lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
 productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
 
 
-
+(*
 preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut); ((tApp <%fuelErrorPoly%> [lhsPostCondProdType]),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+*)
+(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
 
-tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
 
+
+(*
+p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
+
+pf <- tmUnquote p' ;;
+tmPrint pf;;
+*)
+
+
+
+
+(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
+(*
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+*)
+
+
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+
+let tBody := 
+ (tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody'
+                                    
+                              |}]
+                     )) in
 (* tBody has type postInType -> postOutType
 Need to convert it to nat -> postIn -> postOut 
 Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
@@ -2015,14 +2070,13 @@ t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
 
 f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmCon "animated") (Some hnf) ;; tmMsg "done".
+              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
               
 
 
 (* Incorporating fuel *)
 
-Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (outcomePoly outputType') ) :=
- fun x : inputType => fuelErrorPoly outputType'.
+
 (*
 (tLam "fuel" <%nat%>
             (tCase
@@ -2099,10 +2153,10 @@ Definition preOutT'' : term := tVar "b".
 Definition postInT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]).
 Definition postOutT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]).
 
-MetaRocq Run (joinPatMatPoly (recPredFull) (preInT'') (<%nat%>) (preOutT'') (<%nat%>) (postInT'') (<%nat%>) (postOutT'') 
-                         (<%nat%>) ("result10") (50)).
+MetaRocq Run (joinPatMatPolyGen (recPredFull) ([(((("recPredInd2",preInT''), <%nat%>), preOutT''), <%nat%>)]) (postInT'') (<%nat%>) (postOutT'') 
+                         (<%nat%>) ("recPredIndCons") (50)).
                          
-Print result10.
+Print recPredIndConsAnimated.
 
 Definition animateInd1 (input : (outcomePoly nat)) : (outcomePoly nat) :=
  match input with
@@ -2110,13 +2164,13 @@ Definition animateInd1 (input : (outcomePoly nat)) : (outcomePoly nat) :=
   | fuelErrorPoly => fuelErrorPoly nat 
   | _ => noMatchPoly nat
  end.
- 
+(*
 Compute (result10 (animateInd1) (successPoly nat 9)).                            
  
 Compute (result10 (animateInd1) (successPoly nat 0)). 
 
 Compute (result10 (animateInd1) (fuelErrorPoly nat)).
-
+*)
 Inductive recPredInd1Pair : (prod nat nat) -> (prod nat nat) -> Prop :=
  | recPredInd1ConsPair : forall a b c d, c = a /\ d = S b -> recPredInd1Pair (a, b) (c, d).
 
@@ -2191,8 +2245,193 @@ Compute (animateRecPredPair animateInd1Pair (successPoly (prod nat nat) (7,8))).
 
 Compute (animateRecPredPair animateInd1Pair (fuelErrorPoly (prod nat nat))).
 
+(* Examples with multiple predicates on LHS *)
 
 
+
+Inductive rel4 : (prod nat nat) -> (prod nat nat) -> Prop :=
+
+ | rel4Cons : forall a b c d, rel5 a c /\ rel6 (b) d -> rel4 (a, S b) (c, S d)
+ 
+with rel5 : nat -> nat -> Prop :=
+
+| rel5Cons : forall u w, w = S u -> rel5 u w
+
+with rel6 : nat -> nat -> Prop :=
+
+| rel6Cons : forall u1 w1, w1 = S (S u1) -> rel6 u1 w1.
+
+
+(* Input Data
+
+Definition pairNatTerm : term := tApp
+         (tInd
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} [])
+         [<%nat%>; <%nat%>].
+
+
+Definition preInTPair : term := tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>; <%nat%>;  (tVar "a"); (tVar "b")].
+
+
+
+
+Definition preOutTPair : term :=  tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>; <%nat%>;  (tVar "c"); (tVar "d")].
+
+
+
+Definition postInTPair : term := tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>; <%nat%>;  (tVar "a"); (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"])].
+         
+         
+         
+Definition postOutTPair : term := tApp (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>; <%nat%>;  (tVar "c"); (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "d"])].
+         
+ 
+
+
+
+ *)
+ 
+Definition joinPatMatPolyGenTest {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad unit :=
+
+let lhsIndOutcome := mkOutcomeProd lhsInd in
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+lhsPostCondProdOutcomeTm <- mkPostConProdTm lhsIndOutcome ;;
+lhsPostCondProdTm <- mkPostConProdTm lhsInd ;;
+
+lhsPostCondProdType <- mkPostConProdType lhsInd ;;
+lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
+productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
+(*
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdTm), postOut') ]) (lhsPostCondProdType)  (postOutType') (<%(0,0)%>)  (fuel) ;;
+*)
+
+
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut)]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+
+(*
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut') ]) (lhsPostCondProdOutcomeType)  (postOutType') (<%(0,0)%>)  (fuel) ;;
+*)
+(*
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut); ((tApp <%fuelErrorPoly%> [lhsPostCondProdType]),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+*)
+
+
+g <-tmEval all preOutTopostOutFn ;;
+tmPrint g ;; 
+p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
+
+pf <- tmUnquote p' ;;
+tmPrint pf;;
+(*
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+let tBody := 
+ (tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody'
+                                    
+                              |}]
+                     )) in
+(* tBody has type postInType -> postOutType
+Need to convert it to nat -> postIn -> postOut 
+Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
+and the Sm case returns tBody
+*)
+
+u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf)  ;; *) tmMsg "done". 
+ 
+MetaRocq Run (joinPatMatPolyGen (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
+                         (pairNatTerm) ("rel4Cons") (50)).
+
+
+Print rel4ConsAnimated.
+
+
+Definition rel5ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
+ match fuel with
+ | 0 => (fuelErrorPoly nat)
+ | S m => match inp with
+           | (successPoly k) => (successPoly nat (S k))
+           | _ => noMatchPoly nat  
+          end                        
+ end.
+ 
+
+
+Definition rel6ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
+ match fuel with
+ | 0 => (fuelErrorPoly nat)
+ | S m => match inp with
+           | (successPoly k) => (successPoly nat (S (S k)))
+           | _ => noMatchPoly nat  
+          end                        
+ end.
+ 
+ 
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 5))).  
+ 
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
+
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
+
+(* Should say fuelError *)
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
+
+
+
+
+  
+ 
 
 
 
