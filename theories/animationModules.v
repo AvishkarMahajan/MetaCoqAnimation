@@ -1898,7 +1898,7 @@ Fixpoint mklhsProdType (lhsIndPre : list (term × term)) : TemplateMonad term :=
                                               |} []) [(snd h) ; res])
  end.                                             
   
- 
+
 
 
 Fixpoint mklhsProdTm  (lhsIndPre : list (term × term )) : TemplateMonad term :=
@@ -1985,8 +1985,140 @@ Definition mkproductAllPreInToPreOutOutcome  list (string × term × term × ter
 
 Definition mklamOverAllOutcome  list (string × term × term × term × term) (fnBody : term) : TemplateMonad term. Admitted. 
 *)    
+Search (forall A, list A -> list A -> list A).  
+
+Search (nat -> string).            
               
+Fixpoint genFuelErrorPatMat (lhsInd : list (term × term)) (index : nat) : list (list (term × term)) :=
+match index with
+ | 0 => []
+ | S index' => match lhsInd with
+                | [] => []
+                | (tm, tmTp) :: rest => app (map (fun l' => (((tVar (String.append "fuelErrorVar" (string_of_nat index))), (tApp (<%outcomePoly%>) [tmTp])) :: l'))  (genFuelErrorPatMat rest index')) (map (fun l' => ((tApp (<%fuelErrorPoly%>) [tmTp]), (tApp (<%outcomePoly%>) [tmTp])) :: l')  (genFuelErrorPatMat rest index'))  
+               end
+end.
+Check length.
+Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMonad (list term) :=
+
+  match lhsIndl with
+   | [] => tmReturn []
+   | [h] => res <- mklhsProdTm h ;; tmReturn [res]
+   | h :: t => resTail <- mkProdTmFuelError t ;; res <- mklhsProdTm h ;; tmReturn (res :: resTail)
+  end.
+
+Definition mkFuelErrorPatMatData (lhsInd : list (term × term)) (fuelErrorOut : term) : TemplateMonad (list (term × term)) :=
+inData <- mkProdTmFuelError (tl (genFuelErrorPatMat lhsInd (S (length lhsInd)))) ;;
+
+tmReturn (map (fun s => (s, fuelErrorOut)) inData). 
+   
+ 
+
+
+
+
+
+
+
+
+Definition joinPatMatPolyGenFuelAware {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad unit :=
+
+let lhsIndOutcome := mkOutcomeProd lhsInd in
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+lhsPostCondProdOutcomeTm <- mkPostConProdTm lhsIndOutcome ;;
+lhsPostCondProdTm <- mkPostConProdTm lhsInd ;;
+
+lhsPostCondProdType <- mkPostConProdType lhsInd ;;
+lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
+lhsPostCondFuelErrorPatMat <- mkFuelErrorPatMatData (map (fun tup => ((snd (fst tup)), (snd tup))) lhsInd) (tApp <%fuelErrorPoly%> [postOutType']) ;; 
+tmPrint lhsPostCondFuelErrorPatMat ;;
+productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
+
+
+
+preOutTopostOutFn <- mkMulPatMatFn (induct) (((lhsPostCondProdOutcomeTm), postOut) :: (lhsPostCondFuelErrorPatMat)) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+
+(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
+(*
+preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
+*)
+
+(*
+p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
+
+pf <- tmUnquote p' ;;
+tmPrint pf;;
+*)
+
+
+
+
+(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
+
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+
+
+(*
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+*)
+let tBody := 
+ (tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody'
+                                    
+                              |}]
+                     )) in
+(* tBody has type postInType -> postOutType
+Need to convert it to nat -> postIn -> postOut 
+Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
+and the Sm case returns tBody
+*)
+
+u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
               
+
+
+
+
+
+
+
+
+
+
+
+ 
 
 
 Definition joinPatMatPolyGen {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
@@ -2072,6 +2204,30 @@ f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
               
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 (* Incorporating fuel *)
@@ -2309,6 +2465,74 @@ Definition postOutTPair : term := tApp (tConstruct
 
  *)
  
+
+MetaRocq Run (joinPatMatPolyGenFuelAware (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
+                         (pairNatTerm) ("rel4ConsF") (50)).
+Print rel4ConsFAnimated.                         
+
+ 
+MetaRocq Run (joinPatMatPolyGen (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
+                         (pairNatTerm) ("rel4Cons") (50)).
+
+
+Print rel4ConsAnimated.
+
+
+Definition rel5ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
+ match fuel with
+ | 0 => (fuelErrorPoly nat)
+ | S m => match inp with
+           | (successPoly k) => (successPoly nat (S k))
+           | _ => noMatchPoly nat  
+          end                        
+ end.
+ 
+
+
+Definition rel6ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
+ match fuel with
+ | 0 => (fuelErrorPoly nat)
+ | S m => match inp with
+           | (successPoly k) => (successPoly nat (S (S k)))
+           | _ => noMatchPoly nat  
+          end                        
+ end.
+ 
+ 
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 5))).  
+ 
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
+
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
+
+(* Should say fuelError *)
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
+
+
+
+
+
+
+
+
+
+Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (9, 13))).  
+
+Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
+
+Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
+
+(* Should say fuelError *)
+Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
+ 
+
+
+  
+ 
+
+(*
 Definition joinPatMatPolyGenTest {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
                       (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
                         (fuel : nat) : TemplateMonad unit :=
@@ -2388,51 +2612,7 @@ t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
 f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf)  ;; *) tmMsg "done". 
- 
-MetaRocq Run (joinPatMatPolyGen (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
-                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
-                         (pairNatTerm) ("rel4Cons") (50)).
-
-
-Print rel4ConsAnimated.
-
-
-Definition rel5ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
- match fuel with
- | 0 => (fuelErrorPoly nat)
- | S m => match inp with
-           | (successPoly k) => (successPoly nat (S k))
-           | _ => noMatchPoly nat  
-          end                        
- end.
- 
-
-
-Definition rel6ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
- match fuel with
- | 0 => (fuelErrorPoly nat)
- | S m => match inp with
-           | (successPoly k) => (successPoly nat (S (S k)))
-           | _ => noMatchPoly nat  
-          end                        
- end.
- 
- 
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 5))).  
- 
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
-
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
-
-(* Should say fuelError *)
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
-
-
-
-
-  
- 
-
+*)
 
 
 (*
