@@ -1994,9 +1994,14 @@ match index with
  | 0 => []
  | S index' => match lhsInd with
                 | [] => []
+                | [(tm, tmTp)] => [[(tVar (String.append "fuelErrorVar" (string_of_nat index)), (tApp (<%outcomePoly%>) [tmTp]))]; [((tApp (<%fuelErrorPoly%>) [tmTp]), (tApp (<%outcomePoly%>) [tmTp]))]]
                 | (tm, tmTp) :: rest => app (map (fun l' => (((tVar (String.append "fuelErrorVar" (string_of_nat index))), (tApp (<%outcomePoly%>) [tmTp])) :: l'))  (genFuelErrorPatMat rest index')) (map (fun l' => ((tApp (<%fuelErrorPoly%>) [tmTp]), (tApp (<%outcomePoly%>) [tmTp])) :: l')  (genFuelErrorPatMat rest index'))  
                end
 end.
+
+Compute (tl (genFuelErrorPatMat [( (tVar "c"), <%nat%>); ( (tVar "d"), <%nat%>)] 3)).
+
+
 Check length.
 Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMonad (list term) :=
 
@@ -2007,7 +2012,7 @@ Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMona
   end.
 
 Definition mkFuelErrorPatMatData (lhsInd : list (term × term)) (fuelErrorOut : term) : TemplateMonad (list (term × term)) :=
-inData <- mkProdTmFuelError (tl (genFuelErrorPatMat lhsInd (S (length lhsInd)))) ;;
+inData <- mkProdTmFuelError (rev (tl (genFuelErrorPatMat lhsInd (S (length lhsInd))))) ;;
 
 tmReturn (map (fun s => (s, fuelErrorOut)) inData). 
    
