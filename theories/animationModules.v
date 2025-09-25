@@ -1137,77 +1137,7 @@ Inductive recPred' : nat -> nat -> Prop :=
 Inductive recPred'' : nat -> nat -> Prop :=
  | recPred''Ind : forall a b, recPred' a b -> recPred'' (S b) (S a).
 
-(* Need to know how to invert functions  
-Fixpoint recPred''fn (a : nat) : option nat :=
- match a with
- 
- | S b => match recPred''fn (inv) b with
-           | None => None
-           | Some a' => Some (S a')
-           end
- | _ => None          
- end. 
- 
-*)
 
-(* Semms like the most general case that can be handled (for now) is :
-
-recPred (typeCons1 inputVars) typeCons2 (outputVars) -> recPred (typeCons1' inputVars) (typeCons2' outputVars) 
-
-i.e. no mixing of input output vars in the type constructors and no functions 
-
-=
-
-Fixpoint recPredFn...
- match x with
-  | typeCons1' inputVars => match recPredFn (typeCons1 inputVars) with
-                             | typeCons2 outputVars => typeCons2' outputVars 
-                             ...
-                                   
-So typeCons1 blah needs to always give a subterm typeCons1' blah otherwise this is no longer structurally recursive
-
-*)                                   
-
-
-
-
-
-
-
-
-
-
-
-
-(* General case 
-
-Clause : recPred a1 a2 -> recPred (cons1 a1 a2) (cons2 a1 a2) 
-
-first argument input, second argument output.
-
-=
-Fixpoint recPredfn (a1 : nat) : option type 
-...
-
- match a1 with
-  | cons1 a1' a2' => match recPredfn a1' with
-                      | Some x => if (Eqb a2' x) then Some (cons2 a1' a2') else None
-                      | _  => None
-  
-1 Clause = 1 match statement 
-*) 
-  
- 
-
-
-
-                    
-
-
-
-(*Definition extractTypeData2 (p : program) : list (option mutual_inductive_body) := 
- (map typeConstrPatMatch.extractIndDecl ((map snd (( ( (declarations (fst p)))))))).
-*)
 
 Inductive recPredFull : nat -> nat -> Prop :=
  | recPredFullBase : recPredFull 1 3 
@@ -1247,87 +1177,19 @@ Print global_declarations.
  
  
 
-Inductive outcome : Set :=
- | error : outcome
- | success : outcome.
+
  
-Inductive outcome' : Set :=
- | error' : outcome'
- | success' : (nat) -> outcome'
- | noMatch : outcome'.
- 
-Check list.
-Print list. 
+
 
 Inductive outcomePoly (A : Type) : Type :=
  | fuelErrorPoly : outcomePoly A
  | successPoly : A -> outcomePoly A
  | noMatchPoly : outcomePoly A.
  
-MetaRocq Quote Definition noMatchPT := noMatchPoly.
-Print noMatchPT. 
 
-MetaRocq Quote Definition pT := (successPoly nat 1).
-Print pT. 
   
  
-Definition targetFn
-  
-  (recPred2TopFn : nat -> option outcome')
-  (input : nat) : option outcome' := 
 
-   match input with 
-             | S a => match recPred2TopFn a with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end 
-             | _  => None
-            end.  
-
-
-(* Given inductive and input term need to produce targetFn *)
-
-MetaRocq Quote Definition targetFnTerm := Eval compute in targetFn.
-Print targetFnTerm.
-MetaRocq Run (t' <- DB.undeBruijn targetFnTerm ;; t'' <- tmEval all t' ;; tmPrint t'').
-
-Check tCase.
-(*
-bbody :=
-              tCase
-                {|
-                  ci_ind :=
-                    {|
-                      inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                      inductive_ind := 0
-                    |};
-                  ci_npar := 1;
-                  ci_relevance := Relevant
-                |}
-                {|
-                  puinst := [];
-                  pparams :=
-                    [tInd
-                       {|
-                         inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                         inductive_ind := 0
-                       |} []];
-                  pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
-                  preturn :=
-                    tApp
-                      (tInd
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} []]
-                |} (tApp (tVar "recPred2TopFn") [tVar "a"])
-*)
 
 
 Definition sampleInput : term := 
@@ -1460,19 +1322,7 @@ Definition mkLam2 (ls : list (((string × term) × list string))) (outputTerm : 
   mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut).    
  
 
-(*
-Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : option term :=
- let td := extractTypeData p in
-  let pmd := extractPatMatData p in
-   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None. 
-*)
-Search (forall A : Type, list (list A) -> list A).
-(*
-Definition mkLamfromInd3 (conjTm : term) (p : program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
- let td := typeConstrPatMatch.extractTypeData p in
-  let pmd := conjTm in
-   if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (changeVars (typeConstrPatMatch.preProcCons fuel pmd)) outputTerm outputType wildCardRet td) else None. 
-*)
+
 Definition mkLamfromInd3 (conjTm : term) (lstP : list program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
  let td := concat (map (typeConstrPatMatch.extractTypeData) lstP) in
   let pmd := conjTm in
@@ -1529,9 +1379,6 @@ Definition justAnimatePatMat2 {A : Type} (induct : A) (inputTerm' : term) (input
 
 
 
-Parameter g : nat -> option outcome'.
-MetaRocq Quote Definition gterm := g.
-Print gterm.
 
 Parameter c : case_info.
 Parameter p : predicate term.
@@ -1540,125 +1387,11 @@ Parameter l : list (branch term).
 Definition caseTm : term := tCase c p (tApp (tVar "g") [tVar "a"]) l.
 
 
-Definition outerFn (input : nat) : option outcome' :=
- match input with
-  | S a => g a
-  | _ => None
- end.
-
-MetaRocq Quote Definition outerFnTerm := Eval compute in outerFn.
-
-Print outerFnTerm. 
-
-Definition term1 : term :=
-tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"].
-  
-  
-
-       
-  
-Definition term2 : term :=
-tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tVar "a"]. 
-
-MetaRocq Run (t <- tmQuote (option outcome') ;; tmDefinition "retType" t).
-MetaRocq Run (t <- tmQuote (@None outcome') ;; tmDefinition "wildCardRet" t).
-
-Print retType.
-
-MetaRocq Run (justAnimatePatMat2 recPredFull term1 <%nat%> term2 retType wildCardRet "result" 50).
-
-Print result.
-
-Compute <%success'%>.
-
-Inductive recPredFullOut' : nat -> outcome' -> Prop :=
- | recPredFullBaseOut' : recPredFullOut' 1 (success' 3)  
- | recPredFullConsOut' : forall a b, recPredInd1Out' a (success' b) -> recPredFullOut' (S a) (success' (S b))
-
-with recPredInd1Out' : nat -> outcome' -> Prop :=  
- | recPredInd1ConsOut' : forall a b, recPredFullOut' a (success' b)  -> recPredInd1Out' a (success' b).
 
 
 
-MetaRocq Run (justAnimatePatMat2 (recPredFullOut') (tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} 1 [])[tVar "b"]) <%outcome'%>    (tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} 1 [])
-         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-            [tVar "b"]]) <%outcome'%>  <%error'%> "result2" (50)). 
-
-Print result2.
-
-Definition recPredIndFnSimpl
-  
-  (recPred2TopFn : nat -> option outcome')
-  (a : nat) : option outcome' := 
-
-  
-                     
-                       match recPred2TopFn a with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end.
-                         
-MetaRocq Quote Definition simplTerm := Eval compute in recPredIndFnSimpl.
-
-MetaRocq Run (t' <- DB.undeBruijn simplTerm ;; t'' <- tmEval all t' ;; tmPrint t'').
-   
-             
-           
-Definition recPredIndFnSimpl'
-  
- 
-  (res : option outcome') : option outcome' := 
-
-  
-                     
-                       match res with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end.
 
 
-Definition compositeTerm : term :=
-(tLam "recPred2TopFn"
-   (tProd {| binder_name := nAnon; binder_relevance := Relevant |} <%nat%>
-      (tApp
-         (tInd
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
-            |} [])
-         [tInd
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} []]))
-   (tLam "a" <%nat%> (tApp <%recPredIndFnSimpl'%> [(tApp (tVar "recPred2TopFn") [tVar "a"])]))).  
-
-MetaRocq Run (t' <- DB.deBruijn compositeTerm ;; t'' <- tmEval all t' ;; f <- tmUnquote t'' ;; tmPrint f).
-                        
-                         
-MetaRocq Quote Definition simplTerm' := Eval compute in recPredIndFnSimpl'.
-
-MetaRocq Run (t' <- DB.undeBruijn simplTerm' ;; t'' <- tmEval all t' ;; tmPrint t'').
-(*   
-Fixpoint dispatchInternal (inT : Type) (outT : Type) (wildCardVal : outT) (eqChk : outT -> bool)
-                            (listFn : list (inT -> outT)) : (inT -> outT) :=
- fun x => match listFn with
-           | [] => wildCardVal
-           | h :: t => if (eqChk (h x)) then (dispatchInternal inT outT wildCardVal eqChk t) x else (h x)
-          end .
-          
-MetaRocq Run (t <- tmQuote (dispatchInternal nat nat 0);; tmPrint t).          
-            
-*)             
 
 Fixpoint dispatchInternal (inT : Type) (outT : Type) 
                             (listFn : list (inT -> option (outT))) : (inT -> (option outT)) :=
@@ -1756,19 +1489,7 @@ Fixpoint justAnimateMultPat {A : Type} (induct : A) (branchData : list ((prod te
                          {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |} 1
                           []) [outputType]) fuel ;; lstT <- justAnimateMultPat induct rest inputType outputType fuel ;; tmReturn (t :: lstT)  
  end.
-(* 
-Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term) (nameFn : string)  : TemplateMonad unit :=
-f <- tmUnquote (tApp <%defaultVal%> [inputType; outputType; wildCardRet; (tApp <%dispatchInternal%> [inputType; outputType; (mkLstTm' fns)])])  ;; 
- tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
- 
- tmMsg "done".
- 
-Definition mkMulPatMatFn {A : Type} (induct : A) (branchData : list ((prod term term))) (inputType : term)  (outputType : term) (wildCardRet : term) (nmFn : string) (fuel : nat) : TemplateMonad unit :=
- subfns <- justAnimateMultPat induct branchData inputType outputType fuel ;;
- mkMulPatMatFn' subfns wildCardRet inputType outputType nmFn.
- 
- *)
+
  
 Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term)  : term :=
  let fnType := tProd {| binder_name := nAnon; binder_relevance := Relevant |} inputType
@@ -1802,51 +1523,10 @@ Check ([((tApp (tConstruct
 
 
 
-MetaRocq Run (t <- tmQuote (fun a : nat => S a) ;; tmPrint t).
-
-Print outcome'.
-
-(* (tApp <%recPredIndFnSimpl'%> [(tApp (tVar "recPred2TopFn") [tVar "a"])]))).  
-*)
-(*
-Definition joinPatMat (preOutToPostOutFn : term) (preIn : term) (postIn : term) (nmFnPreInPreOut : string) : term
- tmLam nmFnPreInPreOut typeInfo (mkFn postIn (tApp preOutToPostOutFn)[tApp (tVar nmFnPreInPreOut)[preIn]).
- 
- with preOuttopostOutFn = mkFn preOut postOut   
-
-*)
-(*
-target : 
-targetfn (f : nat -> option') (input : nat) : (option') :=
- match input with
- | S a => match f a with
-           | success b => success (S b)
-           | _  => error
-
- | _ => error
- 
- preIn :  a
- postIn : S a
- preOut : b --> success b
- postOut : S b ---> success S b
-*)
-
-Print tLam.
-
-MetaRocq Quote Definition fnT := (nat -> (list nat)).
-Print fnT.
 
 
 
-Definition prLstToLstPr (l1 : list term) (l2: list term) (wildCardRetVal : term) : list (prod term term). Admitted.
 
-
-Print outcomePoly.
-
-Compute <%(successPoly nat 2)%>.
-Compute <%fuelErrorPoly nat%>.
-
-Compute <%outcomePoly nat%>.
 
 
 
@@ -1881,11 +1561,6 @@ f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
               
-Check (2, 3).  
-Compute <%prod nat nat%>.
-Compute <% (1,2) %>.
-
-Compute (fst (1, 2, 3)).
 
 Fixpoint mklhsProdType (lhsIndPre : list (term × term)) : TemplateMonad term :=
  match lhsIndPre with 
@@ -1929,10 +1604,7 @@ Definition mkOutcome (lhsInd : ((((string × term) × term) × term) × term)) :
  match lhsInd with
   | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preConT; preCon])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postConT; postCon])), (tApp <%outcomePoly%> [postConT]))
  end.
-Compute <%successPoly%>.
-Compute <%successPoly nat 0%>.
-Check (successPoly nat 0).
-Compute <%outcomePoly nat%>.
+
 Definition mkOutcomeProd (lhsInd : list ((((string × term) × term) × term) × term)) : list ((((string × term) × term) × term) × term) :=
  map (mkOutcome) lhsInd.
  
@@ -1950,11 +1622,7 @@ match lhsIndOutcome with
 
  end.
  
-Print tLam. 
 
-(*
-(tLambda {| binder_name := nNamed x; binder_relevance := Relevant |} A b)
-*)
 
  
 Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string × term) × term) × term) × term)) (fnBody : term) : TemplateMonad term :=
@@ -1966,29 +1634,13 @@ Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string × term) × term)
                                                    
 
 
-Search (string -> string -> string). 
+
 
 Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (outcomePoly outputType') ) :=
  fun x : inputType => fuelErrorPoly outputType'.
 
-(*
-Definition mkPreConProdTmOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-Definition mkPreConProdType list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-Definition mkPreConProdTypeOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
 
-Definition mkPostConProdTm  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-Definition mkPostConProdTmOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-Definition mkPostConProdType  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-Definition mkPostConProdTypeOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
 
-Definition mkproductAllPreInToPreOutOutcome  list (string × term × term × term × term) : TemplateMonad term. Admitted. 
-
-Definition mklamOverAllOutcome  list (string × term × term × term × term) (fnBody : term) : TemplateMonad term. Admitted. 
-*)    
-Search (forall A, list A -> list A -> list A).  
-
-Search (nat -> string).            
-              
 Fixpoint genFuelErrorPatMat (lhsInd : list (term × term)) (index : nat) : list (list (term × term)) :=
 match index with
  | 0 => []
@@ -1999,10 +1651,7 @@ match index with
                end
 end.
 
-Compute (tl (genFuelErrorPatMat [( (tVar "c"), <%nat%>); ( (tVar "d"), <%nat%>)] 3)).
 
-
-Check length.
 Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMonad (list term) :=
 
   match lhsIndl with
@@ -2048,29 +1697,11 @@ productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome
 
 preOutTopostOutFn <- mkMulPatMatFn (induct) (((lhsPostCondProdOutcomeTm), postOut) :: (lhsPostCondFuelErrorPatMat)) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
 
-(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
-(*
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
-*)
-
-(*
-p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
-
-pf <- tmUnquote p' ;;
-tmPrint pf;;
-*)
-
-
-
-
-(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
 
 tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
 
 
-(*
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-*)
+
 let tBody := 
  (tLam "fuel" <%nat%>
             (tCase
@@ -2097,11 +1728,7 @@ let tBody :=
                                     
                               |}]
                      )) in
-(* tBody has type postInType -> postOutType
-Need to convert it to nat -> postIn -> postOut 
-Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
-and the Sm case returns tBody
-*)
+
 
 u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
 
@@ -2111,317 +1738,16 @@ t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
 f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
-Check (1,2,3).              
-              
-
-
-
-
-Fixpoint animateAllConstructors {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
-                      (term)) × (term)) × (term)) × (term)) × (string))))
-                        (fuel : nat) : TemplateMonad unit := 
- match cstrData with
-  | [] => tmFail "no constructors in Inductive"
-  | [h] => joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
-  | h :: t =>  animateAllConstructors topInduct t fuel ;; joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
- end.                  
+           
+                        
                         
 
-
-Compute (fst (1,2,3)).
-
-
-
-
-
-
- 
-
-
-Definition joinPatMatPolyGen {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad unit :=
-
-let lhsIndOutcome := mkOutcomeProd lhsInd in
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in                      
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in 
-lhsPostCondProdOutcomeTm <- mkPostConProdTm lhsIndOutcome ;;
-lhsPostCondProdType <- mkPostConProdType lhsInd ;;
-lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
-productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
-
-
-(*
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut); ((tApp <%fuelErrorPoly%> [lhsPostCondProdType]),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
-*)
-(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
-
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
-
-
-(*
-p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
-
-pf <- tmUnquote p' ;;
-tmPrint pf;;
-*)
-
-
-
-
-(* NO SEPARATE CASE FOR FUEL ERROR - NEED TO FIX *)
-(*
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-*)
-
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-
-let tBody := 
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
-                  
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-                                    
-                              |}]
-                     )) in
-(* tBody has type postInType -> postOutType
-Need to convert it to nat -> postIn -> postOut 
-Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
-and the Sm case returns tBody
-*)
-
-u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
-              
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-(* Incorporating fuel *)
-
-
-(*
-(tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
-                  
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    <%fuelErrorPolyCstFn postInType postOutType'%>
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody
-                                    
-                              |}]
-                     ))
-*)              
-(*
-Definition recPred2IndFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' :=  
- match c with  
-  | 0 => Some error'
-  | S m =>   match recPredTopFn a m with
-              | Some (success' ( b)) => Some (success' ((b)))
-              | None => None
-              | _ => Some (error')
-             end 
-              
- end.
- 
- 
-Definition recPredIndFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' := 
-
- match c with 
-  | 0 => Some error'
-  | S m =>  match a with 
-             | S a' => match recPred2TopFn a' m with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end 
-             | _  => None
-            end 
-           
- end. 
- 
-*)              
              
-(* __________________________Examples __________________________________ *)             
+(* __________________________Examples __________________________________ *) 
+
+
+(* Examples with multiple predicates on LHS *)            
               
-(*
-Inductive recPredFull : nat -> nat -> Prop :=
- | recPredFullBase : recPredFull 1 3 
- | recPredFullCons : forall a b, recPredInd1 a b -> recPredFull (S a) (S b)
-*)
-              
-Definition preInT'' : term :=  (tVar "a").
-Definition preOutT'' : term := tVar "b". 
-Definition postInT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]).
-Definition postOutT'' : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"]).
-
-MetaRocq Run (joinPatMatPolyGen (recPredFull) ([(((("recPredInd2",preInT''), <%nat%>), preOutT''), <%nat%>)]) (postInT'') (<%nat%>) (postOutT'') 
-                         (<%nat%>) ("recPredIndCons") (50)).
-                         
-Print recPredIndConsAnimated.
-
-Definition animateInd1 (input : (outcomePoly nat)) : (outcomePoly nat) :=
- match input with
-  | successPoly  m => successPoly nat (S (S m))
-  | fuelErrorPoly => fuelErrorPoly nat 
-  | _ => noMatchPoly nat
- end.
-(*
-Compute (result10 (animateInd1) (successPoly nat 9)).                            
- 
-Compute (result10 (animateInd1) (successPoly nat 0)). 
-
-Compute (result10 (animateInd1) (fuelErrorPoly nat)).
-*)
-Inductive recPredInd1Pair : (prod nat nat) -> (prod nat nat) -> Prop :=
- | recPredInd1ConsPair : forall a b c d, c = a /\ d = S b -> recPredInd1Pair (a, b) (c, d).
-
-Inductive recPredPair : (prod nat nat) -> (prod nat nat) -> Prop :=
-
- | recPredFullConsPair : forall a b c d, recPredInd1Pair (a, b) (c, d) -> recPredPair (a, S b) (c, S d).
- 
-
-
-Definition pairNatTerm : term := tApp
-         (tInd
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} [])
-         [<%nat%>; <%nat%>].
-
-
-Definition preInTPair : term := tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>; <%nat%>;  (tVar "a"); (tVar "b")].
-
-
-
-
-Definition preOutTPair : term :=  tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>; <%nat%>;  (tVar "c"); (tVar "d")].
-
-
-
-Definition postInTPair : term := tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>; <%nat%>;  (tVar "a"); (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "b"])].
-         
-         
-         
-Definition postOutTPair : term := tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>; <%nat%>;  (tVar "c"); (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "d"])].
-         
- 
-
-
-
-Definition animateInd1Pair (input : outcomePoly (prod nat nat)) : outcomePoly (prod nat nat) :=
- match input with
-  | successPoly (a, b) => successPoly (prod nat nat) (a, S b)
-  | fuelErrorPoly => fuelErrorPoly (prod nat nat)
-  | _ => noMatchPoly (prod nat nat)
- end. 
-
-
-MetaRocq Run (joinPatMatPoly (recPredPair) (preInTPair) (pairNatTerm) (preOutTPair) (pairNatTerm) (postInTPair) (pairNatTerm) (postOutTPair) 
-                         (pairNatTerm) ("animateRecPredPair") (50)).
-                         
-                         
-Print animateRecPredPair.
-                         
-Compute (animateRecPredPair animateInd1Pair (successPoly (prod nat nat) (4,4))).
-
-Compute (animateRecPredPair animateInd1Pair (successPoly (prod nat nat) (4,0))).
-
-Compute (animateRecPredPair animateInd1Pair (successPoly (prod nat nat) (7,8))).
-
-Compute (animateRecPredPair animateInd1Pair (fuelErrorPoly (prod nat nat))).
-
-(* Examples with multiple predicates on LHS *)
-
-
-
 Inductive rel4 : (prod nat nat) -> (prod nat nat) -> Prop :=
 
  | rel4Cons : forall a b c d, rel5 a c /\ rel6 (b) d -> rel4 (a, S b) (c, S d)
@@ -2435,7 +1761,7 @@ with rel6 : nat -> nat -> Prop :=
 | rel6Cons : forall u1 w1, w1 = S (S u1) -> rel6 u1 w1.
 
 
-(* Input Data
+
 
 Definition pairNatTerm : term := tApp
          (tInd
@@ -2480,22 +1806,12 @@ Definition postOutTPair : term := tApp (tConstruct
 
 
 
- *)
- 
-
 MetaRocq Run (joinPatMatPolyGenFuelAware (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
                            <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
-                         (pairNatTerm) ("rel4ConsF") (50)).
-Print rel4ConsFAnimated.                         
-Print TemplateMonad.
-MetaRocq Run (t <- tmQuote rel4ConsFAnimated ;; tmPrint t).
- 
-MetaRocq Run (joinPatMatPolyGen (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
-                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
                          (pairNatTerm) ("rel4Cons") (50)).
+Print rel4ConsAnimated.                         
 
 
-Print rel4ConsAnimated.
 
 
 Definition rel5ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
@@ -2519,309 +1835,46 @@ Definition rel6ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly
  end.
  
  
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 5))).  
- 
+
+
+
+
+
+
+
+
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (9, 13))).  
+
 Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
 
 Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
 
 (* Should say fuelError *)
 Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
-
-Compute <%rel4ConsAnimated%>.
-
-
-
-
-
-
-
-
-
-Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (9, 13))).  
-
-Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
-
-Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod nat nat) (4, 5))).
-
-(* Should say fuelError *)
-Compute (rel4ConsFAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
  
 
 
   
- 
-
-(*
-Definition joinPatMatPolyGenTest {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad unit :=
-
-let lhsIndOutcome := mkOutcomeProd lhsInd in
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in                      
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in 
-lhsPostCondProdOutcomeTm <- mkPostConProdTm lhsIndOutcome ;;
-lhsPostCondProdTm <- mkPostConProdTm lhsInd ;;
-
-lhsPostCondProdType <- mkPostConProdType lhsInd ;;
-lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
-productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
-(*
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdTm), postOut') ]) (lhsPostCondProdType)  (postOutType') (<%(0,0)%>)  (fuel) ;;
-*)
-
-
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut)]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
-
-(*
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut') ]) (lhsPostCondProdOutcomeType)  (postOutType') (<%(0,0)%>)  (fuel) ;;
-*)
-(*
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([((lhsPostCondProdOutcomeTm), postOut); ((tApp <%fuelErrorPoly%> [lhsPostCondProdType]),(tApp <%fuelErrorPoly%> [postOutType'])) ]) (lhsPostCondProdOutcomeType)  (postOutType) (tApp <%noMatchPoly%> [postOutType'])  (fuel) ;;
-*)
-
-
-g <-tmEval all preOutTopostOutFn ;;
-tmPrint g ;; 
-p' <- tmEval all (removeopTm (DB.deBruijnOption preOutTopostOutFn)) ;;
-
-pf <- tmUnquote p' ;;
-tmPrint pf;;
-(*
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [productAllPreInToPreOutOutcome]))); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-let tBody := 
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
-                  
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-                                    
-                              |}]
-                     )) in
-(* tBody has type postInType -> postOutType
-Need to convert it to nat -> postIn -> postOut 
-Do a tCase where the case 0 returns the constant function postIn : postInType -> fuelErrorPoly postOutType')
-and the Sm case returns tBody
-*)
-
-u <- mklamOverAllOutcome lhsIndOutcome tBody ;;
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf)  ;; *) tmMsg "done". 
-*)
-
-
-(*
-Definition joinPatMat' {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
-                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
-                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
- 
-let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut); (<%error'%>,<%error'%>) ]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
-
-tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]]))); (<%error'%>,<%error'%>) ]) postInType postOutType wildCardRet fuel ;;
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
-              
-Definition preInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "a"] ). 
-
-Definition preOutT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
-Definition postInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [(tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"])]).
-Definition postOutT' : term :=  (tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} 1 [])
-         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-            [tVar "b"]]).
-            
-MetaRocq Run (joinPatMat' (recPredFull) (preInT') (<%outcome'%>) (preOutT') (<%outcome'%>) (postInT') (<%outcome'%>) (postOutT') 
-                         (<%outcome'%>) (<%noMatch%>) ("result4") ("func") (50)).
- 
- 
-Print result4.  
-
-
-
-*)
-(* 
-Compute <%(0,0)%>. 
-
-= tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} 0 [])
-         [<%nat%>; <%nat%>; tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 [];
-          tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]
-     
-*) 
-(*
-Compute <%prod nat nat%>. = 
-tApp
-         (tInd
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
-            |} [])
-         [<%nat%>; <%nat%>]
-*) 
-
-
-(*
-Definition joinPatMat {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
-                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
-                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
- 
-let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut)]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
-
-tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]])))]) postInType postOutType wildCardRet fuel ;;
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
-              
-              
-       
-Check error'.
-
-Parameter v : nat.
-
-Compute <% (success' (S v))%>.
-Compute <% (Some v) %>.
-
-Definition preInT : term :=  (tVar "a").
-Definition preOutT : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
-Definition postInT : term := (tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"]).
-Definition postOutT : term :=  (tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} 1 [])
-         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-            [tVar "b"]]).
-            
-MetaRocq Run (t <- justAnimatePatMat4 recPredFullOut' preOutT <%outcome'%> (tApp
-         (tConstruct
-            {|
-              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
-            |} 0 [])
-         [<%outcome'%>; postOutT]) (tApp
-                        (tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |}
-                         [])[<%outcome'%>]) 
-                         (tApp (tConstruct
-                         {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0 |} 1
-                          []) [<%outcome'%>]) 50 ;; tmPrint t).            
-
-MetaRocq Run (t <- mkMulPatMatFn (recPredFullOut') [(preOutT, postOutT)] <%outcome'%> <%outcome'%> <%error'%> 50 ;; tmPrint t).
-   
-MetaRocq Run (joinPatMat (recPredFull) (preInT) (<%nat%>) (preOutT) (<%outcome'%>) (postInT) (<%nat%>) (postOutT) 
-                         (<%outcome'%>) (<%error'%>) ("result3") ("func") (50)).
-                         
-Print result3.                         
-
-Compute (result3 (fun x : nat => success' (S (S x))) 8).
-
-Compute (result3 (fun x : nat => success' (S (S x))) 0).
-
-
-
-Definition joinPatMat' {A : Type} (induct : A) (preIn : term) (preInType : term) (preOut : term) (preOutType : term)
-                      (postIn : term) (postInType : term) (postOut : term) (postOutType : term)  (wildCardRet : term) (nmFn : string)
-                      (nmFnpreInpreOut : string)  (fuel : nat) : TemplateMonad unit :=
- 
-let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} preInType preOutType) in
-preOutTopostOutFn <- mkMulPatMatFn (induct) ([(preOut, postOut); (<%error'%>,<%error'%>) ]) (preOutType)  (postOutType) (wildCardRet)  (fuel) ;;
-
-tBody <-  mkMulPatMatFn (induct) ([(postIn, ((tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut)[preIn]]))); (<%error'%>,<%error'%>) ]) postInType postOutType wildCardRet fuel ;;
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
-              
-Definition preInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "a"] ). 
-
-Definition preOutT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [tVar "b"]). 
-Definition postInT' : term := (tApp (tConstruct {| inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'"); inductive_ind := 0 |} 1 []) [(tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "a"])]).
-Definition postOutT' : term :=  (tApp (tConstruct
-            {|
-              inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-              inductive_ind := 0
-            |} 1 [])
-         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-            [tVar "b"]]).
-            
-MetaRocq Run (joinPatMat' (recPredFull) (preInT') (<%outcome'%>) (preOutT') (<%outcome'%>) (postInT') (<%outcome'%>) (postOutT') 
-                         (<%outcome'%>) (<%noMatch%>) ("result4") ("func") (50)).
- 
- 
-Print result4.                         
-Compute <%(hd 0 [1;2;3])%>.            
-                      
-*)
 
 (* CODE FOR GLUING EVERYTHING TOGETHER * ________________________________________________________________ *)
 
 
 
-(* Target fn
 
-Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
-  match c with
-  | 0 => Some error'
-  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
-                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
-  end 
-with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
-  match c with 
-  | 0 => Some error'
-  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
-  end.
-*)  
 
-Print named_term.
-Compute <%(nat -> nat)%>.
+
+Fixpoint animateAllConstructors {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
+                      (term)) × (term)) × (term)) × (term)) × (string))))
+                        (fuel : nat) : TemplateMonad unit := 
+ match cstrData with
+  | [] => tmFail "no constructors in Inductive"
+  | [h] => joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
+  | h :: t =>  animateAllConstructors topInduct t fuel ;; joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
+ end.       
+
+
+
+
 
 Definition quoteConst (s : string) : term :=
 tConst
@@ -2839,182 +1892,10 @@ match clauseData with
 end.
 Parameter fakeTerm : term.
 
-Print tLam.
-Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) : def term :=
-  
-{|
-     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
-     dtype :=
-       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType]) 
-         
-       
-            (tApp (<%outcomePoly%>) [outputType]));
-     dbody :=
-       
-         
-          tLam "fuel" <%nat%> fakeTerm
-           (*
-           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tApp (<%outcomePoly%>) [inputType])
-                  
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp (<%fuelErrorPoly%>) [outputType])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tApp (tApp <%dispatchOutcomePolyExt%> [(mkLstTm' (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) (applyTopFn clauseData))]) [tVar "input"; tVar "remFuel"]  
-                                    
-                              |}]
-                     )) *) ; rarg := 0 |}.
-                     
+
+
                      
 
-
-
-
-
-
- 
-
-(*
-tLam "v2" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "v3"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "v3")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 1 [])
-                      [tApp
-                         (tInd
-                            {|
-                              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                              inductive_ind := 0
-                            |} [])
-                         [<%nat%>]]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "v4"; binder_relevance := Relevant |}];
-                  bbody := tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tVar "v4"]
-                |}])
-       
-    
-    
-tLam "input" <%nat%>
-  (tCase
-     {|
-       ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-       ci_npar := 0;
-       ci_relevance := Relevant
-     |}
-     {|
-       puinst := [];
-       pparams := [];
-       pcontext := [{| binder_name := nNamed "input"; binder_relevance := Relevant |}];
-       preturn :=
-         tApp
-           (tInd
-              {|
-                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                inductive_ind := 0
-              |} [])
-           [tInd
-              {|
-                inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                inductive_ind := 0
-              |} []]
-     |} (tRel 0)
-     [{|
-        bcontext := [];
-        bbody :=
-          tApp
-            (tConstruct
-               {|
-                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                 inductive_ind := 0
-               |} 1 [])
-            [tInd
-               {|
-                 inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                 inductive_ind := 0
-               |} []]
-      |};
-      {|
-        bcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
-        bbody := tApp (tConst (MPfile ["animationModules"; "Animation"], "g") []) [tRel 0]
-      |}])       
- *)      
-MetaRocq Run (t <- tmQuoteRecTransp  recPredFull  true ;; tmDefinition "termFull" t). 
-Print termFull.
-
-(* Goal : outerFn *) 
-
-Parameter x : nat.
-Parameter a : nat.
-(*MetaRocq Quote Definition term1' := (x = a).
-
-Print term1'. *)
-(*
-
-Compute ((mkLamfromInd3 term1' termFull term2 retType 30)). 
-Print term.
-
-Compute (typeConstrPatMatch.preProcCons 30 term1').
-
-Compute (replaceVarsTm term2 (typeConstrPatMatch.preProcCons 30 term1') 30).
-
-
-Compute (mkLam2 (typeConstrPatMatch.preProcCons 30 term1') term2 retType (extractTypeData2 termFull) 30). 
-  
-(** PROBLEM !! RETURNING EMPTY LIST **)
-
-Search (list _ -> option _).
-Search (string -> string -> bool).
-
-Compute ((typeConstrPatMatch.extractTypeData termFull)).
-Compute (map typeConstrPatMatch.extractIndDecl ((map snd (( ((declarations (fst termFull)))))))).
-
-*)
 
 
 
@@ -3041,375 +1922,6 @@ Fixpoint dispatchOutcomePolyExt {A : Type} {B : Type} (lst : list (nat -> outcom
  end.
 
 
-(* Inline dispatch fn
-Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
-
-
-match c with
- | 0 => Some error'
- | S m => (dispatch' [recPredBaseFn ; recPredIndFn] m) a m
-end 
-
-with recPredBaseFn (a : nat) (c : nat) : option outcome' :=     
- match c with
-  | 0 => Some error'
-  | S m =>   match a with
-                | 1 => Some (success' (3))
-                | _ => None
-              end
- end           
-with recPredIndFn (a : nat) (c : nat) : option outcome' := 
- match c with 
-  | 0 => Some error'
-  | S m =>  match a with 
-             | S a' => match recPred2TopFn a' m with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end 
-             | _  => None
-            end 
-           
- end 
-            
-                                   
- 
-with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
-
-
-match c with 
- | 0 => Some error'
- | S m => (dispatch' [recPred2IndFn] m) a m
-end 
-  
-with recPred2IndFn (a : nat) (c : nat) : option outcome' :=  
- match c with  
-  | 0 => Some error'
-  | S m =>   match recPredTopFn a m with
-              | Some (success' ( b)) => Some (success' ((b)))
-              | None => None
-              | _ => Some (error')
-             end 
-              
- end
-
-with dispatch' (lst : list (nat -> nat -> option outcome')) (c : nat) : nat -> nat -> option outcome' :=
- match c with
-  | 0 => (fun x y => (Some error'))
-  | S m => match lst with
-            | [] => (fun x y => None)
-            | h :: t => fun x y => let g := h x y in 
-                         
-                         match g with
-                         | None => (dispatch' t m) x y
-                         | _ => g
-                         end 
- 
-           end 
- end.
-
-*) 
-
-(*
-Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
-
-
-match c with
- | 0 => Some error'
- | S m => (dispatch [recPredBaseFn ; recPredIndFn]) a m
-end 
-
-with recPredBaseFn (a : nat) (c : nat) : option outcome' :=     
- match c with
-  | 0 => Some error'
-  | S m =>   match a with
-                | 1 => Some (success' (3))
-                | _ => None
-              end
- end           
-with recPredIndFn (a : nat) (c : nat) : option outcome' := 
- match c with 
-  | 0 => Some error'
-  | S m =>  match a with 
-             | S a' => match recPred2TopFn a' m with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end 
-             | _  => None
-            end 
-           
- end 
-            
-                                   
- 
-with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
-
-
-match c with 
- | 0 => Some error'
- | S m => (dispatch [recPred2IndFn]) a m
-end 
-  
-with recPred2IndFn (a : nat) (c : nat) : option outcome' :=  
- match c with  
-  | 0 => Some error'
-  | S m =>   match recPredTopFn a m with
-              | Some (success' ( b)) => Some (success' ((b)))
-              | None => None
-              | _ => Some (error')
-             end 
-              
- end.
-*)
-
-Definition recPredBaseFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' :=     
- match c with
-  | 0 => Some error'
-  | S m =>   match a with
-                | 1 => Some (success' (3))
-                | _ => None
-              end
- end .          
-Definition recPredIndFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' := 
-
- match c with 
-  | 0 => Some error'
-  | S m =>  match a with 
-             | S a' => match recPred2TopFn a' m with
-                        | Some (success' (b)) => Some (success' ((S b)))
-                        | None => None
-                        | _ => Some error'
-                        end 
-             | _  => None
-            end 
-           
- end.
-  
-Definition recPred2IndFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' :=  
- match c with  
-  | 0 => Some error'
-  | S m =>   match recPredTopFn a m with
-              | Some (success' ( b)) => Some (success' ((b)))
-              | None => None
-              | _ => Some (error')
-             end 
-              
- end.
-
-
-Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
-  match c with
-  | 0 => Some error'
-  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
-                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
-  end 
-with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
-  match c with 
-  | 0 => Some error'
-  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
-  end.
-
-
-Check ({|
-     dname := {| binder_name := nNamed "recPredTopFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody := tApp (tApp <%dispatch%> ([mkLstTm fnTypeTm ["recPredBaseFn"; "recPredIndFn"]])) [tVar "a"; tVar "m"]  
-                                    
-                              |}]
-                     )); rarg := 1 |}).
-
-Fixpoint recPredTopFn' (ind : nat) (a : nat) (fuel : nat) :  option outcome'  :=
-  match ind with 
-   | 0 => match fuel with
-          | 0 => Some error'
-          | S m => (dispatch [recPredBaseFn (recPredTopFn' 0) (recPredTopFn' 1)
-                    ; recPredIndFn (recPredTopFn' 0) (recPredTopFn' 1)]) a m
-  
-          end 
-  
-   | 1 => match fuel with 
-           | 0 => Some error'
-           | S m => (dispatch [recPred2IndFn (recPredTopFn' 0) (recPredTopFn' 1)]) a m
-          end
-  
-   | _ => None
-  end.  
-
-
-
-
-
-
-
-
-
-Compute (recPredTopFn' 0 7 40).  
-
-MetaRocq Quote Definition topFnTerm := Eval compute in recPredTopFn.
-
-MetaRocq Run (t <- DB.undeBruijn topFnTerm ;; t' <- tmEval all t ;; tmDefinition "topFnTm" t').
-
-Print topFnTm. 
-
-Definition dummy (ind : nat) : bool :=
- match ind with 
-  | 0 => true
-  | 1 => true
-  | 2 => true
-  | _ => false
- end.
-
-MetaRocq Quote Definition dummy_syntax := Eval compute in dummy.
- 
-MetaRocq Run (t <- DB.undeBruijn dummy_syntax ;; t' <- tmEval all t ;; tmDefinition "dummyTm" t').
-
-Print dummyTm.
-
-Search (string -> string -> string).
-Search (nat -> string).
-
-
-Definition mkName (n : nat) : string :=
- String.append "n" (string_of_nat n).
- 
-
-Fixpoint natPatMatchBr (outputType : term) (wildCardRet : term) (retVals : list term) (index : nat) : list (branch term) :=
- match retVals with
-  | [] => [{|
-        bcontext := [];
-        bbody :=
-         wildCardRet
-      |};
-      {|
-        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
-        bbody := wildCardRet |}]
-  
-  | [h] =>  [{|
-        bcontext := [];
-        bbody :=
-         h
-      |};
-      {|
-        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
-        bbody := wildCardRet |}]     
- 
- 
- 
-  
-  | h' :: t' => [{|
-        bcontext := [];
-        bbody :=
-          h'
-      |};
-      {|
-        bcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
-        bbody :=
-          tCase
-            {|
-              ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-              ci_npar := 0;
-              ci_relevance := Relevant
-            |}
-            {|
-              puinst := [];
-              pparams := [];
-              pcontext := [{| binder_name := nNamed (mkName index); binder_relevance := Relevant |}];
-              preturn :=
-                outputType
-            |} (tVar (mkName index)) (natPatMatchBr (outputType) (wildCardRet) t' (index + 1)) |}]
- end.                         
-        
-
-Definition natPatMatch (outputType : term) (wildCardRet : term) (retVals : list term) : term :=
- tLam "ind" <%nat%>
-  (tCase
-     {|
-       ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-       ci_npar := 0;
-       ci_relevance := Relevant
-     |}
-     {|
-       puinst := [];
-       pparams := [];
-       pcontext := [{| binder_name := nNamed "ind"; binder_relevance := Relevant |}];
-       preturn :=
-         outputType
-     |} (tVar "ind") (natPatMatchBr (outputType) (wildCardRet) (retVals) 0)).
-     
- 
-  
- 
 Parameter default : (def term).
 
 Definition getlst (t : term) : list (def term) :=
@@ -3418,13 +1930,6 @@ Definition getlst (t : term) : list (def term) :=
   | _ => []
  end.  
 
-(* 
-Compute (hd default (getlst topFnTm)). 
-
-MetaRocq Quote Definition zeroList := [0; 0; 0].
-Print zeroList.
-
-*)
 
 Fixpoint mkLstTm (eltType : term) (lst : list string) : term := 
  match lst with
@@ -3440,866 +1945,8 @@ Fixpoint mkLstTm (eltType : term) (lst : list string) : term :=
                [eltType; tVar h; mkLstTm eltType t]
  end.                        
 
-MetaRocq Quote Definition fnTypeTm := (nat -> nat -> (option outcome')).
-
-(* Print fnTypeTm. *)
-
-MetaRocq Quote Definition dispatchTm := (@dispatch nat outcome').
-(* Print dispatchTm. *) 
-
-Definition myTerm : named_term :=
-tFix
-  [{|
-     dname := {| binder_name := nNamed "recPredTopFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody := tApp (tApp dispatchTm ([mkLstTm fnTypeTm ["recPredBaseFn"; "recPredIndFn"]])) [tVar "a"; tVar "m"]  
-                                    
-                              |}]
-                     )); rarg := 1 |} (* USE dispatchTm  instead of unfolding dispatch function *)
-                
-     
-   
-                      
-                
-     
-   ;
-   {|
-     dname := {| binder_name := nNamed "recPredBaseFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody :=
-                    tCase
-                      {|
-                        ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                        ci_npar := 0;
-                        ci_relevance := Relevant
-                      |}
-                      {|
-                        puinst := [];
-                        pparams := [];
-                        pcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
-                        preturn :=
-                          tApp
-                            (tInd
-                               {|
-                                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                 inductive_ind := 0
-                               |} [])
-                            [tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcome'");
-                                 inductive_ind := 0
-                               |} []]
-                      |} (tVar "a")
-                      [{|
-                         bcontext := [];
-                         bbody :=
-                           tApp
-                             (tConstruct
-                                {|
-                                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                  inductive_ind := 0
-                                |} 1 [])
-                             [tInd
-                                {|
-                                  inductive_mind :=
-                                    (MPfile ["animationModules"; "Animation"], "outcome'");
-                                  inductive_ind := 0
-                                |} []]
-                       |};
-                       {|
-                         bcontext := [{| binder_name := nNamed "n"; binder_relevance := Relevant |}];
-                         bbody :=
-                           tCase
-                             {|
-                               ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                               ci_npar := 0;
-                               ci_relevance := Relevant
-                             |}
-                             {|
-                               puinst := [];
-                               pparams := [];
-                               pcontext :=
-                                 [{| binder_name := nNamed "n"; binder_relevance := Relevant |}];
-                               preturn :=
-                                 tApp
-                                   (tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                        inductive_ind := 0
-                                      |} [])
-                                   [tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["animationModules"; "Animation"], "outcome'");
-                                        inductive_ind := 0
-                                      |} []]
-                             |} (tVar "n")
-                             [{|
-                                bcontext := [];
-                                bbody :=
-                                  tApp
-                                    (tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                         inductive_ind := 0
-                                       |} 0 [])
-                                    [tInd
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} [];
-                                     tApp
-                                       (tConstruct
-                                          {|
-                                            inductive_mind :=
-                                              (MPfile ["animationModules"; "Animation"], "outcome'");
-                                            inductive_ind := 0
-                                          |} 1 [])
-                                       [tApp
-                                          (tConstruct
-                                             {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                                          [tApp
-                                             (tConstruct
-                                                {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                                             [tApp
-                                                (tConstruct
-                                                   {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1
-                                                   [])
-                                                [tConstruct
-                                                   {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0
-                                                   []]]]]]
-                              |};
-                              {|
-                                bcontext :=
-                                  [{| binder_name := nNamed "n0"; binder_relevance := Relevant |}];
-                                bbody :=
-                                  tApp
-                                    (tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                         inductive_ind := 0
-                                       |} 1 [])
-                                    [tInd
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} []]
-                              |}]
-                       |}]
-                |}]));
-     rarg := 1
-   |};
-   {|
-     dname := {| binder_name := nNamed "recPredIndFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody :=
-                    tCase
-                      {|
-                        ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                        ci_npar := 0;
-                        ci_relevance := Relevant
-                      |}
-                      {|
-                        puinst := [];
-                        pparams := [];
-                        pcontext := [{| binder_name := nNamed "a"; binder_relevance := Relevant |}];
-                        preturn :=
-                          tApp
-                            (tInd
-                               {|
-                                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                 inductive_ind := 0
-                               |} [])
-                            [tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcome'");
-                                 inductive_ind := 0
-                               |} []]
-                      |} (tVar "a")
-                      [{|
-                         bcontext := [];
-                         bbody :=
-                           tApp
-                             (tConstruct
-                                {|
-                                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                  inductive_ind := 0
-                                |} 1 [])
-                             [tInd
-                                {|
-                                  inductive_mind :=
-                                    (MPfile ["animationModules"; "Animation"], "outcome'");
-                                  inductive_ind := 0
-                                |} []]
-                       |};
-                       {|
-                         bcontext := [{| binder_name := nNamed "a'"; binder_relevance := Relevant |}];
-                         bbody :=
-                           tCase
-                             {|
-                               ci_ind :=
-                                 {|
-                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                   inductive_ind := 0
-                                 |};
-                               ci_npar := 1;
-                               ci_relevance := Relevant
-                             |}
-                             {|
-                               puinst := [];
-                               pparams :=
-                                 [tInd
-                                    {|
-                                      inductive_mind :=
-                                        (MPfile ["animationModules"; "Animation"], "outcome'");
-                                      inductive_ind := 0
-                                    |} []];
-                               pcontext :=
-                                 [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
-                               preturn :=
-                                 tApp
-                                   (tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                        inductive_ind := 0
-                                      |} [])
-                                   [tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["animationModules"; "Animation"], "outcome'");
-                                        inductive_ind := 0
-                                      |} []]
-                             |} (tApp (tVar "recPred2TopFn") [tVar "a'"; tVar "m"])
-                             [{|
-                                bcontext :=
-                                  [{| binder_name := nNamed "o"; binder_relevance := Relevant |}];
-                                bbody :=
-                                  tCase
-                                    {|
-                                      ci_ind :=
-                                        {|
-                                          inductive_mind :=
-                                            (MPfile ["animationModules"; "Animation"], "outcome'");
-                                          inductive_ind := 0
-                                        |};
-                                      ci_npar := 0;
-                                      ci_relevance := Relevant
-                                    |}
-                                    {|
-                                      puinst := [];
-                                      pparams := [];
-                                      pcontext :=
-                                        [{| binder_name := nNamed "o"; binder_relevance := Relevant |}];
-                                      preturn :=
-                                        tApp
-                                          (tInd
-                                             {|
-                                               inductive_mind :=
-                                                 (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                               inductive_ind := 0
-                                             |} [])
-                                          [tInd
-                                             {|
-                                               inductive_mind :=
-                                                 (MPfile ["animationModules"; "Animation"], "outcome'");
-                                               inductive_ind := 0
-                                             |} []]
-                                    |} (tVar "o")
-                                    [{|
-                                       bcontext := [];
-                                       bbody :=
-                                         tApp
-                                           (tConstruct
-                                              {|
-                                                inductive_mind :=
-                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                                inductive_ind := 0
-                                              |} 0 [])
-                                           [tInd
-                                              {|
-                                                inductive_mind :=
-                                                  (MPfile ["animationModules"; "Animation"], "outcome'");
-                                                inductive_ind := 0
-                                              |} [];
-                                            tConstruct
-                                              {|
-                                                inductive_mind :=
-                                                  (MPfile ["animationModules"; "Animation"], "outcome'");
-                                                inductive_ind := 0
-                                              |} 0 []]
-                                     |};
-                                     {|
-                                       bcontext :=
-                                         [{| binder_name := nNamed "b"; binder_relevance := Relevant |}];
-                                       bbody :=
-                                         tApp
-                                           (tConstruct
-                                              {|
-                                                inductive_mind :=
-                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                                inductive_ind := 0
-                                              |} 0 [])
-                                           [tInd
-                                              {|
-                                                inductive_mind :=
-                                                  (MPfile ["animationModules"; "Animation"], "outcome'");
-                                                inductive_ind := 0
-                                              |} [];
-                                            tApp
-                                              (tConstruct
-                                                 {|
-                                                   inductive_mind :=
-                                                     (MPfile ["animationModules"; "Animation"],
-                                                      "outcome'");
-                                                   inductive_ind := 0
-                                                 |} 1 [])
-                                              [tApp
-                                                 (tConstruct
-                                                    {| inductive_mind := <?nat?>; inductive_ind := 0 |}
-                                                    1 [])
-                                                 [tVar "b"]]]
-                                     |}]
-                              |};
-                              {|
-                                bcontext := [];
-                                bbody :=
-                                  tApp
-                                    (tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                         inductive_ind := 0
-                                       |} 1 [])
-                                    [tInd
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} []]
-                              |}]
-                       |}]
-                |}]));
-     rarg := 1
-   |};
-   {|
-     dname := {| binder_name := nNamed "recPred2TopFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody :=
-                    tCase
-                      {|
-                        ci_ind :=
-                          {|
-                            inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                            inductive_ind := 0
-                          |};
-                        ci_npar := 1;
-                        ci_relevance := Relevant
-                      |}
-                      {|
-                        puinst := [];
-                        pparams :=
-                          [tInd
-                             {|
-                               inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                               inductive_ind := 0
-                             |} []];
-                        pcontext := [{| binder_name := nNamed "g"; binder_relevance := Relevant |}];
-                        preturn :=
-                          tApp
-                            (tInd
-                               {|
-                                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                 inductive_ind := 0
-                               |} [])
-                            [tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcome'");
-                                 inductive_ind := 0
-                               |} []]
-                      |} (tApp (tVar "recPred2IndFn") [tVar "a"; tVar "m"])
-                      [{|
-                         bcontext := [{| binder_name := nNamed "b"; binder_relevance := Relevant |}];
-                         bbody := tApp (tVar "recPred2IndFn") [tVar "a"; tVar "m"]
-                       |};
-                       {|
-                         bcontext := [];
-                         bbody :=
-                           tApp
-                             (tConstruct
-                                {|
-                                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                  inductive_ind := 0
-                                |} 1 [])
-                             [tInd
-                                {|
-                                  inductive_mind :=
-                                    (MPfile ["animationModules"; "Animation"], "outcome'");
-                                  inductive_ind := 0
-                                |} []]
-                       |}]
-                |}]));
-     rarg := 1
-   |};
-   {|
-     dname := {| binder_name := nNamed "recPred2IndFn"; binder_relevance := Relevant |};
-     dtype :=
-       tPro "a" <%nat%>
-         (tPro "c" <%nat%>
-            (tApp
-               (tInd
-                  {|
-                    inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                    inductive_ind := 0
-                  |} [])
-               [tInd
-                  {|
-                    inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                    inductive_ind := 0
-                  |} []]));
-     dbody :=
-       tLam "a" <%nat%>
-         (tLam "c" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "c"; binder_relevance := Relevant |}];
-                 preturn :=
-                   tApp
-                     (tInd
-                        {|
-                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                          inductive_ind := 0
-                        |} [])
-                     [tInd
-                        {|
-                          inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                          inductive_ind := 0
-                        |} []]
-               |} (tVar "c")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                           inductive_ind := 0
-                         |} 0 [])
-                      [tInd
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} [];
-                       tConstruct
-                         {|
-                           inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                           inductive_ind := 0
-                         |} 0 []]
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "m"; binder_relevance := Relevant |}];
-                  bbody :=
-                    tCase
-                      {|
-                        ci_ind :=
-                          {|
-                            inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                            inductive_ind := 0
-                          |};
-                        ci_npar := 1;
-                        ci_relevance := Relevant
-                      |}
-                      {|
-                        puinst := [];
-                        pparams :=
-                          [tInd
-                             {|
-                               inductive_mind := (MPfile ["animationModules"; "Animation"], "outcome'");
-                               inductive_ind := 0
-                             |} []];
-                        pcontext := [{| binder_name := nNamed "x"; binder_relevance := Relevant |}];
-                        preturn :=
-                          tApp
-                            (tInd
-                               {|
-                                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                 inductive_ind := 0
-                               |} [])
-                            [tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcome'");
-                                 inductive_ind := 0
-                               |} []]
-                      |} (tApp (tVar "recPredTopFn") [tVar "a"; tVar "m"])
-                      [{|
-                         bcontext := [{| binder_name := nNamed "o"; binder_relevance := Relevant |}];
-                         bbody :=
-                           tCase
-                             {|
-                               ci_ind :=
-                                 {|
-                                   inductive_mind :=
-                                     (MPfile ["animationModules"; "Animation"], "outcome'");
-                                   inductive_ind := 0
-                                 |};
-                               ci_npar := 0;
-                               ci_relevance := Relevant
-                             |}
-                             {|
-                               puinst := [];
-                               pparams := [];
-                               pcontext :=
-                                 [{| binder_name := nNamed "o"; binder_relevance := Relevant |}];
-                               preturn :=
-                                 tApp
-                                   (tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                        inductive_ind := 0
-                                      |} [])
-                                   [tInd
-                                      {|
-                                        inductive_mind :=
-                                          (MPfile ["animationModules"; "Animation"], "outcome'");
-                                        inductive_ind := 0
-                                      |} []]
-                             |} (tVar "o")
-                             [{|
-                                bcontext := [];
-                                bbody :=
-                                  tApp
-                                    (tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                         inductive_ind := 0
-                                       |} 0 [])
-                                    [tInd
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} [];
-                                     tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} 0 []]
-                              |};
-                              {|
-                                bcontext :=
-                                  [{| binder_name := nNamed "b"; binder_relevance := Relevant |}];
-                                bbody :=
-                                  tApp
-                                    (tConstruct
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                         inductive_ind := 0
-                                       |} 0 [])
-                                    [tInd
-                                       {|
-                                         inductive_mind :=
-                                           (MPfile ["animationModules"; "Animation"], "outcome'");
-                                         inductive_ind := 0
-                                       |} [];
-                                     tApp
-                                       (tConstruct
-                                          {|
-                                            inductive_mind :=
-                                              (MPfile ["animationModules"; "Animation"], "outcome'");
-                                            inductive_ind := 0
-                                          |} 1 [])
-                                       [tVar "b"]]
-                              |}]
-                       |};
-                       {|
-                         bcontext := [];
-                         bbody :=
-                           tApp
-                             (tConstruct
-                                {|
-                                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option");
-                                  inductive_ind := 0
-                                |} 1 [])
-                             [tInd
-                                {|
-                                  inductive_mind :=
-                                    (MPfile ["animationModules"; "Animation"], "outcome'");
-                                  inductive_ind := 0
-                                |} []]
-                       |}]
-                |}]));
-     rarg := 1
-   |}]
-  0.
-
-MetaRocq Run (t <- DB.deBruijn myTerm ;; f <- tmUnquote t ;; tmPrint f).
 
 
-Compute (hd default (tl (getlst myTerm))).
 
 Definition mkConsFunTerm (nmFn : string) (inputType: term) (outputType: term) (fuelError : term) (activeMatch : term) : def term :=
  {|
@@ -4377,100 +2024,86 @@ Definition mkTopFnTerm (nmFn : string) (consFnName : list string) (dispatchFnTm 
          rarg := 1
        |}.
 
-Parameter A : Type.
-Parameter B : Type.
-MetaRocq Quote Definition fnTm := (A -> B).
-Print fnTm.   
 
-Check map. 
-Check app.
-
-
-Definition composeClause (nameTopFn : string) (animateClauses : list (prod string term)) (inputType : term) (outputType : term) (fuelError : term) (dispatchFn : term) 
-                                     : (list (def term)) :=
-  (mkTopFnTerm nameTopFn (map fst animateClauses) dispatchFn inputType outputType fuelError) :: (map (fun p => mkConsFunTerm (fst p)  (inputType) (outputType) (fuelError) (snd p)) animateClauses).                                   
-                                     
- 
-Fixpoint composeInductives (inds : list (prod string (list (prod string term)))) (inputType : term) (outputType : term) (fuelError : term) (dispatchFn : term) 
-                                     : (list (def term)) := 
-   match inds with
-    | [] => []
-    | h :: t => app (composeClause (fst h) (snd h) inputType outputType fuelError dispatchFn) (composeInductives t inputType outputType fuelError dispatchFn)
-   end.                                   
+Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) : def term :=
+  
+{|
+     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
+     dtype :=
+       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType]) 
+         
+       
+            (tApp (<%outcomePoly%>) [outputType]));
+     dbody :=
+       
+         
+          tLam "fuel" <%nat%> fakeTerm
+           (*
+           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [inputType])
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp (<%fuelErrorPoly%>) [outputType])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tApp (tApp <%dispatchOutcomePolyExt%> [(mkLstTm' (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) (applyTopFn clauseData))]) [tVar "input"; tVar "remFuel"]  
+                                    
+                              |}]
+                     )) *) ; rarg := 0 |}.
+                     
 
  
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
  tFix ls j.
-          
-          
-          
-(*
-(*
-Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
- match fuel with
-  | 0 => []
-  | S m => match l with
-            | [] => []
-            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
-            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
-            | [tCase c p t l] => match replaceVars [t] dict m with
-                                  | [t'] => [tCase c p t' l]
-                                  | _ => [tCase c p t l]
-                                 end 
-     
-            |  other => other
-           end 
-       
-    
- end. 
- *)
-
-Print predicate.
-
-
-Fixpoint replaceVars (l : list term)  (dict : string -> string) (fuel : nat) : list term :=
- match fuel with
-  | 0 => []
-  | S m => match l with
-            | [] => []
-            | (tVar str) :: t => (tVar (dict str)) :: replaceVars t dict m 
-            | [tApp t t'] => [tApp t (replaceVars t' dict m)]
-            | [tCase c p t l] => match replaceVars [t] dict m with
-                                  | [t'] => [tCase c p t' l]
-                                  | _ => [tCase c p t l]
-                                 end 
-     
-            |  other => other
-           end 
-       
-    
- end. 
  
-Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
- match lst' with
-  | [] => []
-  | (h :: rest) => match h with
-                    | (str1, (tVar y), _) => if (String.eqb y outputVar) then [str1] else sortBindersOne outputVar rest 
-                    | _ => sortBindersOne outputVar rest
-                   end 
+ 
+(*
+Definition recPred2IndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' :=  
+ match c with  
+  | 0 => Some error'
+  | S m =>   match recPredTopFn a m with
+              | Some (success' ( b)) => Some (success' ((b)))
+              | None => None
+              | _ => Some (error')
+             end 
+              
  end.
 
-Definition dict (lst': list ((string × term) × list string)) (var : string) : string :=
- match sortBindersOne var lst' with
-  | [] => var
-  | h :: t => h
- end.
- 
-Definition replaceVars' (l : list term) (lst': list ((string × term) × list string)) (fuel : nat) : list term :=
- replaceVars l (dict lst') fuel.
- 
-Definition replaceVarsTm (t : term) (lst': list ((string × term) × list string)) (fuel : nat)  : term :=
- match replaceVars' [t] lst' fuel with
-  | [] => errorTm
-  | [h] => h
-  | _ => errorTm
- end.                                                  
+
+Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
+  match c with
+  | 0 => Some error'
+  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
+                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
+  end 
+with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
+  match c with 
+  | 0 => Some error'
+  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
+  end.
 
 *)
+          
+          
+          
 
 
