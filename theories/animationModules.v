@@ -1182,11 +1182,11 @@ Print global_declarations.
 
 
 Inductive outcomePoly (A : Type) : Type :=
- | fuelErrorPoly : outcomePoly A
- | successPoly : A -> outcomePoly A
- | noMatchPoly : outcomePoly A.
+ | fuelErrorPoly
+ | successPoly (x:A)
+ | noMatchPoly.
  
-
+Print list.
   
  
 
