@@ -191,7 +191,19 @@ Proof. reflexivity. Qed.
 Example test3singletonFn : singletonFn [4 ; 5] = None.
 Proof. reflexivity. Qed.
 
+Inductive equal0 : nat -> Prop :=
+ | equal0Con : forall (y : nat), 0  = y -> equal0 y.  (*RHS of equality not v imp*)
+ 
 
+MetaRocq Run (typeConstrPatMatch.justAnimatePatMat equal0 [] "equal0Fn" 25).
+
+Print equal0Fn.
+
+Example testequal0Fn : equal0Fn 0 = Some [].
+Proof. reflexivity. Qed.
+
+Example test1equal0Fn : equal0Fn 1 = None.
+Proof. reflexivity. Qed.
 
 
 

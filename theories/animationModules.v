@@ -1690,7 +1690,7 @@ lhsPostCondProdTm <- mkPostConProdTm lhsInd ;;
 lhsPostCondProdType <- mkPostConProdType lhsInd ;;
 lhsPostCondProdOutcomeType <- mkPostConProdType lhsIndOutcome ;;
 lhsPostCondFuelErrorPatMat <- mkFuelErrorPatMatData (map (fun tup => ((snd (fst tup)), (snd tup))) lhsInd) (tApp <%fuelErrorPoly%> [postOutType']) ;; 
-tmPrint lhsPostCondFuelErrorPatMat ;;
+(* tmPrint lhsPostCondFuelErrorPatMat ;; *)
 productAllPreInToPreOutOutcome <- mkproductAllPreInToPreOutOutcome lhsIndOutcome;;
 
 
@@ -1740,7 +1740,80 @@ f <- tmUnquote t';;
               tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
            
                         
+
+
+
+
+Definition joinPatMatPolyGenFuelAwareNoLHS {A : Type} (induct : A) 
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad unit :=
+
+
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+
+
+
+
+
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+
+
+
+let u := 
+ (tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody'
+                                    
+                              |}]
+                     )) in
+
+
+
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
+           
                         
+                        
+Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad unit :=
+ match lhsInd with
+  | [] =>  joinPatMatPolyGenFuelAwareNoLHS induct  
+                      (postIn') (postInType') (postOut') (postOutType') (nmCon)
+                        (fuel)
+  | lst =>  joinPatMatPolyGenFuelAware (induct) (lst)
+                      (postIn') (postInType') (postOut') (postOutType') (nmCon)
+                        (fuel)                                              
+ end.                       
 
              
 (* __________________________Examples __________________________________ *) 
@@ -1806,12 +1879,15 @@ Definition postOutTPair : term := tApp (tConstruct
 
 
 
-MetaRocq Run (joinPatMatPolyGenFuelAware (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+MetaRocq Run (animateOneClause (rel4) ([(((("rel5", (tVar "a")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
                            <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
                          (pairNatTerm) ("rel4Cons") (50)).
 Print rel4ConsAnimated.                         
 
-
+MetaRocq Run (animateOneClause (rel4) ([(((("rel5", (tVar "b")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+                           <%nat%>), (tVar "d")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
+                         (pairNatTerm) ("rel4Cons2") (50)).
+Print rel4Cons2Animated.                         
 
 
 Definition rel5ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
@@ -1834,16 +1910,36 @@ Definition rel6ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly
           end                        
  end.
  
+Definition rel7ConsAnimTop (fuel : nat) (inp : (outcomePoly nat)) : (outcomePoly nat) :=
+ match fuel with
+ | 0 => (fuelErrorPoly nat)
+ | S m => match inp with
+           | (successPoly k) => (successPoly nat (S (S k)))
+           | _ => noMatchPoly nat  
+          end                        
+ end. 
+ 
+ 
+Compute (rel4Cons2Animated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (13, 4))).  
+
+Compute (rel4Cons2Animated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (10, 4))).  
+
+
+MetaRocq Run (animateOneClause (rel4) ([(((("rel5", (tVar "b")), <%nat%>), (tVar "c")), <%nat%>); ((((("rel6", (tVar "b"))), 
+                           <%nat%>), (tVar "d")), <%nat%>); ((((("rel7", (tVar "b"))), 
+                           <%nat%>), (tVar "e")), <%nat%>)]) (postInTPair) (pairNatTerm) (postOutTPair) 
+                         (pairNatTerm) ("rel4Cons3") (50)). 
  
 
 
 
+Compute (rel4Cons3Animated rel5ConsAnimTop rel6ConsAnimTop rel7ConsAnimTop 30 (successPoly (prod nat nat) (13, 4))).  
 
 
 
 
 
-Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (9, 13))).  
+Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (13, 4))).  
 
 Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 30 (successPoly (prod nat nat) (4, 0))).
 
@@ -1851,9 +1947,22 @@ Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 0 (successPoly (prod n
 
 (* Should say fuelError *)
 Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod nat nat) (4, 5))).
- 
 
+MetaRocq Run (animateOneClause (recPredFull) ([]) (<%1%>) (<%nat%>) (<%3%>) 
+                         (<%nat%>) ("recPredBase") (50)).
+Print recPredBaseAnimated.
 
+MetaRocq Run (animateOneClause (recPredFull) ([]) (tVar "a") (<%nat%>) (<%3%>) 
+                         (<%nat%>) ("recPredBase2") (50)).
+Print recPredBase2Animated.
+
+Compute (recPredBase2Animated 5 (successPoly nat 1)). 
+
+Compute (recPredBase2Animated 5 (successPoly nat 4)). 
+
+Compute (recPredBaseAnimated 5 (successPoly nat 1)). 
+
+Compute (recPredBaseAnimated 5 (successPoly nat 4)). 
   
 
 (* CODE FOR GLUING EVERYTHING TOGETHER * ________________________________________________________________ *)
@@ -1863,13 +1972,13 @@ Compute (rel4ConsAnimated rel5ConsAnimTop rel6ConsAnimTop 1 (successPoly (prod n
 
 
 
-Fixpoint animateAllConstructors {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
+Fixpoint animateAllClauses {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
                       (term)) × (term)) × (term)) × (term)) × (string))))
                         (fuel : nat) : TemplateMonad unit := 
  match cstrData with
   | [] => tmFail "no constructors in Inductive"
-  | [h] => joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
-  | h :: t =>  animateAllConstructors topInduct t fuel ;; joinPatMatPolyGenFuelAware topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
+  | [h] => animateOneClause topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
+  | h :: t =>  animateAllClauses topInduct t fuel ;; animateOneClause topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel  
  end.       
 
 
@@ -1890,7 +1999,6 @@ match clauseData with
                                    | l => tApp (quoteConst (String.append postConCons "Animated")) (map (fun nm => (quoteConst (String.append nm "AnimatedTopFn"))) l) :: applyTopFn t
                                    end
 end.
-Parameter fakeTerm : term.
 
 
 
@@ -1948,6 +2056,114 @@ Fixpoint mkLstTm (eltType : term) (lst : list string) : term :=
 
 
 
+Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) : def term :=
+  
+{|
+     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
+     dtype :=
+       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType]) 
+         
+       
+            (tApp (<%outcomePoly%>) [outputType]));
+     dbody :=
+       
+         
+          tLam "fuel" <%nat%> 
+           
+           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [inputType])
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp (<%fuelErrorPoly%>) [outputType])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tApp (tApp <%@dispatchOutcomePolyExt%> [inputType ; outputType; (mkLstTm' (applyTopFn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) )]) [tVar "input"; tVar "remFuel"]  
+                                    
+                              |}]
+                     ))  ; rarg := 0 |}.
+                     
+
+ 
+Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
+ tFix ls j.
+ 
+Fixpoint mkAllIndTop (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) : list (def term) :=  
+ match inductData with 
+  | [] => []
+  | h :: t => (mkOneIndTop (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h)) :: mkAllIndTop t
+ end.
+
+Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : string) (clauseData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
+                      (term)) × (term)) × (term)) × (term)) × (string)))) (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) 
+                        (fuel : nat) : TemplateMonad unit :=
+          animateAllClauses topInduct clauseData fuel ;;
+          let u := mkrecFn (mkAllIndTop (inductData)) 0 in
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+               f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
+   
+(* Full example *)
+
+Inductive rel8: (nat × nat) -> (nat × nat)  -> Prop :=
+ | rel8Base : rel8 (1,2) (3,4) 
+ | rel8Cons : forall a1 a2 b1 b2, rel8 (a1, a2) (b1, b2) /\ rel9 (a1, a2) (b1, b2) -> rel8 ((S a1), (S a2)) ((S b1), (S b2))
+
+with rel9: (nat × nat) -> (nat × nat)  -> Prop := 
+ | rel9Cons : forall a b, rel8 a b  -> rel9 a b.
+
+          
+                        
+ 
+(*
+Definition recPred2IndFn
+  (recPredTopFn : nat -> nat -> option outcome')
+  (recPred2TopFn : nat -> nat -> option outcome')
+  (a : nat) (c : nat) : option outcome' :=  
+ match c with  
+  | 0 => Some error'
+  | S m =>   match recPredTopFn a m with
+              | Some (success' ( b)) => Some (success' ((b)))
+              | None => None
+              | _ => Some (error')
+             end 
+              
+ end.
+
+
+Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
+  match c with
+  | 0 => Some error'
+  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
+                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
+  end 
+with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
+  match c with 
+  | 0 => Some error'
+  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
+  end.
+
+*)
+
+
+(*
 Definition mkConsFunTerm (nmFn : string) (inputType: term) (outputType: term) (fuelError : term) (activeMatch : term) : def term :=
  {|
          dname := {| binder_name := nNamed nmFn; binder_relevance := Relevant |};
@@ -2023,83 +2239,6 @@ Definition mkTopFnTerm (nmFn : string) (consFnName : list string) (dispatchFnTm 
                     |}]));
          rarg := 1
        |}.
-
-
-Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) : def term :=
-  
-{|
-     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
-     dtype :=
-       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType]) 
-         
-       
-            (tApp (<%outcomePoly%>) [outputType]));
-     dbody :=
-       
-         
-          tLam "fuel" <%nat%> fakeTerm
-           (*
-           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tApp (<%outcomePoly%>) [inputType])
-                  
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp (<%fuelErrorPoly%>) [outputType])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tApp (tApp <%dispatchOutcomePolyExt%> [(mkLstTm' (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) (applyTopFn clauseData))]) [tVar "input"; tVar "remFuel"]  
-                                    
-                              |}]
-                     )) *) ; rarg := 0 |}.
-                     
-
- 
-Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
- tFix ls j.
- 
- 
-(*
-Definition recPred2IndFn
-  (recPredTopFn : nat -> nat -> option outcome')
-  (recPred2TopFn : nat -> nat -> option outcome')
-  (a : nat) (c : nat) : option outcome' :=  
- match c with  
-  | 0 => Some error'
-  | S m =>   match recPredTopFn a m with
-              | Some (success' ( b)) => Some (success' ((b)))
-              | None => None
-              | _ => Some (error')
-             end 
-              
- end.
-
-
-Fixpoint recPredTopFn (a : nat) (c : nat) :  option outcome'  :=
-  match c with
-  | 0 => Some error'
-  | S m => (dispatch [recPredBaseFn recPredTopFn recPred2TopFn
-                    ; recPredIndFn recPredTopFn recPred2TopFn]) a m
-  end 
-with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
-  match c with 
-  | 0 => Some error'
-  | S m => (dispatch [recPred2IndFn recPredTopFn recPred2TopFn]) a m
-  end.
 
 *)
           
