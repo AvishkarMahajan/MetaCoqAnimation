@@ -2117,21 +2117,60 @@ Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : s
           t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
 
                f <- tmUnquote t';;
+              (* tmPrint f ;; *)
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
    
 (* Full example *)
 
 Inductive rel8: (nat × nat) -> (nat × nat)  -> Prop :=
- | rel8Base : rel8 (1,2) (3,4) 
- | rel8Cons : forall a1 a2 b1 b2, rel8 (a1, a2) (b1, b2) /\ rel9 (a1, a2) (b1, b2) -> rel8 ((S a1), (S a2)) ((S b1), (S b2))
+ | rel8Base : forall a, rel8 (1, a) (3, S a) 
+ | rel8Cons : forall a1 a2 b1 b2 b3 b4, rel8 (a1, a2) (b1, b3) /\ rel9 (a1, a2) (b4, b2) -> rel8 ((S a1), (S a2)) ((S b1), (S b2))
 
 with rel9: (nat × nat) -> (nat × nat)  -> Prop := 
  | rel9Cons : forall a b, rel8 a b  -> rel9 a b.
 
+       
+Definition tS (t : term) : term :=
+ tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+         [t].
+         
+Definition tP (t : term) (t' : term) : term :=
+tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>; <%nat%>; t;
+          t'].
           
-                        
+Definition clData := 
+[([], tP <%1%> (tVar "a"), <%prod nat nat%>, tP <%3%> (tS (tVar "a")), <%prod nat nat%>, ("rel8Base")); 
+
+([("rel8", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b1") (tVar "b3"), <%prod nat nat%>); ("rel9", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b4") (tVar "b2"), <%prod nat nat%>)],
+ tP (tS (tVar "a1")) (tS (tVar "a2")), <%prod nat nat%>, tP (tS (tVar "b1")) (tS (tVar "b2")), <%prod nat nat%>, ("rel8Cons"));
  
+([("rel8", tVar "a", <%nat%>, tVar "b", <%nat%>)], tVar "a", <%nat%>, tVar "b", <%nat%>, "rel9Cons")]. 
+
+Definition indData := 
+[("rel8", <%prod nat nat%>, <%prod nat nat%>, [("rel8Base", []); ("rel8Cons", ["rel8"; "rel9"])]); 
+  ("rel9", <%prod nat nat%>, <%prod nat nat%>, [("rel9Cons",["rel8"])])].   
+(*
+MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50). 
+
+Parameter rel8BaseAnimated : nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat).
+Parameter rel8ConsAnimated : (nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat)) -> (nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat)) -> nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat).
+Parameter rel9ConsAnimated : (nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat)) -> nat -> outcomePoly (prod nat nat) -> outcomePoly (prod nat nat).
+*)
+(*
+MetaRocq Run  (t' <- tmEval all (removeopTm (DB.deBruijnOption (mkrecFn (mkAllIndTop (indData)) 0)));; tmPrint t';; f <- tmUnquote t';; tmPrint f ). 
+
+MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50). 
+*)           
+  
+           
+    
+       
 (*
 Definition recPred2IndFn
   (recPredTopFn : nat -> nat -> option outcome')
