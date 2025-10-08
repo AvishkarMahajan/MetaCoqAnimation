@@ -2484,9 +2484,24 @@ Definition indData :=
   ("rel9", <%prod nat nat%>, <%prod nat nat%>, [("rel9Cons",["rel8"])])]. 
 
 MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50).
-Print rel8AnimatedTopFn. 
- 
+Print rel8AnimatedTopFn.
 
+Compute (rel8AnimatedTopFn 50 (successPoly (nat × nat) (7,9))).
+Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (8,13))).
+
+
+Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (9,13))).
+
+
+Lemma testrel8 : rel8 (7,9) (9,10) -> true.
+Proof. auto. Qed. 
+
+Lemma testrel8' : rel8 (8,13) (10,14) -> true.
+Proof. auto. Qed. 
+  
+Lemma testrel8'' : rel8 (9,13) (11,14) -> true.
+Proof. auto. Qed. 
+  
 
 
 (*
