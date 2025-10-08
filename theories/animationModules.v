@@ -2131,297 +2131,29 @@ Definition addToRecBlk (recBlock : term) (t : def term) :=
   | tFix ls j => tFix (app ls [t]) j
   | _ => recBlock
  end.   
-Definition dispatchExtTm :=
+ 
+Fixpoint dispatchOutcomePolyExt
+  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
+  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  match fuel' with
+  | 0 => fuelErrorPoly B
+  | S remFuel' =>
+      match lst with
+      | [] => noMatchPoly B
+      | h :: t =>
+          let res := h remFuel' input' in
+          match res with
+          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
+          | _ => res
+          end
+      end
+  end. 
 
+MetaRocq Quote Definition dt := Eval compute in dispatchOutcomePolyExt.
+Print dt.
+MetaRocq Run (dt' <- DB.undeBruijn dt ;; tmDefinition "dispatchExtTm'" dt'). 
 
-{|
-      dname := {| binder_name := nNamed "dispatchOutcomePolyExt"; binder_relevance := Relevant |};
-      dtype :=
-        tPro "A"
-          (tSort
-             (sType
-                {|
-                  t_set :=
-                    {|
-                      LevelExprSet.this := [(Level.level "Animation.animationModules.135460", 0)];
-                      LevelExprSet.is_ok :=
-                        LevelExprSet.Raw.singleton_ok
-                          (Level.level "Animation.animationModules.135460", 0)
-                    |};
-                  t_ne := eq_refl
-                |}))
-          (tPro "B"
-             (tSort
-                (sType
-                   {|
-                     t_set :=
-                       {|
-                         LevelExprSet.this := [(Level.level "Animation.animationModules.135461", 0)];
-                         LevelExprSet.is_ok :=
-                           LevelExprSet.Raw.singleton_ok
-                             (Level.level "Animation.animationModules.135461", 0)
-                       |};
-                     t_ne := eq_refl
-                   |}))
-             (tPro "lst"
-                (tApp
-                   (tInd
-                      {|
-                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                        inductive_ind := 0
-                      |} [])
-                   [tProd {| binder_name := nAnon; binder_relevance := Relevant |} <%nat%>
-                      (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                         (tApp
-                            (tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                 inductive_ind := 0
-                               |} [])
-                            [tVar "A"])
-                         (tApp
-                            (tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                 inductive_ind := 0
-                               |} [])
-                            [tVar "B"]))])
-                (tPro "fuel'" <%nat%>
-                   (tPro "input'"
-                      (tApp
-                         (tInd
-                            {|
-                              inductive_mind :=
-                                (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                              inductive_ind := 0
-                            |} [])
-                         [tVar "A"])
-                      (tApp
-                         (tInd
-                            {|
-                              inductive_mind :=
-                                (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                              inductive_ind := 0
-                            |} [])
-                         [tVar "B"])))));
-      dbody :=
-        tLam "A"
-          (tSort
-             (sType
-                {|
-                  t_set :=
-                    {|
-                      LevelExprSet.this := [(Level.level "Animation.animationModules.135460", 0)];
-                      LevelExprSet.is_ok :=
-                        LevelExprSet.Raw.singleton_ok
-                          (Level.level "Animation.animationModules.135460", 0)
-                    |};
-                  t_ne := eq_refl
-                |}))
-          (tLam "B"
-             (tSort
-                (sType
-                   {|
-                     t_set :=
-                       {|
-                         LevelExprSet.this := [(Level.level "Animation.animationModules.135461", 0)];
-                         LevelExprSet.is_ok :=
-                           LevelExprSet.Raw.singleton_ok
-                             (Level.level "Animation.animationModules.135461", 0)
-                       |};
-                     t_ne := eq_refl
-                   |}))
-             (tLam "lst"
-                (tApp
-                   (tInd
-                      {|
-                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                        inductive_ind := 0
-                      |} [])
-                   [tProd {| binder_name := nAnon; binder_relevance := Relevant |} <%nat%>
-                      (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                         (tApp
-                            (tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                 inductive_ind := 0
-                               |} [])
-                            [tVar "A"])
-                         (tApp
-                            (tInd
-                               {|
-                                 inductive_mind :=
-                                   (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                 inductive_ind := 0
-                               |} [])
-                            [tVar "B"]))])
-                (tLam "fuel'" <%nat%>
-                   (tLam "input'"
-                      (tApp
-                         (tInd
-                            {|
-                              inductive_mind :=
-                                (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                              inductive_ind := 0
-                            |} [])
-                         [tVar "A"])
-                      (tCase
-                         {|
-                           ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                           ci_npar := 0;
-                           ci_relevance := Relevant
-                         |}
-                         {|
-                           puinst := [];
-                           pparams := [];
-                           pcontext :=
-                             [{| binder_name := nNamed "fuel'"; binder_relevance := Relevant |}];
-                           preturn :=
-                             tApp
-                               (tInd
-                                  {|
-                                    inductive_mind :=
-                                      (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                    inductive_ind := 0
-                                  |} [])
-                               [tVar "A"]
-                         |} (tVar "fuel'")
-                         [{|
-                            bcontext := [];
-                            bbody :=
-                              tApp
-                                (tConstruct
-                                   {|
-                                     inductive_mind :=
-                                       (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                     inductive_ind := 0
-                                   |} 0 [])
-                                [tVar "B"]
-                          |};
-                          {|
-                            bcontext :=
-                              [{| binder_name := nNamed "remFuel'"; binder_relevance := Relevant |}];
-                            bbody :=
-                              tCase
-                                {|
-                                  ci_ind :=
-                                    {|
-                                      inductive_mind :=
-                                        (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
-                                      inductive_ind := 0
-                                    |};
-                                  ci_npar := 1;
-                                  ci_relevance := Relevant
-                                |}
-                                {|
-                                  puinst := [];
-                                  pparams :=
-                                    [tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                                       <%nat%>
-                                       (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                                          (tApp
-                                             (tInd
-                                                {|
-                                                  inductive_mind :=
-                                                    (MPfile ["animationModules"; "Animation"],
-                                                     "outcomePoly");
-                                                  inductive_ind := 0
-                                                |} [])
-                                             [tVar "A"])
-                                          (tApp
-                                             (tInd
-                                                {|
-                                                  inductive_mind :=
-                                                    (MPfile ["animationModules"; "Animation"],
-                                                     "outcomePoly");
-                                                  inductive_ind := 0
-                                                |} [])
-                                             [tVar "B"]))];
-                                  pcontext :=
-                                    [{| binder_name := nNamed "lst"; binder_relevance := Relevant |}];
-                                  preturn :=
-                                    tApp
-                                      (tInd
-                                         {|
-                                           inductive_mind :=
-                                             (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                           inductive_ind := 0
-                                         |} [])
-                                      [tVar "A"]
-                                |} (tVar "lst")
-                                [{|
-                                   bcontext := [];
-                                   bbody :=
-                                     tApp
-                                       (tConstruct
-                                          {|
-                                            inductive_mind :=
-                                              (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                            inductive_ind := 0
-                                          |} 2 [])
-                                       [tVar "B"]
-                                 |};
-                                 {|
-                                   bcontext :=
-                                     [{| binder_name := nNamed "t"; binder_relevance := Relevant |};
-                                      {| binder_name := nNamed "h"; binder_relevance := Relevant |}];
-                                   bbody :=
-                                     tCase
-                                       {|
-                                         ci_ind :=
-                                           {|
-                                             inductive_mind :=
-                                               (MPfile ["animationModules"; "Animation"], "outcomePoly");
-                                             inductive_ind := 0
-                                           |};
-                                         ci_npar := 1;
-                                         ci_relevance := Relevant
-                                       |}
-                                       {|
-                                         puinst := [];
-                                         pparams := [tVar "B"];
-                                         pcontext :=
-                                           [{|
-                                              binder_name := nNamed "x"; binder_relevance := Relevant
-                                            |}];
-                                         preturn :=
-                                           tApp
-                                             (tInd
-                                                {|
-                                                  inductive_mind :=
-                                                    (MPfile ["animationModules"; "Animation"],
-                                                     "outcomePoly");
-                                                  inductive_ind := 0
-                                                |} [])
-                                             [tVar "A"]
-                                       |} (tApp (tVar "h") [tVar "remFuel'"; tVar "input'"])
-                                       [{|
-                                          bcontext := [];
-                                          bbody := tApp (tVar "h") [tVar "remFuel'"; tVar "input'"]
-                                        |};
-                                        {|
-                                          bcontext :=
-                                            [{|
-                                               binder_name := nNamed "x"; binder_relevance := Relevant
-                                             |}];
-                                          bbody := tApp (tVar "h") [tVar "remFuel'"; tVar "input'"]
-                                        |};
-                                        {|
-                                          bcontext := [];
-                                          bbody :=
-                                            tApp (tVar "dispatchOutcomePolyExt")
-                                              [tVar "A"; tVar "B"; tVar "t"; 
-                                               tVar "remFuel'"; tVar "input'"]
-                                        |}]
-                                 |}]
-                          |}])))));
-      rarg := 3
-    |}.
-
-
+Definition dispatchExtTm := hd default (inspectFix dispatchExtTm'). 
 
  
 Definition mkAllIndTop (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) : list (def term) := 
@@ -2485,6 +2217,7 @@ Definition indData :=
 
 MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50).
 Print rel8AnimatedTopFn.
+
 
 Compute (rel8AnimatedTopFn 50 (successPoly (nat × nat) (7,9))).
 Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (8,13))).
