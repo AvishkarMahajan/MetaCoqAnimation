@@ -87,7 +87,10 @@ Definition animate (kn : kername) : TemplateMonad unit :=
                                             | _ => None  
                                             end))  ;; t' <- DB.undeBruijn t ;; tmPrint t').*)  
 
-
+Inductive outcomePoly (A : Type) : Type :=
+ | fuelErrorPoly
+ | successPoly (x:A)
+ | noMatchPoly.
 
 
 Module animateEqual.
@@ -753,7 +756,7 @@ Definition getType (s : ((string × term) × list string)) :=  (*Get type of scr
            k ls, lsStr)  => typeInfo
    | _ => errorInd
   end.         
-
+Compute (getType (("x", <%eq%>, ["v1"; "v2"; "v3"]))).
 
 
 Definition getTypeNm (s : (string × term) × list string) : string := (* Get name of type *)
@@ -1181,10 +1184,7 @@ Print global_declarations.
  
 
 
-Inductive outcomePoly (A : Type) : Type :=
- | fuelErrorPoly
- | successPoly (x:A)
- | noMatchPoly.
+
  
 Print list.
   
@@ -2224,7 +2224,9 @@ Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (8,13))).
 
 
 Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (9,13))).
-
+(* Takes very long 
+Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (12,14))).
+*)
 
 Lemma testrel8 : rel8 (7,9) (9,10) -> true.
 Proof. auto. Qed. 
