@@ -93,6 +93,8 @@ Inductive outcomePoly (A : Type) : Type :=
  | noMatchPoly.
 
 
+
+
 Module animateEqual.
 
 
@@ -2223,22 +2225,65 @@ Compute (rel8AnimatedTopFn 50 (successPoly (nat × nat) (7,9))).
 Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (8,13))).
 
 
-Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (9,13))).
-(* Takes very long 
-Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (12,14))).
+Compute (rel8AnimatedTopFn 70 (successPoly (nat × nat) (9,13))).
+(*Takes very long 
+Compute (rel8AnimatedTopFn 70 (successPoly (nat × nat) (12,14))).
 *)
 
-Lemma testrel8 : rel8 (7,9) (9,10) -> true.
-Proof. auto. Qed. 
+Lemma testrel8 : True -> rel8 (7,9) (9,10) .
+Proof. intro. Admitted.
 
-Lemma testrel8' : rel8 (8,13) (10,14) -> true.
-Proof. auto. Qed. 
+Lemma testrel8' : True -> rel8 (8,13) (10,14).
+Proof. Admitted.
   
-Lemma testrel8'' : rel8 (9,13) (11,14) -> true.
-Proof. auto. Qed. 
+Lemma testrel8'' : True -> rel8 (9,13) (11,14).
+Proof. Admitted.
   
+Print tmQuote.
 
+MetaRocq Run (mut <- tmQuoteInductive <? rel8 ?> ;; tmPrint mut).
+MetaRocq Run (t' <- DB.undeBruijn (tPro "a" <%nat%>
+                (tApp (tRel 2)
+                   [tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |} 0 [])
+                      [<%nat%>; <%nat%>;
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                         [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []];
+                       tRel 0];
+                    tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0 |} 0 [])
+                      [<%nat%>; <%nat%>;
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                            [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                               [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]]];
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tRel 0]]])) ;; tmPrint t').
+(*            
+Print constructor_body.
+Print context.
+Print context_decl.
+Print program.
+Print global_env.
+Print Retroknowledge.t.
+Print global_declarations.
+Print global_decl.
+Print constant_body.
+Print mutual_inductive_body.
+Print one_inductive_body.
+Print constructor_body.
+Print context_decl.
+Definition getGlobDecls (p : program) : list (global_decl) :=
+ match p with
+  | (gEnv, t) => map snd (declarations gEnv) 
+ end.
 
+Fixpoint getMutIndBodies (l : list (global_decl)) : list mutual_inductive_body :=
+ match l with
+  | [] => []
+  | ConstantDecl b :: t => getMutIndBodies t
+  | InductiveDecl b :: t => b :: getMutIndBodies t
+ end. 
+ 
+*)  
+                   
 (*
 
 
