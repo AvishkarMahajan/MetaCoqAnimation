@@ -220,7 +220,9 @@ Inductive myType : Set :=
 
 Inductive baz' : nat -> nat -> myType -> Prop :=
  | bazCon' : forall (a : nat), forall (x : nat), forall (y : myType), mycr2 (mycr1' a) (S x) = y -> baz' a x y.  (*RHS of equality not v imp*)
- 
+(*
+MetaRocq Run (t <- general.animate2 <?baz'?> ;; tmPrint t). 
+*)
 MetaRocq Run (typeConstrPatMatch.justAnimatePatMat baz' ["a"; "x"] "baz'Fn" 25).
 
 (*
@@ -312,12 +314,40 @@ Inductive foo11 : nat -> Prop :=
 MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25).
 *)
 
+Check extractPatMatBinders.
+
+Inductive baz'' : nat -> nat -> myType -> Prop :=
+ | bazCon'' : forall (a : nat), forall (b : nat), forall (input : myType), mycr2 (mycr1' a) (S b) = input -> baz'' a b input.  (*RHS of equality not v imp*)
 
 
+MetaRocq Run (extractPatMatBinders <? baz'' ?> baz'' [("a", <%nat%>); ("b", <%nat%>)] 25).
 
+Print baz''Animated.
 
+Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))).
+
+Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))).
 
   
+Example testBaz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))) = successPoly (nat × nat) (1, 0).
+Proof. reflexivity. Qed.
+
+Example test2Baz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))) = noMatchPoly (nat × nat).
+Proof. reflexivity. Qed.
+
+Inductive listRel : list bool -> bool -> list bool -> Prop :=
+ | listRelCon : forall (a : list bool), forall (b : bool), forall (input : list bool), b :: a = input -> listRel a b input.  (*RHS of equality not v imp*)
+
+MetaRocq Run (extractPatMatBinders <? listRel ?> listRel [("a", <%(list bool)%>); ("b", <%bool%>)] 25).
+
+Example testlistRel : (listRelAnimated 5 (successPoly (list bool) [true;true;false])) = successPoly ((list bool) × bool) ([true; false], true).
+Proof. reflexivity. Qed.
+
+Example test2listRel : (listRelAnimated 5 (successPoly (list bool) [])) = noMatchPoly ((list bool) × bool).
+Proof. reflexivity. Qed.
+
+
+
  
 
 

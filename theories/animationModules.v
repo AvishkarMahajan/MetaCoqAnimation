@@ -92,7 +92,7 @@ Inductive outcomePoly (A : Type) : Type :=
  | successPoly (x:A)
  | noMatchPoly.
 
-
+Compute (fst (1,2,3)).
 
 
 Module animateEqual.
@@ -894,6 +894,7 @@ Definition mkCase'  (s' : ((string × term) × list string) × list term ) (l : 
       (mkBrLst s l t)). 
 
 
+
 Definition idTerm := <%(fun A : Type => (fun x : A => x))%>.
 MetaRocq Quote Definition oBoolT := (Some true).
       
@@ -903,14 +904,16 @@ Definition identityTerm : term := idTerm. (* term rep of id function*)
 
 
 
-(* Need to modify *)      
+(* Need to modify *)  
 
 
-Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputVars : list string) 
+
+Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputVars : list (string)) 
             (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => identityTerm
-  | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (ls')))  
+ (* | (h :: nil) => mkCase' h mut (genOutputTerm (transformOutputVars outputVars ls')) *)
+  | (h :: nil) => mkCase' h mut (retVarVals (sortBinders outputVars (ls')))
   | (h :: t) => mkCase' h mut (mkPmNested' t ls' outputVars mut)
  end. 
 
@@ -1817,6 +1820,10 @@ Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string ×
                         (fuel)                                              
  end.                       
 
+ 
+
+       
+ 
              
 (* __________________________Examples __________________________________ *) 
 
@@ -2180,7 +2187,51 @@ Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : s
               (* tmPrint f ;; *)
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
-              
+
+
+
+
+Fixpoint mkProdTypeVars (outputData : list (string × term)) :  term :=
+ match outputData with 
+  | [] => <%bool%>
+  | [h] =>  (snd h)
+  | h :: t => let res := mkProdTypeVars t in  (tApp
+                                            (tInd
+                                             {|
+                                             inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                              |} []) [(snd h) ; res])
+ end.                                             
+  
+
+
+
+Fixpoint mkProdTmVars  (outputData : list (string × term )) : term :=
+ match outputData with 
+  | [] => <%true%>
+  | [h] => (tVar (fst h))
+  | h :: t => let res := mkProdTmVars t in
+                                        let resT := mkProdTypeVars t in (tApp (tConstruct
+                                                  {|
+                                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                                   |} 0 []) [(snd h); resT ; (tVar (fst h)) ; res])
+ end. 
+
+
+
+Definition getOutputTerm (outputData : list (string × term))  : term :=
+tApp <% successPoly %> [mkProdTypeVars outputData; mkProdTmVars outputData].
+Print ident.
+
+Definition extractPatMatBinders {A : Type} (kn : kername) (induct : A) (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+t <- general.animate2 kn ;;
+match t with
+ | tApp <%eq%> [typeInputVar; patMatTerm; tVar inputVar] => 
+                      joinPatMatPolyGenFuelAwareNoLHS induct patMatTerm typeInputVar (mkProdTmVars outputData) (mkProdTypeVars outputData) (snd kn) fuel
+ | _ => tmFail "incorrect inductive shape" 
+end ;; tmMsg "done".                       
+
+
+    
    
 (* Full example *)
 
