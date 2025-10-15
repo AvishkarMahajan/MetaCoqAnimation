@@ -330,6 +330,29 @@ Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
 
   Definition undeBruijn (t : term) : TemplateMonad named_term :=
     undeBruijn' nil t.
+Print name.
+Print ident.
+    
+Definition testTerm :=
+(tPro "a"%bs <%nat%>
+                (tApp (tRel 2)
+                   [tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs); inductive_ind := 0 |} 0 [])
+                      [<%nat%>; <%nat%>;
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                         [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []];
+                       tRel 0];
+                    tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs); inductive_ind := 0 |} 0 [])
+                      [<%nat%>; <%nat%>;
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                            [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                               [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]]];
+                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tRel 0]]])).
+
+Print name.
+Print ident.  
+
+MetaRocq Run (t <- DB.undeBruijn' [nNamed "rel8"%bs] testTerm ;; t' <- tmEval all t ;; tmPrint t').                        
 
   (* Example usage for deBruijn:
 
