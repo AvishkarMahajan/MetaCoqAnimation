@@ -32,39 +32,13 @@ Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (e = b /\ d = c /\ c = (g3 a e) /\ g1 d = g2 a) -> foo a b c d e.
  
 
-MetaRocq Run (animateEqual.animate'' <? foo ?> foo ["a"; "b"] ["c"; "d";"e"] 10).
+MetaRocq Run (animateEqual.genFunAnimateEq foo <? foo ?> [("a", <%nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>); ("e", <%nat%>)] 30).
 
-Next Obligation.
-Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
-remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
-+ split.
-++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
-auto. 
-+ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
-*  auto.
-* destruct H0. rewrite H0 in H1. destruct H1.
-rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
- Qed.
 
 Inductive foo' : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr' : forall a b c d e, (g1 d = g2 a /\ d = c /\ c = (g3 a e) /\ e = b ) -> foo' a b c d e.
  
 MetaRocq Run (animateEqual.animate'' <? foo' ?> foo' ["a" ; "b"] ["c"; "d";"e"] 30).
-
-Next Obligation.
-Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
-remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
-+ split.
-++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
-auto. 
-+ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
-*  auto.
-* destruct H0. destruct H1. rewrite H1 in H0. destruct H2. rewrite H3 in H2. rewrite H2 in H0. auto.
-
- Qed.
-     
-(* known var 'b' is on LHS not RHS *)
-
 
 
 Inductive foo'' : nat -> nat -> nat -> nat -> nat -> Prop :=
@@ -72,24 +46,9 @@ Inductive foo'' : nat -> nat -> nat -> nat -> nat -> Prop :=
  
 
 MetaRocq Run (animateEqual.animate'' <? foo'' ?>  foo'' ["a" ; "b"] ["c"; "d";"e"] 30).
-Next Obligation.
-Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
-remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
-+ split.
-++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
-auto. 
-+ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
-*  auto.
-* destruct H0. destruct H1. rewrite H1 in H0. destruct H2.  apply beq_nat_neq in HeqH. 
-- auto.
-- rewrite <- H3 in H2. rewrite <- H2. auto.
-
- Qed.
 
 
 
-
- 
 Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr4 : forall a b c d e, ((fun x => x) d = (fun x => x + 1) a /\ d = b /\  ((fun x y w z => x + w) a e a e) = c /\ b = e ) -> foo4 a b c d e.
  
@@ -97,7 +56,11 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
 
 MetaRocq Run (animateEqual.justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] "foo4Fn" 100). 
 
-(* Print foo4Fn. *)
+
+
+
+
+
 
 Example testfoo4 : foo4Fn 2 3 = Some [4; 3; 3].
 Proof. reflexivity. Qed.
@@ -154,6 +117,23 @@ Proof. reflexivity. Qed.
 
 
 End s.
+
+Inductive foo11 : nat -> Prop :=
+ | cstr11 : forall a, (exists b, (fun x => x - 1) a = b + 1)  -> foo11 a.
+ 
+(* Gives error since exists clauses not handled by animation 
+
+MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25).
+*)
+
+
+
+
+
+
+
+
+
 
 
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
@@ -242,6 +222,41 @@ Example test2baz'Fn : baz'Fn (mycr2 (mycr1' 4) 0) = None.
 Proof. reflexivity. Qed.
 
 
+Check extractPatMatBinders.
+
+Inductive baz'' : nat -> nat -> myType -> Prop :=
+ | bazCon'' : forall (a : nat), forall (b : nat), forall (input : myType), mycr2 (mycr1' a) (S b) = input -> baz'' a b input.  (*RHS of equality not v imp*)
+
+
+MetaRocq Run (extractPatMatBinders <? baz'' ?> baz'' [("a", <%nat%>); ("b", <%nat%>)] 25).
+
+Print baz''Animated.
+
+Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))).
+
+Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))).
+
+  
+Example testBaz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))) = successPoly (nat × nat) (1, 0).
+Proof. reflexivity. Qed.
+
+Example test2Baz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))) = noMatchPoly (nat × nat).
+Proof. reflexivity. Qed.
+
+Inductive listRel : list bool -> bool -> list bool -> Prop :=
+ | listRelCon : forall (a : list bool), forall (b : bool), forall (input : list bool), b :: a = input -> listRel a b input.  (*RHS of equality not v imp*)
+
+MetaRocq Run (extractPatMatBinders <? listRel ?> listRel [("a", <%(list bool)%>); ("b", <%bool%>)] 25).
+
+Example testlistRel : (listRelAnimated 5 (successPoly (list bool) [true;true;false])) = successPoly ((list bool) × bool) ([true; false], true).
+Proof. reflexivity. Qed.
+
+Example test2listRel : (listRelAnimated 5 (successPoly (list bool) [])) = noMatchPoly ((list bool) × bool).
+Proof. reflexivity. Qed.
+
+
+(* Unknowns and type Cons on both sides ; Not polymorphic *)
+(*
 
 Inductive fooCon : nat -> nat -> nat -> nat -> Prop :=
  | cstrCon : forall a b c d,  [S a ; S c]  = [S b ; d]  -> fooCon a b c d.
@@ -305,46 +320,58 @@ Proof. reflexivity. Qed.
 Example test2foo10Fn : foo10Fn 6 = None.
 Proof. reflexivity. Qed.
 
-
-Inductive foo11 : nat -> Prop :=
- | cstr11 : forall a, (exists b, (fun x => x - 1) a = b + 1)  -> foo11 a.
- 
-(* Gives error since exists clauses not handled by animation 
-
-MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25).
 *)
 
-Check extractPatMatBinders.
+(*
+Next Obligation.
+Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
+remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
++ split.
+++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
+auto. 
++ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
+*  auto.
+* destruct H0. rewrite H0 in H1. destruct H1.
+rewrite H1 in H2. destruct H2. rewrite H2 in H3. auto.
+ Qed.
 
-Inductive baz'' : nat -> nat -> myType -> Prop :=
- | bazCon'' : forall (a : nat), forall (b : nat), forall (input : myType), mycr2 (mycr1' a) (S b) = input -> baz'' a b input.  (*RHS of equality not v imp*)
+
+Next Obligation.
+Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
+remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
++ split.
+++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
+auto. 
++ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
+*  auto.
+* destruct H0. destruct H1. rewrite H1 in H0. destruct H2. rewrite H3 in H2. rewrite H2 in H0. auto.
+
+ Qed.
+     
+(* known var 'b' is on LHS not RHS *)
 
 
-MetaRocq Run (extractPatMatBinders <? baz'' ?> baz'' [("a", <%nat%>); ("b", <%nat%>)] 25).
 
-Print baz''Animated.
+Next Obligation.
+Proof. unfold animateEqual.soundness'. (* exists ((fun n1 n2 => if Nat.eqb (g1 (g3 n1 n2)) (g2 n1) then Some [g3 n1 n2; g3 n1 n2; n2] else None) n1 n2). *)
+remember (Nat.eqb (g1 (g3 n1 n2)) (g2 n1)) as H. destruct H.
++ split.
+++ (*apply cstr.*) apply beq_nat_eq in HeqH. rewrite -> HeqH.
+auto. 
++ intros. inversion H ; subst. apply beq_nat_neq in HeqH.
+*  auto.
+* destruct H0. destruct H1. rewrite H1 in H0. destruct H2.  apply beq_nat_neq in HeqH. 
+- auto.
+- rewrite <- H3 in H2. rewrite <- H2. auto.
 
-Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))).
+ Qed.
 
-Compute (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))).
 
-  
-Example testBaz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 1) 1))) = successPoly (nat × nat) (1, 0).
-Proof. reflexivity. Qed.
+*)
 
-Example test2Baz'' : (baz''Animated 5 (successPoly myType (mycr2 (mycr1' 3) 0))) = noMatchPoly (nat × nat).
-Proof. reflexivity. Qed.
+ 
 
-Inductive listRel : list bool -> bool -> list bool -> Prop :=
- | listRelCon : forall (a : list bool), forall (b : bool), forall (input : list bool), b :: a = input -> listRel a b input.  (*RHS of equality not v imp*)
 
-MetaRocq Run (extractPatMatBinders <? listRel ?> listRel [("a", <%(list bool)%>); ("b", <%bool%>)] 25).
-
-Example testlistRel : (listRelAnimated 5 (successPoly (list bool) [true;true;false])) = successPoly ((list bool) × bool) ([true; false], true).
-Proof. reflexivity. Qed.
-
-Example test2listRel : (listRelAnimated 5 (successPoly (list bool) [])) = noMatchPoly ((list bool) × bool).
-Proof. reflexivity. Qed.
 
 
 
