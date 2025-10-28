@@ -1369,6 +1369,65 @@ f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
            
+
+
+Definition joinPatMatPolyGenFuelAwareNoLHSTm {A : Type} (induct : A) 
+                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
+                        (fuel : nat) : TemplateMonad term :=
+
+
+let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+
+
+
+
+
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
+
+
+
+let u := 
+ (tLam "fuel" <%nat%>
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType) 
+                  
+               |} (tVar "fuel")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := tBody'
+                                    
+                              |}]
+                     )) in
+
+
+
+
+
+t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+
+tmReturn t'.    
+                        
+
+
                         
                         
 Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
@@ -1794,8 +1853,200 @@ match t with
  | _ => tmFail "incorrect inductive shape" 
 end ;; tmMsg "done".                       
 
+Inductive tlRel : ((list nat) × nat) -> (nat × nat) -> Prop :=
+ | tlRelCons: forall (a : list nat) (b c d : nat),  [c ; d] = (b :: a) -> tlRel (a, b) (c, d).
 
-    
+MetaRocq Run (t <- general.animate2 <? tlRel ?>;; tmPrint t). 
+Search (string -> string -> string).
+
+Compute <? tlRel ?>.
+
+Definition quoteConst' (kn : kername) (nm : string) :=
+tConst (fst kn, nm) [].
+
+Definition composeOutcomePoly (A : Type) (B : Type) (C : Type) (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C) 
+                                   : (nat -> outcomePoly A -> outcomePoly C) :=
+ fun fuel input => match f fuel input with
+                    | successPoly res => f' fuel  (successPoly B res)
+                    | fuelErrorPoly => (fuelErrorPoly C)
+                    | _ =>  (fuelErrorPoly C)
+                   end.  
+Compute <%composeOutcomePoly%>.   
+Print tmDefinition.                             
+
+
+
+
+
+
+(* OUTPUT from animation
+Definition myFun := composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat × nat)) (list nat)
+         | S _ =>
+             defaultVal (outcomePoly (list nat × nat)) (outcomePoly (list nat)) 
+               (noMatchPoly (list nat))
+               (dispatchInternal (outcomePoly (list nat × nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (list nat × nat) =>
+                   match v2 with
+                   | @successPoly _ (a, b) => Some (successPoly (list nat) (b :: a))
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (list nat × nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+                   | _ => None
+                   end])
+         end)
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat × nat)
+         | S _ =>
+             defaultVal (outcomePoly (list nat)) (outcomePoly (nat × nat)) (noMatchPoly (nat × nat))
+               (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat × nat))
+                  [fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @successPoly _ [c] => None
+                   | @successPoly _ [c; d] => Some (successPoly (nat × nat) (c, d))
+                   | @successPoly _ (c :: d :: _ :: _) => None
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (nat × nat))
+                   | _ => None
+                   end])
+         end).
+
+Compute (myFun 10 (successPoly (list nat × nat) ([5; 6], 2))).
+
+Compute (myFun 10 (successPoly (list nat × nat) ([5], 2))).
+*)          
+
+Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C) 
+                                   : (nat -> outcomePoly A -> outcomePoly C) :=
+ fun fuel input => match f fuel input with
+                    | successPoly res => f' fuel  (successPoly B res)
+                    | fuelErrorPoly => (fuelErrorPoly C)
+                    | _ =>  (fuelErrorPoly C)
+                   end.  
+Print tmDefinition.
+Compute (Some hnf).
+Print tmDefinitionRed_.
+
+Definition extractPatMatBinders' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+t <- general.animate2 kn ;;
+match t with
+ | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
+                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (mkProdTmVars inputData) (mkProdTypeVars inputData) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (mkProdTmVars outputData) (mkProdTypeVars outputData) (String.append (snd kn) "OUT") fuel ;;
+                      (*
+                      gIn <- tmUnquote tIn ;;
+                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+                      gOut <- tmUnquote tOut ;;
+                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+                      
+                       
+                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')    
+                     
+                      *)
+                      
+                     
+                     
+                     
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(mkProdTypeVars inputData); typeVar ; (mkProdTypeVars outputData) ; tIn ; tOut]) in  
+                      u' <- tmEval all u ;;
+                      (*tmPrint u';; *)
+                     (*
+                      t' <- DB.deBruijn t ;;
+                     *)
+                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+                      tmPrint f 
+                      (*
+                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
+                      *)
+                     (*
+                     tmEval hnf (my_projT2 f) >>=
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf)  
+                     
+                     *)
+ 
+
+ | _ => tmFail "incorrect inductive shape" 
+end ;; tmMsg "done".  
+
+
+MetaRocq Run (extractPatMatBinders' <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
+
+
+
+Definition extractPatMatBinders'' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+t <- general.animate2 kn ;;
+match t with
+ | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
+                      
+                      joinPatMatPolyGenFuelAwareNoLHS induct (mkProdTmVars inputData) (mkProdTypeVars inputData) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
+                      joinPatMatPolyGenFuelAwareNoLHS induct  patMatTerm typeVar  (mkProdTmVars outputData) (mkProdTypeVars outputData) (String.append (snd kn) "OUT") fuel 
+                      
+ 
+
+ | _ => tmFail "incorrect inductive shape" 
+end ;; tmMsg "done".  
+(*
+MetaRocq Run (extractPatMatBinders'' <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
+*)
+
+
+
+Definition tRelAn := 
+(composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
+   (fun fuel : nat =>
+    match fuel with
+    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat × nat)) (list nat)
+    | S _ =>
+        defaultVal (outcomePoly (list nat × nat)) (outcomePoly (list nat)) (noMatchPoly (list nat))
+          (dispatchInternal (outcomePoly (list nat × nat)) (outcomePoly (list nat))
+             [fun v2 : outcomePoly (list nat × nat) =>
+              match v2 with
+              | @successPoly _ (a, b) => Some (successPoly (list nat) (b :: a))
+              | _ => None
+              end;
+              fun v2 : outcomePoly (list nat × nat) =>
+              match v2 with
+              | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+              | _ => None
+              end])
+    end)
+   (fun fuel : nat =>
+    match fuel with
+    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat × nat)
+    | S _ =>
+        defaultVal (outcomePoly (list nat)) (outcomePoly (nat × nat)) (noMatchPoly (nat × nat))
+          (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat × nat))
+             [fun v2 : outcomePoly (list nat) =>
+              match v2 with
+              | @successPoly _ [c] => None
+              | @successPoly _ [c; d] => Some (successPoly (nat × nat) (c, d))
+              | @successPoly _ (c :: d :: _ :: _) => None
+              | _ => None
+              end;
+              fun v2 : outcomePoly (list nat) =>
+              match v2 with
+              | @fuelErrorPoly _ => Some (fuelErrorPoly (nat × nat))
+              | _ => None
+              end])
+    end)).
+
+
+
+Compute (tRelAn 10 (successPoly (list nat × nat) ([5; 6], 2))).
+
+Compute (tRelAn 10 (successPoly (list nat × nat) ([5], 2))).
+          
    
 (* Full example *)
 
@@ -2668,9 +2919,154 @@ Definition testTerm :=
                                [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]]];
                        tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tRel 0]]])).
 
-MetaRocq Run (t <- DB.undeBruijn' [nNamed "rel8"%bs] testTerm ;; t' <- tmEval all t ;; tmPrint t').                        
+MetaRocq Run (t <- DB.undeBruijn' [nNamed "rel9"%bs; nNamed "rel8"%bs] testTerm ;; t' <- tmEval all t ;; tmPrint t').                        
+
+Definition testTerm2 :=
+tPro "a1" <%nat%>
+                (tPro "a2" <%nat%>
+                   (tPro "b1" <%nat%>
+                      (tPro "b2" <%nat%>
+                         (tPro "b3" <%nat%>
+                            (tPro "b4" <%nat%>
+                               (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                                  (tApp <%and%>
+                                     [tApp (tRel 7)
+                                        [tApp
+                                           (tConstruct
+                                              {|
+                                                inductive_mind :=
+                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                                inductive_ind := 0
+                                              |} 0 [])
+                                           [<%nat%>; <%nat%>; tRel 5; tRel 4];
+                                         tApp
+                                           (tConstruct
+                                              {|
+                                                inductive_mind :=
+                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                                inductive_ind := 0
+                                              |} 0 [])
+                                           [<%nat%>; <%nat%>; tRel 3; tRel 1]];
+                                      tApp (tRel 6)
+                                        [tApp
+                                           (tConstruct
+                                              {|
+                                                inductive_mind :=
+                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                                inductive_ind := 0
+                                              |} 0 [])
+                                           [<%nat%>; <%nat%>; tRel 5; tRel 4];
+                                         tApp
+                                           (tConstruct
+                                              {|
+                                                inductive_mind :=
+                                                  (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                                inductive_ind := 0
+                                              |} 0 [])
+                                           [<%nat%>; <%nat%>; tRel 0; tRel 2]]])
+                                  (tApp (tRel 8)
+                                     [tApp
+                                        (tConstruct
+                                           {|
+                                             inductive_mind :=
+                                               (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                             inductive_ind := 0
+                                           |} 0 [])
+                                        [<%nat%>; <%nat%>;
+                                         tApp
+                                           (tConstruct
+                                              {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                           [tRel 6];
+                                         tApp
+                                           (tConstruct
+                                              {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                           [tRel 5]];
+                                      tApp
+                                        (tConstruct
+                                           {|
+                                             inductive_mind :=
+                                               (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                             inductive_ind := 0
+                                           |} 0 [])
+                                        [<%nat%>; <%nat%>;
+                                         tApp
+                                           (tConstruct
+                                              {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                           [tRel 4];
+                                         tApp
+                                           (tConstruct
+                                              {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                                           [tRel 3]]]))))))).
+
+MetaRocq Run (t <- DB.undeBruijn' [nNamed "rel9"%bs; nNamed "rel8"%bs] testTerm2 ;; t' <- tmEval all t ;; tmPrint t').                        
+
+Definition testTerm'' :=
+(tPro "a1" <%nat%>
+   (tPro "a2" <%nat%>
+      (tPro "b1" <%nat%>
+         (tPro "b2" <%nat%>
+            (tPro "b3" <%nat%>
+               (tPro "b4" <%nat%>
+                  (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                     (tApp <%and%>
+                        [tApp (tVar "rel8")
+                           [tApp
+                              (tConstruct
+                                 {|
+                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                   inductive_ind := 0
+                                 |} 0 [])
+                              [<%nat%>; <%nat%>; tVar "a1"; tVar "a2"];
+                            tApp
+                              (tConstruct
+                                 {|
+                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                   inductive_ind := 0
+                                 |} 0 [])
+                              [<%nat%>; <%nat%>; tVar "b1"; tVar "b3"]];
+                         tApp (tVar "rel9")
+                           [tApp
+                              (tConstruct
+                                 {|
+                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                   inductive_ind := 0
+                                 |} 0 [])
+                              [<%nat%>; <%nat%>; tVar "a1"; tVar "a2"];
+                            tApp
+                              (tConstruct
+                                 {|
+                                   inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                   inductive_ind := 0
+                                 |} 0 [])
+                              [<%nat%>; <%nat%>; tVar "b4"; tVar "b2"]]])
+                     (tApp (tVar "rel8")
+                        [tApp
+                           (tConstruct
+                              {|
+                                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                inductive_ind := 0
+                              |} 0 [])
+                           [<%nat%>; <%nat%>;
+                            tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                              [tVar "a1"];
+                            tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                              [tVar "a2"]];
+                         tApp
+                           (tConstruct
+                              {|
+                                inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                                inductive_ind := 0
+                              |} 0 [])
+                           [<%nat%>; <%nat%>;
+                            tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                              [tVar "b1"];
+                            tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
+                              [tVar "b2"]]])))))))).
+                              
+                              
 
 
+MetaRocq Run (t <- DB.deBruijn' [nNamed "rel9"%bs; nNamed "rel8"%bs] testTerm'' ;; t' <- tmEval all t ;; tmPrint t').                        
 
 (*            
 Print constructor_body.
