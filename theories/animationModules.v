@@ -3068,6 +3068,87 @@ Definition testTerm'' :=
 
 MetaRocq Run (t <- DB.deBruijn' [nNamed "rel9"%bs; nNamed "rel8"%bs] testTerm'' ;; t' <- tmEval all t ;; tmPrint t').                        
 
+Definition dec (P : Prop) : Type := { P } + { ~ P }.
+
+Class DecEq (A : Type) : Type :=
+  { dec_eq : forall (x y : A), dec (x = y) }.
+
+#[export] Instance DecEq_nat : DecEq nat.
+Proof. constructor. unfold dec. decide equality. Defined.
+
+#[export] Instance DecEq_list (A : Type) `(DecEq A) : DecEq (list A).
+Proof. constructor. unfold dec. decide equality. apply dec_eq. Defined.
+
+Compute (dec_eq [1;2;3] [4;2;3]).
+
+Print TemplateMonad.
+Check (DecEq_list nat).
+
+MetaRocq Run (o <- tmInferInstance (Some all) (DecEq (list (list nat))) ;;
+              match o with
+              | my_Some f => tmPrint f 
+              | _ => tmFail "boo"
+              end).
+Check (DecEq_list nat).
+
+
+
+
+
+Check @dec_eq.
+
+MetaRocq Run (o <- tmInferInstance (Some all) (DecEq (list nat)) ;;
+              match o with
+              | my_Some f => tmEval all (@dec_eq _ f [1] [1]) >>= tmPrint
+              | _ => tmFail "boo"
+              end).
+              
+Check @tmDefinition.
+
+Definition mkEqFn (A : Type) (nmTm : string) : TemplateMonad term :=
+o <- tmInferInstance (Some all) (DecEq A) ;;
+              match o with
+              | my_Some f => let myFun : A -> A -> bool := (fun x y => match @dec_eq A f x y with
+                                                                       | left _ => true
+                                                                       | right _ => false
+                                                                       end) in (tmPrint myFun ;; t' <- (tmQuote myFun) ;; t'' <- tmEval all t' ;; (* @tmDefinition nmTm term t'' ;; *) tmReturn t'') 
+                                                                       
+              | _ => tmFail "boo"
+              end.  
+              
+MetaRocq Run (t <- mkEqFn (list nat) "listNatEq" ;; tmPrint t).  
+
+Definition mkEqFnTm (t : term) : TemplateMonad term :=
+A <- tmUnquoteTyped Type t ;;
+o <- tmInferInstance (Some all) (DecEq A) ;;
+              match o with
+              | my_Some f => let myFun : A -> A -> bool := (fun x y => match @dec_eq A f x y with
+                                                                       | left _ => true
+                                                                       | right _ => false
+                                                                       end) in (tmPrint myFun ;; t' <- (tmQuote myFun) ;; t'' <- tmEval all t' ;; (* @tmDefinition nmTm term t'' ;; *) tmReturn t'') 
+                                                                       
+              | _ => tmFail "boo"
+              end.  
+              
+MetaRocq Run (t <- mkEqFnTm <%list nat%>  ;; tmPrint t).                           
+
+Compute (match dec_eq [1] [2] with
+         | left _ => "yes"
+         | right _ => "no"
+         end).
+         
+Compute (match dec_eq [1] [2] with
+         | left _ => true
+         | right _ => false
+         end).         
+Definition mkEqFn'' (B : Type) {A : DecEq B} : (B -> B -> bool) :=
+ fun x y : B => match dec_eq x y with
+                 | left _ => true
+                 | right _ => false
+                end.
+                
+Compute (mkEqFn'' (list (list (list nat)))).                
+
 (*            
 Print constructor_body.
 Print context.
