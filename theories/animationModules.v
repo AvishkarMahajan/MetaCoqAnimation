@@ -1933,7 +1933,8 @@ Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> o
                    end.  
 Print tmDefinition.
 Compute (Some hnf).
-Print tmDefinitionRed_.
+Print tmDefinitionRed_. 
+
 
 Definition extractPatMatBinders' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
 t <- general.animate2 kn ;;
@@ -1957,23 +1958,29 @@ match t with
                      
                       let u :=
                        (tApp <%composeOutcomePoly%> [(mkProdTypeVars inputData); typeVar ; (mkProdTypeVars outputData) ; tIn ; tOut]) in  
-                      u' <- tmEval all u ;;
+                      u'' <- tmEval all u ;;
                       (*tmPrint u';; *)
-                     (*
-                      t' <- DB.deBruijn t ;;
-                     *)
+                     
+                      u' <- DB.deBruijn u'' ;;
+                     
                       ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
                       ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      (*
                       f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      tmPrint f 
+                      (*
+                      tmPrint f
+                      *) 
                       (*
                       @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
-                      *)
-                     (*
+                     *)
+                     tmDefinition (String.append (snd kn) "Animated")  (f)  
+                     *)
+                     
+                     f <- tmUnquote u';;
                      tmEval hnf (my_projT2 f) >>=
                      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf)  
                      
-                     *)
+                     
  
 
  | _ => tmFail "incorrect inductive shape" 
