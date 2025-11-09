@@ -1934,6 +1934,12 @@ Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> o
 Print tmDefinition.
 Compute (Some hnf).
 Print tmDefinitionRed_. 
+Definition mkDeffromTpTm (kn : kername) (t : typed_term) : TemplateMonad unit :=
+x <- tmEval hnf (my_projT2 t) ;;
+tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) x ;; ret tt.  
+                     
+                     
+
 
 
 Definition extractPatMatBinders' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
@@ -1977,8 +1983,12 @@ match t with
                      *)
                      
                      f <- tmUnquote u';;
+                     tmPrint f ;;  (*;;
+                     tmDefinition (String.append (snd kn) "Animated")  (f) 
+                     *)
+                     
                      tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf)  
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
                      
                      
  
@@ -1989,7 +1999,7 @@ end ;; tmMsg "done".
 
 MetaRocq Run (extractPatMatBinders' <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
 
-
+Print tlRelAnimated.
 
 Definition extractPatMatBinders'' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
 t <- general.animate2 kn ;;
@@ -2007,7 +2017,8 @@ end ;; tmMsg "done".
 MetaRocq Run (extractPatMatBinders'' <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
 *)
 
-
+Print tlRelAnimated.
+Print hnf.
 
 Definition tRelAn := 
 (composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
@@ -2050,9 +2061,9 @@ Definition tRelAn :=
 
 
 
-Compute (tRelAn 10 (successPoly (list nat × nat) ([5; 6], 2))).
+Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5; 6], 2))).
 
-Compute (tRelAn 10 (successPoly (list nat × nat) ([5], 2))).
+Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5], 2))).
           
    
 (* Full example *)
@@ -2417,10 +2428,55 @@ animateInductivePredicate induct nm clData' indData' fuel.
 
 (** Examples  _______________ **)
 Inductive tl1Rel : ((list nat) × nat) -> (nat × nat) -> Prop :=
- | tl1RelCons: forall (a : list nat) (b c d : nat),  [c ; d] = (b :: a) -> tl1Rel (a, b) (c, d).
+ | tl1RelCons: forall (a : list nat) (b c d : nat),  [c ; d] = ((fun x y => x :: y) b a) -> tl1Rel (a, b) (c, d).
 
 MetaRocq Run (extractPatMatBinders' <? tl1Rel ?> tl1Rel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
 
+Definition tlRelAn2 :=
+composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
+      (fun fuel : nat =>
+       match fuel with
+       | 0 => fuelErrorPolyCstFn (outcomePoly (list nat × nat)) (list nat)
+       | S _ =>
+           defaultVal (outcomePoly (list nat × nat)) (outcomePoly (list nat)) 
+             (noMatchPoly (list nat))
+             (dispatchInternal (outcomePoly (list nat × nat)) (outcomePoly (list nat))
+                [fun v2 : outcomePoly (list nat × nat) =>
+                 match v2 with
+                 | @successPoly _ (a, b) =>
+                     Some (successPoly (list nat) ((fun (x : nat) (y : list nat) => x :: y) b a))
+                 | _ => None
+                 end;
+                 fun v2 : outcomePoly (list nat × nat) =>
+                 match v2 with
+                 | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+                 | _ => None
+                 end])
+       end)
+      (fun fuel : nat =>
+       match fuel with
+       | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat × nat)
+       | S _ =>
+           defaultVal (outcomePoly (list nat)) (outcomePoly (nat × nat)) (noMatchPoly (nat × nat))
+             (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat × nat))
+                [fun v2 : outcomePoly (list nat) =>
+                 match v2 with
+                 | @successPoly _ [c] => None
+                 | @successPoly _ [c; d] => Some (successPoly (nat × nat) (c, d))
+                 | @successPoly _ (c :: d :: _ :: _) => None
+                 | _ => None
+                 end;
+                 fun v2 : outcomePoly (list nat) =>
+                 match v2 with
+                 | @fuelErrorPoly _ => Some (fuelErrorPoly (nat × nat))
+                 | _ => None
+                 end])
+       end).
+
+Compute (tlRelAn2 5 (successPoly ((list nat) × nat) ([5], 2))).       
+       
+       
+       
 Inductive rel18: (nat × nat) -> (nat × nat)  -> Prop :=
  | rel18Base : forall a, rel18 (1, a) (3, S a) 
  | rel18Cons : forall a1 a2 b1 b2 b3 b4, rel18 (a1, a2) (b1, b3) /\ rel19 (a1, a2) (b4, b2) -> rel18 ((S a1), (S a2)) ((S b1), (S b2))
@@ -2976,7 +3032,7 @@ End animateEqual.
 
 
 
-
+Search (_ -> _ -> {_=_}+{~_=_}).
 
 
 (* Decidable equality typeclass ________________________ *)
