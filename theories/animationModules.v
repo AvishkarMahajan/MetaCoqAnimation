@@ -2116,10 +2116,18 @@ Lemma testrel8'' : True -> rel8 (9,13) (11,14).
 Proof. Admitted.
   
 Print tmQuote.
+(* Mode : rel28 : [0 ; 2] input, [1; 3] output, rel29 : [0;1] input, [2;3] output *)
+
+Inductive rel28: nat -> nat -> nat -> nat -> Prop :=
+ | rel28Base : forall a, rel28 1 3 a (S a) 
+ | rel28Cons : forall a1 a2 b1 b2 b3 b4, rel28 a1 b1 a2 b3 /\ rel29 a1 a2 b4 b2 -> rel28 (S a1) (S b1) (S a2) (S b2)
+with rel29: nat -> nat -> nat -> nat -> Prop := 
+ | rel29Cons : forall a b c d, rel28 a c b d  -> rel29 a b c d.
 
 
 
-MetaRocq Run (mut <- tmQuoteInductive <? rel8 ?> ;; tmPrint mut ;; tmDefinition "mutB" mut).
+
+MetaRocq Run (mut <- tmQuoteInductive <? rel28 ?> ;; tmPrint mut ;; tmDefinition "mutB" mut).
 Compute (ind_bodies mutB).
 Parameter oib : one_inductive_body.
 Compute ((hd oib (ind_bodies mutB))).
@@ -2133,6 +2141,35 @@ map (fun o => ind_name o) l.
 Definition genCxt (l : list one_inductive_body) :=
 (map (fun s => nNamed s) (rev (getIndNames l))).
 
+Fixpoint getType (o : term) : list term :=
+match o with
+       | (tProd {| binder_name := nAnon; binder_relevance := Relevant |} t (tSort sProp)) => [t]
+  
+       | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1  t2 => t1 :: getType t2 
+       | _ => [errTpTm]
+end.
+
+Search "nth".
+
+Definition getType' (mode : list nat) (l : list term) :=
+map (fun n => nth n l errTpTm) mode.
+
+Fixpoint mkProdTypeVars3 (outputData : list (term)) :  term :=
+ match outputData with 
+  | [] => <%bool%>
+  | [h] =>  (h)
+  | h :: t => let res := mkProdTypeVars3 t in  (tApp
+                                            (tInd
+                                             {|
+                                             inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                              |} []) [(h) ; res])
+ end. 
+ 
+Definition getInTp (inMode : list nat) (o : one_inductive_body) : term  :=
+ let lstType := getType (ind_type o) in
+ mkProdTypeVars3 (getType' inMode lstType).               
+
+(*
 Definition getInTp (n : nat) (o : one_inductive_body) :=
 match n with
  | 0 => match ind_type o with
@@ -2149,12 +2186,14 @@ match n with
            | _ => errTpTm  
           end
 end.                                                                                          
-
+*)
+(*
 Definition getOutTp (n : nat) (o : one_inductive_body) :=
  match n with
   | 0 => getInTp 1 o
   | S m => getInTp 0 o
  end.
+ *)
 Fixpoint reduceClauseTm (t : term) :=
  match t with
   | (tPro str typ t') => reduceClauseTm t'
@@ -2207,11 +2246,11 @@ Fixpoint getIndApp (l : list term) (indNames : list string) : list string :=
  end.
 
 Compute (fst (1,2,3)).
-Fixpoint getInOutTps (l : list nat) (b : list one_inductive_body) : list ((string × term) × term) := 
+Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_inductive_body) : list ((string × term) × term) := 
  match l with
   | [] => []
   | h :: t => match b with 
-               | h' :: t' => (ind_name h', getInTp h h', getOutTp h h') :: getInOutTps t t' 
+               | h' :: t' => (ind_name h', getInTp (fst h) h', getInTp (snd h) h') :: getInOutTps t t' 
                | _ => []
               end 
  end.
@@ -2223,7 +2262,7 @@ Fixpoint mkNmTm (c : list constructor_body) (l : list name) :TemplateMonad (list
   | (h :: t) => r <- DB.undeBruijn' l ((cstr_type h )) ;; r' <- tmEval all r ;; let hres := (cstr_name h, (reduceClauseTm r')) in rest <- mkNmTm t l ;; tmReturn (hres :: rest)
  end. 
  
-Fixpoint getData (lib : list one_inductive_body) (ln : list nat) (nmCxt : list name) (inOutTps : list ((string × term) × term)) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
+Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (list nat))) (nmCxt : list name) (inOutTps : list ((string × term) × term)) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
   
  match lib with
   | [] => tmReturn []
@@ -2234,14 +2273,14 @@ Fixpoint getData (lib : list one_inductive_body) (ln : list nat) (nmCxt : list n
  
  end. 
  
-Definition getData' (kn : kername) (ln : list nat) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
+Definition getData' (kn : kername) (ln : list (prod (list nat) (list nat))) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
 mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
 let inOutTps := getInOutTps ln lib in
 getData lib ln nmCxt inOutTps.
 
-MetaRocq Run (g <- getData' <? rel8 ?> [0;0] ;; tmDefinition "data" g).
+MetaRocq Run (g <- getData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;; tmDefinition "data" g).
 
 Compute (data).
 
@@ -2259,7 +2298,7 @@ Fixpoint mkIndData (data : (list (((string × term) × term) × (list (string ×
               end  
  end. 
  
-Definition mkIndData' (kn : kername) (ln : list nat) :=
+Definition mkIndData' (kn : kername) (ln : list (prod (list nat) (list nat))) :=
 mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
@@ -2268,37 +2307,62 @@ data <- getData lib ln nmCxt inOutTps ;;
 let indNames := map (fun d => (fst (fst (fst d)))) data in
 tmReturn (mkIndData data indNames).  
 
-MetaRocq Run (inData <- mkIndData' <? rel8 ?> [0;0] ;; tmDefinition "indInf" inData).
+MetaRocq Run (inData <- mkIndData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;; tmDefinition "indInf" inData).
 
 Compute indInf.
 
-Fixpoint findIndex (s : string) (ls : list (((string × term) × term) × nat)) : option nat :=
+Fixpoint findIndex (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option (list nat × list nat) :=
  match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd h) else findIndex s t
  end. 
-Fixpoint findInType (s : string) (ls : list (((string × term) × term) × nat)) : option term :=
+Fixpoint findInType (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option term :=
 match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd (fst (fst h))) else findInType s t
 end. 
-(* ls is (nameOfInductive, inputType, outputType, inputIndex) *)
-Fixpoint findOutType (s : string) (ls : list (((string × term) × term) × nat)) : option term :=
+(* ls is (nameOfInductive, inputType, outputType, modeInfo) *)
+Fixpoint findOutType (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option term :=
 match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some ((snd (fst h))) else findOutType s t
 end. 
- 
-Fixpoint extractClinfo (ts : list term) (ls : list (((string × term) × term) × nat)) 
+
+Definition mkProdTm3Helper (mode : list nat) (lsArgs : list term) : (list term) :=
+map (fun n => nth n lsArgs errTpTm) mode.
+
+Compute <% (true, (0,0))%>.
+
+Fixpoint mkProdTm3' (lsArgs : list term) (tpTm : term) : term := 
+match lsArgs with
+ | [] => <%true%>
+ | [h] => h
+ | h' :: t => match tpTm with
+               | (tApp (tInd {|inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                              |} []) [(tp1) ; res]) => tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+                                                                                  |} 0 []) [tp1 ; res; h' ; (mkProdTm3' t res)] 
+               
+               | _ => errTpTm
+              end                                                                     
+ end.             
+            
+         
+                                             
+                                             
+                                             
+
+Definition mkProdTm3 (mode : list nat) (lsArgs : list term) (tpTm : term) : term :=
+mkProdTm3' (mkProdTm3Helper mode lsArgs) tpTm.
+Fixpoint extractClinfo (ts : list term) (ls : list (((string × term) × term) × (list nat × list nat))) 
                               : list ((((string × term) × term) × term) × term)  :=
 (* output is list of (inductiveNm, inputTerm, inputType, outputTerm, outputType) one tuple per conjunct in precondition *)                             
 match ts with
 | [] => []
 | h :: rest => match h with
-                | tApp (tVar str) [t2 ; t3] => match findIndex str ls with
-                                                | Some 0 => match findInType str ls with
+                | tApp (tVar str) lstArgs => match findIndex str ls with
+                                                | Some mode => match findInType str ls with
                                                              | Some tp => match findOutType str ls with
-                                                                           | Some tp' => (str, t2, tp, t3, tp') :: extractClinfo rest ls 
+                                                                           | Some tp' => (str, (mkProdTm3 (fst mode) lstArgs tp), tp, (mkProdTm3 (snd mode) lstArgs tp'), tp') :: extractClinfo rest ls 
                                                                            | _ => extractClinfo rest ls
                                                                            end
                                                              | _ => extractClinfo rest ls 
@@ -2306,15 +2370,7 @@ match ts with
                                                 
                                                 
                                                 
-                                                | Some (S m) => match findInType str ls with
-                                                                  | Some tp => match findOutType str ls with
-                                                                               | Some tp' => (str, t3, tp, t2, tp') :: extractClinfo rest ls 
-                                                                               | _ => extractClinfo rest ls 
-                                                                               end
-                                                                                                    
-                                                
-                                                                  | _ => extractClinfo rest ls
-                                                                 end 
+                                               
                
                                                 | _ => extractClinfo rest ls
                                                end  
@@ -2326,13 +2382,13 @@ end.
 
 Parameter noClHdError :((((term) × term) × term) × term).  
 
-Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × nat)) 
+Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × (list nat × list nat))) 
                               : ((((term) × term) × term) × term) :=
                 match h with
-                | tApp (tVar str) [t2 ; t3] => match findIndex str ls with
-                                                | Some 0 => match findInType str ls with
+                | tApp (tVar str) lstArgs => match findIndex str ls with
+                                                | Some mode => match findInType str ls with
                                                              | Some tp => match findOutType str ls with
-                                                                           | Some tp' => (t2, tp, t3, tp') 
+                                                                           | Some tp' => ((mkProdTm3 (fst mode) lstArgs tp), tp, (mkProdTm3 (snd mode) lstArgs tp'), tp') 
                                                                            | _ => noClHdError
                                                                            end
                                                              | _ => noClHdError
@@ -2340,15 +2396,7 @@ Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × 
                                                 
                                                 
                                                 
-                                                | Some (S m) => match findInType str ls with
-                                                                  | Some tp => match findOutType str ls with
-                                                                               | Some tp' => (t3, tp, t2, tp') 
-                                                                               | _ => noClHdError 
-                                                                               end
-                                                                                                    
                                                 
-                                                                  | _ => noClHdError
-                                                                 end 
                
                                                 | _ => noClHdError
                                                end  
@@ -2356,18 +2404,18 @@ Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × 
                 | _ => noClHdError
                end.                                    
 
-Definition mkClauseInfo  (ls : list (((string × term) × term) × nat)) (cl : (string × term)) := 
+Definition mkClauseInfo  (ls : list (((string × term) × term) × (list nat × list nat))) (cl : (string × term)) := 
  match extractClinfoHd (getClHead' (snd cl)) ls with
   | (t1, t2, t3, t4) => ((extractClinfo (getClBody' (snd cl)) ls), t1, t2, t3, t4, (fst cl))
  end. 
 
-Fixpoint mkClauseInfoLst  (ls : list (((string × term) × term) × nat)) (clist : list (string × term)) := 
+Fixpoint mkClauseInfoLst  (ls : list (((string × term) × term) × (list nat × list nat))) (clist : list (string × term)) := 
  match clist with
   | [] => []
   | h :: t => (mkClauseInfo ls h) :: mkClauseInfoLst ls t
  end. 
  
-Fixpoint appendIndex (ln : list nat) (ls : list (((string × term) × term))) :=
+Fixpoint appendIndex (ln : list (list nat × list nat)) (ls : list (((string × term) × term))) :=
 match ln with
  | [] => []
  | h :: t => match ls with
@@ -2376,10 +2424,12 @@ match ln with
                             | (p1,p2,p3) => (p1,p2,p3,h) :: appendIndex t t'
              end            end 
 end.
+(*
 Check mkClauseInfo. 
 
 Search (forall A : Type, list (list A) -> list A).
-Definition mkClData' (kn : kername) (ln : list nat) :=
+*)
+Definition mkClData' (kn : kername) (ln : list (list nat × list nat)) :=
 mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
@@ -2396,19 +2446,19 @@ lisCons <- tmEval all lisCons' ;;
  
 tmReturn (mkClauseInfoLst ls lisCons).
 
+
+Definition animateInductivePredicate' {A : Type} (induct : A) (nm : string) (kn : kername) (modelst: list (list nat × list nat) ) (fuel : nat) :=
+clData <- mkClData' kn modelst ;;
+clData' <- tmEval all clData ;;
+indData <- mkIndData' kn modelst ;;
+indData' <- tmEval all indData ;;
+animateInductivePredicate induct nm clData' indData' fuel.
+(*
 MetaRocq Run (clData <- mkClData' <? rel8 ?> [0;0] ;; tmDefinition "clInf" clData).
 
 Compute clInf.
+*)
 (* MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50). *)
-
-Definition animateInductivePredicate' {A : Type} (induct : A) (nm : string) (kn : kername) (indexlst: list nat) (fuel : nat) :=
-clData <- mkClData' kn indexlst ;;
-clData' <- tmEval all clData ;;
-indData <- mkIndData' kn indexlst ;;
-indData' <- tmEval all indData ;;
-animateInductivePredicate induct nm clData' indData' fuel.
-
-
 
 
 
@@ -2433,56 +2483,30 @@ MetaRocq Run (extractPatMatBinders5 <? tlRel3 ?> tlRel3 [("a", <%list nat%>)] [(
 
 
        
-Inductive rel18: (nat × nat) -> (nat × nat)  -> Prop :=
- | rel18Base : forall a, rel18 (1, a) (3, S a) 
- | rel18Cons : forall a1 a2 b1 b2 b3 b4, rel18 (a1, a2) (b1, b3) /\ rel19 (a1, a2) (b4, b2) -> rel18 ((S a1), (S a2)) ((S b1), (S b2))
-with rel19: (nat × nat) -> (nat × nat)  -> Prop := 
- | rel19Cons : forall a b, rel18 a b  -> rel19 a b.
-
-
-MetaRocq Run (animateInductivePredicate' rel18 "rel18" <? rel18 ?> [0;0] 50).
-
-
-
-
-
-(* Mode : rel28 : [0 ; 2] input, [1; 3] output, rel29 : [0;1] input, [2;3] output *)
+(* Mode : rel28 : [0 ; 2] input, [1; 3] output, rel29 : [0;1] input, [2;3] output 
 
 Inductive rel28: nat -> nat -> nat -> nat -> Prop :=
  | rel28Base : forall a, rel28 1 3 a (S a) 
  | rel28Cons : forall a1 a2 b1 b2 b3 b4, rel28 a1 b1 a2 b3 /\ rel29 a1 a2 b4 b2 -> rel28 (S a1) (S b1) (S a2) (S b2)
 with rel29: nat -> nat -> nat -> nat -> Prop := 
- | rel29Cons : forall a b c d, rel28 a c b d  -> rel29 a b c d.
+ | rel29Cons : forall a b c d, rel28 a c b d  -> rel29 a b c d. *)
+
+
+
+MetaRocq Run (animateInductivePredicate' rel28 "rel28" <? rel28 ?> [([0;2], [1;3]) ; ([0;1], [2;3])] 50).
+
+
+
+Compute (rel28AnimatedTopFn 100 (successPoly (nat × nat) (7,8))).
 
 
 
 
 
-Definition clData''' := 
-[([], tP <%1%> (tVar "a"), <%prod nat nat%>, tP <%3%> (tS (tVar "a")), <%prod nat nat%>, ("rel28Base")); 
-
-([("rel28", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b1") (tVar "b3"), <%prod nat nat%>); ("rel29", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b4") (tVar "b2"), <%prod nat nat%>)],
- tP (tS (tVar "a1")) (tS (tVar "a2")), <%prod nat nat%>, tP (tS (tVar "b1")) (tS (tVar "b2")), <%prod nat nat%>, ("rel28Cons"));
- 
-([("rel28", tP (tVar "a") (tVar "b"), <%prod nat nat%>, tP (tVar "c") (tVar "d"), <%prod nat nat%>)], tP (tVar "a") (tVar "b"), <%prod nat nat%>, tP (tVar "c") (tVar "d"), <%prod nat nat%>, "rel29Cons")]. 
-
-Definition indData''' := 
-[("rel28", <%prod nat nat%>, <%prod nat nat%>, [("rel28Base", []); ("rel28Cons", ["rel28"; "rel29"])]); 
-  ("rel29", <%prod nat nat%>, <%prod nat nat%>, [("rel29Cons",["rel28"])])]. 
-
-MetaRocq Run (animateInductivePredicate rel28 "rel28" clData''' indData''' 50).
-
-Compute (rel28AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
 
 
 
 
-Compute (rel18AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
-
-
-
-
-Lemma testMode : true -> rel28 6 8 6 7. Admitted.
 
 
 
@@ -3822,6 +3846,33 @@ Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5; 6], 2))).
 
 Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5], 2))).
 
+*)
+(*
+Definition clData''' := 
+[([], tP <%1%> (tVar "a"), <%prod nat nat%>, tP <%3%> (tS (tVar "a")), <%prod nat nat%>, ("rel28Base")); 
+
+([("rel28", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b1") (tVar "b3"), <%prod nat nat%>); ("rel29", tP (tVar "a1") (tVar "a2"), <%prod nat nat%> , tP (tVar "b4") (tVar "b2"), <%prod nat nat%>)],
+ tP (tS (tVar "a1")) (tS (tVar "a2")), <%prod nat nat%>, tP (tS (tVar "b1")) (tS (tVar "b2")), <%prod nat nat%>, ("rel28Cons"));
+ 
+([("rel28", tP (tVar "a") (tVar "b"), <%prod nat nat%>, tP (tVar "c") (tVar "d"), <%prod nat nat%>)], tP (tVar "a") (tVar "b"), <%prod nat nat%>, tP (tVar "c") (tVar "d"), <%prod nat nat%>, "rel29Cons")]. 
+
+Definition indData''' := 
+[("rel28", <%prod nat nat%>, <%prod nat nat%>, [("rel28Base", []); ("rel28Cons", ["rel28"; "rel29"])]); 
+  ("rel29", <%prod nat nat%>, <%prod nat nat%>, [("rel29Cons",["rel28"])])]. 
+
+MetaRocq Run (animateInductivePredicate rel28 "rel28" clData''' indData''' 50).
+
+Compute (rel28AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
+
+
+
+
+Compute (rel18AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
+
+
+
+
+Lemma testMode : true -> rel28 6 8 6 7. Admitted.
 *)
 
 
