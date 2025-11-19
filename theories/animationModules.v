@@ -1944,13 +1944,22 @@ tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) x ;; ret t
                      
 
 
+Definition orientEquality (t : term) (orientation : nat) : term :=
+ match t with
+ | tApp <%eq%> [typeVar; t1; t2] => match orientation with
+                                             | 0 => tApp <%eq%> [typeVar; t1; t2]
+                                             | S m => tApp <%eq%> [typeVar; t2; t1]
+                                             end
+ | _ => t
+ end.                                                           
 
 
 
 
-
-Definition extractPatMatBinders5 {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
-t <- general.animate2 kn ;;
+Definition extractPatMatBinders5 {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
+t' <- general.animate2 kn ;;
+let t'' := orientEquality t' orientation in
+t <- tmEval all t'' ;;
 match t with
  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
                       tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (mkProdTmVars inputData) (mkProdTypeVars inputData) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
@@ -2050,10 +2059,112 @@ match t with
  | _ => tmFail "incorrect inductive shape" 
 end ;; tmMsg "done".  
 
-MetaRocq Run (extractPatMatBinders5 <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
+MetaRocq Run (extractPatMatBinders5 <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 0 50).
 
 Print tlRelAnimated.
 
+Definition extractPatMatBinders6 {A : Type} (kn : kername) (induct : A) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term)  (orientation : nat) (fuel : nat) : TemplateMonad unit :=
+t' <- general.animate2 kn ;;
+let t'' := orientEquality t' orientation in
+t <- tmEval all t'' ;;
+match t with
+ | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
+                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      (*
+                      gIn <- tmUnquote tIn ;;
+                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+                      gOut <- tmUnquote tOut ;;
+                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+                      
+                       
+                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')    
+                     
+                      *)
+                      
+                     
+                     
+                     
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in  
+                      u'' <- tmEval all u ;;
+                      (*tmPrint u';; *)
+                     
+                      u' <- DB.deBruijn u ;;
+                     (*
+                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      (*
+                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+                      (*
+                      tmPrint f
+                      *) 
+                      (*
+                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
+                     *)
+                     tmDefinition (String.append (snd kn) "Animated")  (f)  
+                     *)
+                     *)
+                     f <- tmUnquote u';;
+                     tmPrint f ;;  
+                     (* tmDefinition (String.append (snd kn) "Animated")  (f) 
+                     *)
+                     
+                     tmEval hnf (my_projT2 f) >>=
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
+                     
+ 
+ 
+ | tApp <%eq%> [typeVar; patMatTerm; tVar str] => 
+                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      (*
+                      gIn <- tmUnquote tIn ;;
+                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+                      gOut <- tmUnquote tOut ;;
+                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+                      
+                       
+                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')    
+                     
+                      *)
+                      
+                     
+                     
+                     
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in  
+                      u'' <- tmEval all u ;;
+                      (*tmPrint u';; *)
+                     
+                      u' <- DB.deBruijn u ;;
+                     (*
+                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      (*
+                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+                      (*
+                      tmPrint f
+                      *) 
+                      (*
+                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
+                     *)
+                     tmDefinition (String.append (snd kn) "Animated")  (f)  
+                     *)
+                     *)
+                     f <- tmUnquote u';;
+                     tmPrint f ;;  
+                     (* tmDefinition (String.append (snd kn) "Animated")  (f) 
+                     *)
+                     
+                     tmEval hnf (my_projT2 f) >>=
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
+                     
+                     
+ 
+
+ | _ => tmFail "incorrect inductive shape" 
+end ;; tmMsg "done".  
 
 
           
@@ -2429,12 +2540,15 @@ Check mkClauseInfo.
 
 Search (forall A : Type, list (list A) -> list A).
 *)
+Search (string -> string -> string).
 Definition mkClData' (kn : kername) (ln : list (list nat × list nat)) :=
 mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
 let inOutTps := getInOutTps ln lib in
 myData <- getData lib ln nmCxt inOutTps ;;
+myData' <- tmEval all myData;;
+tmDefinition (String.append (snd kn) "myData'") myData' ;;
 let ls' := getInOutTps ln lib in 
 let ls'' := appendIndex ln ls' in
 ls <- tmEval all ls'' ;;
@@ -2464,21 +2578,80 @@ Compute clInf.
 
 
 
+Definition tmHd {A : Type} (lst : list A) : (TemplateMonad A) :=
+ match lst with
+  | h :: rest => tmReturn h
+  | _ => tmFail "no head of empty list"
+  end.
 
+Parameter datHdDef : (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term) × string).
+Definition extractPatMatBinders7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
+ d <- mkClData' kn mode ;;
+ let elt := hd datHdDef d in 
+ let inputTm := snd (fst (fst (fst (fst elt)))) in
+ let inputTp := snd ((fst (fst (fst elt)))) in
+ let outputTm := snd (((fst (fst elt)))) in
+ let outputTp := snd (((fst (elt)))) in 
+ extractPatMatBinders6 (kn) (induct) (inputTm) (inputTp) (outputTm) (outputTp)  (orientation) (fuel).
 
-
+ 
 
 (** Examples  _______________ **)
-Inductive tl1Rel2 : ((list nat) × nat) -> (nat × nat) -> Prop :=
- | tl1RelCons2: forall (a : list nat) (b c d : nat),  [c ; d] = ((fun x y => x :: y) b a) -> tl1Rel2 (a, b) (c, d).
+Inductive tl1Rel2 : (list nat) -> nat -> nat -> nat -> Prop :=
+ | tl1RelCons2: forall (a : list nat) (c b d : nat), ((fun x y => x :: y) b a) = [c ; d] -> tl1Rel2 a c (S d) (S b).
 
-MetaRocq Run (extractPatMatBinders5 <? tl1Rel2 ?> tl1Rel2 [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 50).
+MetaRocq Run (extractPatMatBinders7 <? tl1Rel2 ?> tl1Rel2 [([3;0],[1;2])] 1 50).
 
+Compute tl1Rel2myData'.
+Definition getIndRHSVar'' (lst : list (string × term)) : list term :=
+ match lst with
+  | [] => []
+  | h :: t => match snd h with
+               | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1'  (tApp t1 lst')  => lst'
+             
+               | _ => []
+              end 
+
+ end.
+Definition getIndRHSVar0 (lst : list (((string × term) × term) × list (string × term))) : list (string × term) :=
+ match lst with 
+  | [] => []
+  | h :: t =>  snd h 
+              
+ end. 
+
+Check concat.
+Check nth.
+ 
+ 
+Fixpoint getIndRHSVar3 (t : term) : list string :=
+match t with
+ | tVar str => [str]
+ | tApp fn lst => concat (map getIndRHSVar3 lst)
+ | _ => []
+end.
+
+Definition getIndRHSVar4 (lst : list term) : list string :=
+concat (map getIndRHSVar3 lst). 
+
+Fixpoint getIndRHSVar (lst : list (((string × term) × term) × list (string × term))) (ln : list nat) : list string :=
+match ln with
+ | [] => []
+ | h :: t => (nth h (getIndRHSVar4 (getIndRHSVar'' (getIndRHSVar0 lst))) "defaultVar") :: getIndRHSVar lst t
+end. 
+
+  
+ 
+                  
+
+Compute (tl1Rel2Animated 5 (successPoly (prod nat (list nat) ) ( 3, [1]))).
+
+Compute ((getIndRHSVar tl1Rel2myData' [3;0])).
 
 Inductive tlRel3 : nat -> (list nat) -> nat -> nat -> Prop :=
  | tlRelCons3: forall (a : list nat) (b c d : nat),  [b; c ; d] = a -> tlRel3 b a c d.
 
-MetaRocq Run (extractPatMatBinders5 <? tlRel3 ?> tlRel3 [("a", <%list nat%>)] [("b", <%nat%>); ("c", <%nat%>); ("d", <%nat%>)] 50).
+MetaRocq Run (extractPatMatBinders7 <? tlRel3 ?> tlRel3 [([1],[0;2;3])] 0 50).
 
 
 
@@ -2487,7 +2660,7 @@ MetaRocq Run (extractPatMatBinders5 <? tlRel3 ?> tlRel3 [("a", <%list nat%>)] [(
 
 Inductive rel28: nat -> nat -> nat -> nat -> Prop :=
  | rel28Base : forall a, rel28 1 3 a (S a) 
- | rel28Cons : forall a1 a2 b1 b2 b3 b4, rel28 a1 b1 a2 b3 /\ rel29 a1 a2 b4 b2 -> rel28 (S a1) (S b1) (S a2) (S b2)
+ | rel28Cons : forall a1 a2 b1 b2 b3 b4,  a2 =a2' /\ b3 = b3' /\ rel29 a1 b1 (a2') (b3') /\ rel28 a1 b1 a2 b3 /\ rel29 a1 a2 b4 b2 -> rel28 (S a1) (S b1) (S a2) (S b2)
 with rel29: nat -> nat -> nat -> nat -> Prop := 
  | rel29Cons : forall a b c d, rel28 a c b d  -> rel29 a b c d. *)
 
@@ -2802,26 +2975,26 @@ Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVa
   end.
 
 
-Definition constrRetBodylst (outputVars : list (string × term)) : term :=
- tApp <% @Some %> [mkProdTypeVars outputVars; mkProdTmVars outputVars].                                                 
+Definition constrRetBodylst (outputTm : term) (outputTp : term) : term :=
+ tApp <% @Some %> [outputTp; outputTm].                                                 
 
-Definition constrFnBody  (outputVars : list (string × term)) (letBind : term -> term) (guardCon : term) : term :=
+Definition constrFnBody  (outputTm : term) (outputTp : term) (letBind : term -> term) (guardCon : term) : term :=
  (letBind (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
                 ; ci_npar := 0; ci_relevance := Relevant |}
                {| puinst := []
                 ; pparams := []
                 ; pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}]
-                ; preturn := tApp <% @option %> [mkProdTypeVars outputVars]
+                ; preturn := tApp <% @option %> [outputTp]
                 |}
                 guardCon
                 [{| bcontext := []
                   ; bbody :=
                        
-                          (constrRetBodylst outputVars)
+                          (constrRetBodylst outputTm outputTp)
                    |};
                    {| bcontext := []
                     ; bbody :=
-                       tApp <% @None %> [mkProdTypeVars outputVars]
+                       tApp <% @None %> [outputTp]
                    |}])). 
 
 
@@ -2945,29 +3118,29 @@ fun k k' => match f k k' with
 
 
 
-Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputVars : list (string × term)) (outputVars : list (string × term)) (fuel : nat) : TemplateMonad unit :=
+Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (myData' : list (((string × term) × term) × list (string × term))) (inArgs : list nat) (fuel : nat) : TemplateMonad unit :=
   fooTerm <- general.animate2 kn ;;
   if checkBool (filterListConj fooTerm) then
-  (let postOut' := (constrFnBody outputVars
+  (let postOut' := (constrFnBody outputTm outputTp
     (animateListConj
-       (getListConjLetBind fooTerm) nil (map fst inputVars) fuel (fun t : term => t))
+       (getListConjLetBind fooTerm) nil (getIndRHSVar myData' inArgs) fuel (fun t : term => t))
     (animateOneConjGuardList (getListConjGuardCon fooTerm))) in 
     (*
     po' <- tmEval all postOut' ;;
     tmPrint po' ;;
     *)
     
-    let postOutType' := tApp <% @option %> [mkProdTypeVars outputVars] in 
+    let postOutType' := tApp <% @option %> [outputTp] in 
     (*
     poT' <- tmEval all postOutType' ;;
     tmPrint poT' ;;
     *)
-    let postInType' := mkProdTypeVars inputVars in
+    let postInType' := inputTp in
     (*
     piT' <- tmEval all postInType' ;;
     tmPrint piT' ;;
     *)
-    let postIn' := mkProdTmVars inputVars in 
+    let postIn' := inputTm in 
     (*
     pi' <- tmEval all postIn' ;;
     tmPrint pi' ;;
@@ -2990,24 +3163,46 @@ Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputVars : l
       (*
       tmPrint t0 ;;
       *)
-     let t1 := (tApp <%optionToOutcome%> [postInType'; mkProdTypeVars outputVars; t0]) in 
+     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
      t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
      
      f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
 
+Definition genFunAnimateEq7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (fuel : nat) : TemplateMonad unit :=
+ d <- mkClData' kn mode ;;
+ mut <- tmQuoteInductive kn ;;
+let lib := ind_bodies mut in
+let nmCxt := genCxt lib in
+let inOutTps := getInOutTps mode lib in
+myData <- getData lib mode nmCxt inOutTps ;;
+myData' <- tmEval all myData;;
+ let elt := hd datHdDef d in 
+ let inputTm := snd (fst (fst (fst (fst elt)))) in
+ let inputTp := snd ((fst (fst (fst elt)))) in
+ let outputTm := snd (((fst (fst elt)))) in
+ let outputTp := snd (((fst (elt)))) in 
+(* 
+tmPrint inputTm.
+*) 
+ match mode with
+  | [] => tmFail "no mode info"
+  | h :: t => genFunAnimateEq (induct) (kn) (inputTm) (inputTp)  (outputTm) (outputTp) (myData') ((fst h)) (fuel)
+ end. 
+ 
+ 
 (** Examples ___________**)
 
 Parameter (g1 : nat -> nat) (g2 : nat -> nat) (g3 : nat -> nat -> nat) (g4 : nat -> nat -> nat -> nat -> nat).
 
-Inductive foo' : (prod bool nat) -> (prod bool nat) -> Prop :=
- | cstr' : forall (b  d : bool) (e f : nat), d = b /\ e =  f /\ g1 e = g2 f -> foo' (b,f) (d,e).
+Inductive foo' : bool -> nat -> bool -> nat -> Prop :=
+ | cstr' : forall (b  d : bool) (e f : nat), d = b /\ e =  f /\ g1 e = g2 f -> foo' b (S f) d (S e).
 
 
 
-MetaRocq Run (animateEqual.genFunAnimateEq foo' <? foo' ?> [("b", <%bool%>) ; ("f", <%nat%>)] [("d", <%bool%>); ("e", <%nat%>)] 50).
-
+MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo' ?> foo' [([0;1],[2;3])] 50).
+Compute foo'myData'. 
 
 Print foo'Animated.
 
@@ -3034,9 +3229,14 @@ Inductive foo''' : bool -> bool -> nat -> nat -> Prop :=
 
 
 MetaRocq Run (animateEqual.genFunAnimateEq foo''' <? foo''' ?> [("b", <%bool%>) ; ("f", <%nat%>)] [("d", <%bool%>); ("e", <%nat%>)] 50).
+(*
+MetaRocq Run (mut <- tmQuoteInductive <? foo''' ?> ;; tmDefinition "mutFoo" mut).
+MetaRocq Run (data <- getData' <? foo''' ?> [([0;2],[1;3])] ;; tmDefinition "dataFoo'''" data).
+Compute dataFoo'''.
+Parameter oib'' : one_inductive_body.
+Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 
-
-
+*)
 End animateEqual.
 
 
