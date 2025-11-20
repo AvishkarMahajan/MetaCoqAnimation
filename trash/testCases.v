@@ -32,20 +32,17 @@ Inductive foo : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr : forall a b c d e, (e = b /\ d = c /\ c = (g3 a e) /\ g1 d = g2 a) -> foo a b c d e.
  
 
-MetaRocq Run (animateEqual.genFunAnimateEq foo <? foo ?> [("a", <%nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>); ("e", <%nat%>)] 30).
 
 
 Inductive foo' : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr' : forall a b c d e, (g1 d = g2 a /\ d = c /\ c = (g3 a e) /\ e = b ) -> foo' a b c d e.
  
-MetaRocq Run (animateEqual.animate'' <? foo' ?> foo' ["a" ; "b"] ["c"; "d";"e"] 30).
 
 
 Inductive foo'' : nat -> nat -> nat -> nat -> nat -> Prop :=
  | cstr'' : forall a b c d e, (g1 d = g2 a /\ d = c /\ c = (g3 a e) /\ b = e ) -> foo'' a b c d e.
  
 
-MetaRocq Run (animateEqual.animate'' <? foo'' ?>  foo'' ["a" ; "b"] ["c"; "d";"e"] 30).
 
 
 
@@ -54,7 +51,6 @@ Inductive foo4 : nat -> nat -> nat -> nat -> nat -> Prop :=
  
 
 
-MetaRocq Run (animateEqual.justAnimate <? foo4 ?> ["a" ; "b"] ["c"; "d";"e"] "foo4Fn" 100). 
 
 
 
@@ -78,7 +74,6 @@ Inductive foo5 : nat -> nat -> Prop :=
  | cstr5 : forall a b, a = b  -> foo5 a b.
  
 
-MetaRocq Run (animateEqual.justAnimate <? foo5 ?> ["a"] ["b"] "foo5Fn" 100).
 
 (* Print foo5Fn. *)
 
@@ -92,7 +87,6 @@ Inductive foo6 : nat -> Prop :=
  | cstr6 : forall a, 6 = a  -> foo6 a.
  
 
-MetaRocq Run (animateEqual.justAnimate <? foo6 ?> [] ["a"] "foo6Fn" 100).
 
 Example testfoo6 : foo6Fn  = Some [6]. 
 Proof. reflexivity. Qed. 
@@ -100,7 +94,6 @@ Proof. reflexivity. Qed.
 Inductive foo7 : nat -> Prop :=
  | cstr7 : forall a, a = 6  -> foo7 a.
 
-MetaRocq Run (animateEqual.justAnimate <? foo7 ?> [] ["a"] "foo7Fn" 100). 
 
 Example testfoo7 : foo7Fn  = Some [6]. 
 Proof. reflexivity. Qed. 
@@ -108,9 +101,7 @@ Proof. reflexivity. Qed.
 Inductive foo8 : nat -> nat -> Prop :=
  | cstr8 : forall a b, g1 a = b  -> foo8 a b.
 
-MetaRocq Run (animateEqual.justAnimate <? foo8 ?> ["a"] ["b"] "foo8Fn" 100). 
 
-Print foo8Fn.
 
 Example testfoo8 : foo8Fn 1  = Some [g1 1]. 
 Proof. reflexivity. Qed. 
@@ -139,7 +130,6 @@ MetaRocq Run (animateEqual.justAnimate <? foo11 ?> ["a" ] [ ] "foo10Fn" 25).
 Inductive tuple : nat -> nat -> (prod nat nat) -> Prop :=
  | tupleCon : forall (a : nat), forall (b : nat), forall (y : (prod nat nat)), (a, S b) = y -> tuple a b y. (*RHS of equality not v imp*)
  
-MetaRocq Run (typeConstrPatMatch.justAnimatePatMat tuple ["a" ; "b"] "tupleFn" 25).
 
 (* Print tupleFn. *)
 
@@ -160,7 +150,6 @@ Inductive singleton : nat -> list nat -> Prop :=
  | singletonCon : forall (a : nat), forall (y : list nat), (a :: [])  = y -> singleton a  y.  (*RHS of equality not v imp*)
  
 
-MetaRocq Run (typeConstrPatMatch.justAnimatePatMat singleton ["a"] "singletonFn" 25).
 
 Example testsingletonFn : singletonFn [4] = Some [4].
 Proof. reflexivity. Qed.
