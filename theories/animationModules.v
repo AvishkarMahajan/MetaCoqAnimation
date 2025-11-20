@@ -1624,20 +1624,18 @@ tConst
          (MPfile ["animationModules"; "Animation"], s)
          [].
  
+Definition quoteConst' (kn : kername) (nm : string) :=
+tConst (fst kn, nm) [].
 
-Fixpoint applyTopFn (clauseData : list (string × (list string))) : list term :=
+Fixpoint applyTopFn (kn : kername) (clauseData : list (string × (list string))) : list term :=
 match clauseData with
 | [] => []
 | (postConCons, preConInd) :: t => match preConInd with
-                                   | [] => (quoteConst (String.append postConCons "Animated")) :: applyTopFn t
-                                   | l => tApp (quoteConst (String.append postConCons "Animated")) (map (fun nm => (tVar (String.append nm "AnimatedTopFn"))) l) :: applyTopFn t
+                                   | [] => (quoteConst' kn (String.append postConCons "Animated")) :: applyTopFn kn t
+                                   | l => tApp (quoteConst' kn (String.append postConCons "Animated")) (map (fun nm => (tVar (String.append nm "AnimatedTopFn"))) l) :: applyTopFn kn t
                                    end
 end.
 
-Compute <%applyTopFn%>.
-
-MetaRocq Run (f <- tmUnquote (quoteConst "applyTopFn");; tmPrint f).
-                     
 
 
 
@@ -1708,7 +1706,7 @@ Print tPro.
 Compute <% (nat -> prod nat nat -> prod nat nat) %>.
 
 
-Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) : def term :=
+Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) (kn : kername) : def term :=
   
 {|
      dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
@@ -1743,7 +1741,7 @@ Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (
                 |};
                 {|
                   bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tApp (tVar "dispatchOutcomePolyExt") [inputType ; outputType; (mkLstTm' (applyTopFn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                  bbody := tApp (tVar "dispatchOutcomePolyExt") [inputType ; outputType; (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
          <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
         (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) ); tVar "remFuel"; tVar "input"]  
                                     
@@ -1756,10 +1754,10 @@ Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
  tFix ls j.
  
-Fixpoint mkAllIndTop' (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) : list (def term) :=  
+Fixpoint mkAllIndTop' (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) (kn : kername) : list (def term) :=  
  match inductData with 
   | [] => []
-  | h :: t => (mkOneIndTop (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h)) :: mkAllIndTop' t
+  | h :: t => (mkOneIndTop (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h) kn) :: mkAllIndTop' t kn
  end.
 Definition addToRecBlk (recBlock : term) (t : def term) := 
  match recBlock with
@@ -1791,15 +1789,15 @@ MetaRocq Run (dt' <- DB.undeBruijn dt ;; tmDefinition "dispatchExtTm'" dt').
 Definition dispatchExtTm := hd default (inspectFix dispatchExtTm'). 
 
  
-Definition mkAllIndTop (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) : list (def term) := 
-app (mkAllIndTop' inductData) [dispatchExtTm]. 
+Definition mkAllIndTop (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) (kn : kername) : list (def term) := 
+app (mkAllIndTop' inductData kn) [dispatchExtTm]. 
 Print reductionStrategy.
 
 Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : string) (clauseData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
                       (term)) × (term)) × (term)) × (term)) × (string)))) (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) 
-                        (fuel : nat) : TemplateMonad unit :=
+                        (kn : kername) (fuel : nat) : TemplateMonad unit :=
           animateAllClauses topInduct clauseData fuel ;;
-          let u := (mkrecFn (mkAllIndTop (inductData)) 0)  in
+          let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
           u' <- tmEval all u ;;  
           (* tmPrint u' ;; *)
           
@@ -1864,8 +1862,7 @@ Search (string -> string -> string).
 
 Compute <? tlRel ?>.
 
-Definition quoteConst' (kn : kername) (nm : string) :=
-tConst (fst kn, nm) [].
+
 
 Definition composeOutcomePoly (A : Type) (B : Type) (C : Type) (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C) 
                                    : (nat -> outcomePoly A -> outcomePoly C) :=
@@ -2204,7 +2201,7 @@ Definition indData :=
 [("rel8", <%prod nat nat%>, <%prod nat nat%>, [("rel8Base", []); ("rel8Cons", ["rel8"; "rel9"])]); 
   ("rel9", <%prod nat nat%>, <%prod nat nat%>, [("rel9Cons",["rel8"])])]. 
 
-MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData 50).
+MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData <? rel8 ?> 50).
 Print rel8AnimatedTopFn.
 
 
@@ -2566,7 +2563,7 @@ clData <- mkClData' kn modelst ;;
 clData' <- tmEval all clData ;;
 indData <- mkIndData' kn modelst ;;
 indData' <- tmEval all indData ;;
-animateInductivePredicate induct nm clData' indData' fuel.
+animateInductivePredicate induct nm clData' indData' kn fuel.
 (*
 MetaRocq Run (clData <- mkClData' <? rel8 ?> [0;0] ;; tmDefinition "clInf" clData).
 
@@ -2597,12 +2594,8 @@ Definition extractPatMatBinders7 {A : Type} (kn : kername) (induct : A) (mode :l
  
 
 (** Examples  _______________ **)
-Inductive tl1Rel2 : (list nat) -> nat -> nat -> nat -> Prop :=
- | tl1RelCons2: forall (a : list nat) (c b d : nat), ((fun x y => x :: y) b a) = [c ; d] -> tl1Rel2 a c (S d) (S b).
 
-MetaRocq Run (extractPatMatBinders7 <? tl1Rel2 ?> tl1Rel2 [([3;0],[1;2])] 1 50).
 
-Compute tl1Rel2myData'.
 Definition getIndRHSVar'' (lst : list (string × term)) : list term :=
  match lst with
   | [] => []
@@ -2643,36 +2636,6 @@ end.
   
  
                   
-
-Compute (tl1Rel2Animated 5 (successPoly (prod nat (list nat) ) ( 3, [1]))).
-
-Compute ((getIndRHSVar tl1Rel2myData' [3;0])).
-
-Inductive tlRel3 : nat -> (list nat) -> nat -> nat -> Prop :=
- | tlRelCons3: forall (a : list nat) (b c d : nat),  [b; c ; d] = a -> tlRel3 b a c d.
-
-MetaRocq Run (extractPatMatBinders7 <? tlRel3 ?> tlRel3 [([1],[0;2;3])] 0 50).
-
-
-
-       
-(* Mode : rel28 : [0 ; 2] input, [1; 3] output, rel29 : [0;1] input, [2;3] output 
-
-Inductive rel28: nat -> nat -> nat -> nat -> Prop :=
- | rel28Base : forall a, rel28 1 3 a (S a) 
- | rel28Cons : forall a1 a2 b1 b2 b3 b4,  a2 =a2' /\ b3 = b3' /\ rel29 a1 b1 (a2') (b3') /\ rel28 a1 b1 a2 b3 /\ rel29 a1 a2 b4 b2 -> rel28 (S a1) (S b1) (S a2) (S b2)
-with rel29: nat -> nat -> nat -> nat -> Prop := 
- | rel29Cons : forall a b c d, rel28 a c b d  -> rel29 a b c d. *)
-
-
-
-MetaRocq Run (animateInductivePredicate' rel28 "rel28" <? rel28 ?> [([0;2], [1;3]) ; ([0;1], [2;3])] 50).
-
-
-
-Compute (rel28AnimatedTopFn 100 (successPoly (nat × nat) (7,8))).
-
-
 
 
 
@@ -3194,41 +3157,6 @@ tmPrint inputTm.
  
 (** Examples ___________**)
 
-Parameter (g1 : nat -> nat) (g2 : nat -> nat) (g3 : nat -> nat -> nat) (g4 : nat -> nat -> nat -> nat -> nat).
-
-Inductive foo' : bool -> nat -> bool -> nat -> Prop :=
- | cstr' : forall (b  d : bool) (e f : nat), d = b /\ e =  f /\ g1 e = g2 f -> foo' b (S f) d (S e).
-
-
-
-MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo' ?> foo' [([0;1],[2;3])] 50).
-Compute foo'myData'. 
-
-Print foo'Animated.
-
-
-Inductive foo'lst : (prod (list nat) (list nat)) -> Prop :=
- | cstr'lst : forall (a  b : list nat), (fun l => tl l) a = (fun l => tl (tl l)) b -> foo'lst (a,b).
-
-MetaRocq Run (animateEqual.genFunAnimateEq foo'lst <? foo'lst ?> [("a", <%list nat%>) ; ("b", <%list nat%>)] [] 50).
-
-Print foo'lstAnimated.
-Compute (foo'lstAnimated 5 (successPoly (list nat × list nat) ([1;2], [1;2]))).
-Compute (foo'lstAnimated 5 (successPoly (list nat × list nat) ([1;2], [3;1;2]))).
-
-
-
-Inductive dummyRel : (prod bool bool) -> Prop :=
- | cstrDummy : forall (j1  j2 : bool), j1 = j2 -> dummyRel (j1, j2). 
-
-
-
-Inductive foo''' : bool -> bool -> nat -> nat -> Prop :=
- | cstr''' : forall (b  d : bool) (e f : nat), d = b /\ e = f /\ g1 e = g2 f -> foo''' b d f e.
-
-
-
-MetaRocq Run (animateEqual.genFunAnimateEq foo''' <? foo''' ?> [("b", <%bool%>) ; ("f", <%nat%>)] [("d", <%bool%>); ("e", <%nat%>)] 50).
 (*
 MetaRocq Run (mut <- tmQuoteInductive <? foo''' ?> ;; tmDefinition "mutFoo" mut).
 MetaRocq Run (data <- getData' <? foo''' ?> [([0;2],[1;3])] ;; tmDefinition "dataFoo'''" data).
