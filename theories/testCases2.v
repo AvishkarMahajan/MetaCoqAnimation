@@ -12,17 +12,21 @@ Require Import PeanoNat.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-Inductive tl1Rel2 : (list nat) -> nat -> nat -> nat -> Prop :=
- | tl1RelCons2: forall (a : list nat) (c b d : nat), ((fun x y => x :: y) b a) = [c ; d] -> tl1Rel2 a c (S d) (S b).
+Inductive tl1Rel2 : (list nat) -> nat -> nat -> nat -> bool -> Prop :=
+ | tl1RelCons2: forall (a : list nat) (c b d : nat), ((fun x y => x :: y) b a) = [c ; d] -> tl1Rel2 a c (S d) (S b) true.
 
 MetaRocq Run (extractPatMatBinders7 <? tl1Rel2 ?> tl1Rel2 [([3;0],[1;2])] 1 50).
 
+Compute (tl1Rel2Animated 25 (successPoly (nat × list nat) (0, [5]))).
 
 
-Inductive tlRel3 : nat -> (list nat) -> nat -> nat -> Prop :=
- | tlRelCons3: forall (a : list nat) (b c d : nat),  [b; c ; d] = a -> tlRel3 b a c d.
+Inductive tlRel3 : list nat -> (nat) -> Prop :=
+ | tlRelCons3: forall (a : nat) (b : nat),  b = S a -> tlRel3  [b] a.
 
-MetaRocq Run (extractPatMatBinders7 <? tlRel3 ?> tlRel3 [([1],[0;2;3])] 0 50).
+MetaRocq Run (extractPatMatBinders7 <? tlRel3 ?> tlRel3 [([0],[1])] 1 50).
+
+Compute tlRel3Animated 5 (successPoly (list nat) []).
+
 
 
 
@@ -84,7 +88,7 @@ Example tlRel2Ex : tl1Rel2Animated 5 (successPoly (nat × list nat) (2, [5])) = 
 Proof. reflexivity. Qed.
 
 Example tlRel2Ex2 : tl1Rel2Animated 5 (successPoly (nat × list nat) (0, [5])) = (noMatchPoly (nat × nat)).
-Proof. Admitted.
+Proof. reflexivity. Qed.
 
 Example tlRel2Ex3 : tl1Rel2Animated 5 (successPoly (nat × list nat) (1, [5;6])) = (noMatchPoly (nat × nat)).
 Proof. reflexivity. Qed.

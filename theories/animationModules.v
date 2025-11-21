@@ -1869,7 +1869,7 @@ Definition composeOutcomePoly (A : Type) (B : Type) (C : Type) (f : nat -> outco
  fun fuel input => match f fuel input with
                     | successPoly res => f' fuel  (successPoly B res)
                     | fuelErrorPoly => (fuelErrorPoly C)
-                    | _ =>  (fuelErrorPoly C)
+                    | _ =>  (noMatchPoly C)
                    end.  
 Compute <%composeOutcomePoly%>.   
 Print tmDefinition.                             
@@ -1929,7 +1929,7 @@ Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> o
  fun fuel input => match f fuel input with
                     | successPoly res => f' fuel  (successPoly B res)
                     | fuelErrorPoly => (fuelErrorPoly C)
-                    | _ =>  (fuelErrorPoly C)
+                    | _ =>  (noMatchPoly C)
                    end.  
 Print tmDefinition.
 Compute (Some hnf).
