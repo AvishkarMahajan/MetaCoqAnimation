@@ -25,7 +25,7 @@ Inductive tlRel3 : list nat -> (nat) -> Prop :=
 
 MetaRocq Run (extractPatMatBinders7 <? tlRel3 ?> tlRel3 [([0],[1])] 1 50).
 
-Compute tlRel3Animated 5 (successPoly (list nat) []).
+Compute tlRel3Animated 5 (successPoly (list nat) [2]).
 
 
 
@@ -34,7 +34,7 @@ Compute tlRel3Animated 5 (successPoly (list nat) []).
 
 Inductive rel38: nat -> nat -> nat -> nat -> Prop :=
  | rel38Base : forall a, rel38 1 3 a (S a) 
- | rel38Cons : forall a1 a2 b1 b2 b3 b4, rel38 a1 b1 a2 b3 /\ rel39 a1 a2 b4 b2 -> rel38 (S a1) (S b1) (S a2) (S b2)
+ | rel38Cons : forall a1 a2 b1 b2, rel38 a1 b1 a2 b2 /\ rel39 a1 a2 b1 b2 -> rel38 (S a1) (S b1) (S a2) (S b2)
 with rel39: nat -> nat -> nat -> nat -> Prop := 
  | rel39Cons : forall a b c d, rel38 a c b d  -> rel39 a b c d.
 
@@ -75,7 +75,8 @@ MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo'lst ?> foo'lst [([0;1],[])] 5
 
 
 
-Compute tl1Rel2Animated 5 (successPoly (nat × list nat) (0, [5])).
+Compute rel38AnimatedTopFn 20 (successPoly (nat × nat) (5, 2)).
+
 
 
 Example foo1Ex : foo'lstAnimated 5 (successPoly (list nat × list nat) ([1;2], [1;2])) = noMatchPoly bool.
@@ -102,6 +103,27 @@ Proof. reflexivity. Qed.
 Example foo''Ex : foo''Animated 5 (successPoly (bool × nat) (true, 1)) = (noMatchPoly (bool × nat)).
 Proof. reflexivity. Qed.
 
-  
+Example rel38Ex : rel38AnimatedTopFn 10 (successPoly (nat × nat) (2, 4)) = (successPoly (nat × nat) (4, 5)).
+Proof. reflexivity. Qed.
+
+Example rel38Ex2 : rel38AnimatedTopFn 20 (successPoly (nat × nat) (5, 2)) = (noMatchPoly (nat × nat)).
+Proof. reflexivity. Qed.
+
+Example foo'lstEx : foo'lstAnimated 9 (successPoly (list nat × list nat) ([3;0], [0;3;0])) = (successPoly (bool) true).
+Proof. reflexivity. Qed.
+
+Example foo'lstEx2 : foo'lstAnimated 9 (successPoly (list nat × list nat) ([3;0], [0;3;1])) = (noMatchPoly (bool)).
+Proof. reflexivity. Qed.
+
+Example tlRel3Ex : tlRel3Animated 5 (successPoly (list nat) [2]) = (successPoly nat 1).
+Proof. reflexivity. Qed.
+
+Example tlRel3Ex2 : tlRel3Animated 5 (successPoly (list nat) [0]) = (noMatchPoly nat).
+Proof. reflexivity. Qed.
+
+Example tlRel3Ex3 : tlRel3Animated 5 (successPoly (list nat) [1;1]) = (noMatchPoly nat).
+Proof. reflexivity. Qed.
+
+    
 
 
