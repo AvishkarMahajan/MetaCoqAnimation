@@ -60,6 +60,7 @@ Notation "<%and%>" := (tInd {| inductive_mind := <?and?>; inductive_ind := 0 |} 
 Notation "<%eq%>" := (tInd {| inductive_mind := <?eq?>; inductive_ind := 0 |} []).
 Notation "<%nat%>" := (tInd {| inductive_mind := <?nat?>; inductive_ind := 0 |} []).
 
+
 (* 
 Axiom functional_extensionality_dep : forall {A} {B : A -> Type},
   forall (f g : forall x : A, B x),
@@ -2648,6 +2649,9 @@ end.
 
 Module animateEqual.
 Compute <%list nat%>.
+Parameter y : nat.
+Parameter ys : list nat.
+Compute <% (y,ys) %>.
 Fixpoint eqLstNat (l1 : list nat) (l2 : list nat) : bool :=
  match l1 with
   | [] => match l2 with
@@ -2717,31 +2721,123 @@ Fixpoint isListSubStr (l1 l2 : list string) : bool :=
   end.
 
 
+Check @fst.
+(*
+Fixpoint splitBigConj (bigConj : term) : list term :=
+ | tApp <%and%> ls =>  concat (map splitBigConj ls)
+
+  | tApp <%eq%> [typeT; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2] ; t'] => (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']])  (getListConjLetBind (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]))  
+*)       
 (* Extracts list of conjuncts from big conjunction *)
 Fixpoint getListConjLetBind (bigConj : term) : list term := 
-  match bigConj with
-  | tApp <%and%> ls => concat (map getListConjLetBind ls)
+ 
+     match bigConj with
+     | tApp <%and%> ls => concat (map (getListConjLetBind) ls)
 
-  | tApp <%eq%> [typeT; tVar str1; tVar str2] => [tApp <% @eq %> [typeT; tVar str1; tVar str2]]
+   (*  | tApp <%eq%> [typeT; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2] ; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1'; tp2'; tm1'; tm2'] ] => app (getListConjLetBind (tApp <%eq%> [tp1; tm1; tm1']))  (getListConjLetBind (tApp <%eq%> [tp2; tm2; tm2']))  *)
+     
+   (*  | tApp <%eq%> [typeT; t'; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2]] => app (getListConjLetBind m (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']]))  (getListConjLetBind m (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]))  *)
+               
+     | tApp <%eq%> [typeT; tVar str1; tVar str2] => [tApp <% @eq %> [typeT; tVar str1; tVar str2]]
 
-  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] =>
+     | tApp <%eq%> [typeT; tVar str1; tApp fn lst] =>
       [tApp <%eq%> [typeT; tVar str1; tApp fn lst]]
   
-  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] =>
+     | tApp <%eq%> [typeT; tApp fn lst; tVar str1] =>
       [tApp <%eq%> [typeT; tApp fn lst; tVar str1]] 
       
-  | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>
+     | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>
       [tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst]]
   
-  | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] =>
-      [tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1]]    
+     | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] =>
+      [tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1]] 
+   
+    
          
 
   (*| tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]] =>
       [tApp <%eq%> [<%nat%>; tVar str1; tApp fn [tVar str2]]] *)
-  | _ => []
- end.
+     | _ => []
+     end.
 
+
+(*
+Fixpoint splitBigConj (fuel : nat) (bigConj : term) : list term :=
+ match fuel with 
+  | 0 => [bigConj]
+  | S m  => 
+     match bigConj with
+     | tApp <%and%> ls => concat (map (splitBigConj m) ls)
+
+    (* | tApp <%eq%> [typeT; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2] ; t'] => app (splitBigConj m (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']]))  (splitBigConj m (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]))  *)
+     
+     | tApp <%eq%> [typeT; t'; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2]] => app (getListConjLetBind m (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']]))  (getListConjLetBind m (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]))  
+               
+     | t => [t]
+     end
+ end.
+*) 
+(*
+Fixpoint andSplit (l : list term) : list term :=
+match l with
+ | [] => []
+ | (tApp <%and%> ls) :: rest => app ls (andSplit rest)
+ | ls' => ls'
+end.
+
+Fixpoint prodSplitL (l : list term) : list term :=
+ match l with
+  | [] => []
+  | tApp <%eq%> [typeT; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2] ; t'] :: rest =>  (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']]) ::  (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]) :: prodSplitL rest
+  | l' => l'
+end.
+
+Fixpoint prodSplitR (l : list term) : list term :=
+ match l with
+  | [] => []
+  | tApp <%eq%> [typeT; t'; tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])[tp1; tp2; tm1; tm2]] :: rest =>  (tApp <%eq%> [tp1; tm1; tApp <%@fst%> [tp1;tp2;t']]) ::  (tApp <%eq%> [tp2; tm2; tApp <%@snd%> [tp1;tp2;t']]) :: prodSplitR rest
+  | l' => l'
+end. 
+(*
+Fixpoint removeTaut (l : list term) : list term :=
+match l with
+| [] => []
+| tApp <%eq%> [typeT ; tVar str1 ; tVar str2]            
+   
+*)  
+*)
 (* extract list of conjuncts from big conjunction *)
 Fixpoint getListConjGuardCon (bigConj : term) : list term := 
   match bigConj with
@@ -2831,6 +2927,8 @@ Definition extractOrderedVars (t : term) : list string :=
 
 (* Instantiate partialLetFun with identity *)
 
+(* EDIT TO HANDLE CASE OF tuple of vars = blah.. *)
+
 Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : option (term -> term) :=
   match conj with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] =>
@@ -2863,7 +2961,67 @@ Definition animateOneConjSucc (conj : term) (partialLetfn : term -> term) : opti
   
   | _ => None
  end.
+
+Fixpoint animateOneConjSuccRec (conjs : list term) (partialLetfn : term -> term) : option (term -> term) :=
+ match conjs with
+  | [] => Some partialLetfn
+  | h :: t => match animateOneConjSucc h partialLetfn with
+               | Some partialLetfn' => animateOneConjSuccRec t partialLetfn' 
+               | _ => None
+              end 
+ end.
  
+
+Parameter noTerm : term.
+Check nth.
+(* return indicies of non Type args of typeCon and their types *)
+Definition returnConsArgs (typeCon : term) : TemplateMonad (list (prod nat term)). Admitted.
+
+(* return the list of functions that destruct a typeCon and return the ith argument *) 
+Definition returnDestructor (typeCon : term) (argIndex : list (nat)) : TemplateMonad (list term). Admitted.
+
+Definition reduceTypConOne (conj : term) (argIndex : list nat) (invFnRetType :  list term) (invFnTm : list term) : list term :=
+match conj with
+ | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => map (fun index => ((tApp <%eq%> [(nth index invFnRetType noTerm); tApp (nth index invFnTm noTerm) [t1] ; nth index lstArgs noTerm]))) argIndex
+ | t => [t]
+end.  
+
+Definition reduceTypCon' (conj : term) : TemplateMonad (list term) :=
+match conj with 
+ | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => argIndexTp <- returnConsArgs (tConstruct indInfo k lst) ;; 
+                                                                       let argIndex := map fst argIndexTp in
+                                                                       let invFnRetType := map snd argIndexTp in
+                                                                       invFnTm <- returnDestructor (tConstruct indInfo k lst) argIndex ;;
+                                                                       tmReturn (reduceTypConOne conj argIndex invFnRetType invFnTm)
+ | t => tmReturn [t]
+end. 
+
+Fixpoint reduceTypCon (conjs : list term)  : TemplateMonad (list term) :=
+match conjs with
+ | [] => tmReturn []
+ | h :: t => lsh <- reduceTypCon' h ;; lst <- reduceTypCon t ;; tmReturn (app lsh lst)
+end.                                                                    
+
+Fixpoint reduceTypeConIter' (conjs : list term) (fuel : nat) : TemplateMonad (list term) :=
+match fuel with
+ | 0 => tmReturn conjs
+ | S m => newConjs <- reduceTypCon conjs ;; reduceTypeConIter' newConjs m
+end.
+
+Definition reduceTypeConIter (conj : term) (fuel : nat) : TemplateMonad (list term) :=
+reduceTypeConIter' [conj] fuel.
+
+Fixpoint chkFullInv (conjs : list term) : TemplateMonad (list term) :=
+ match conjs with
+  | [] => tmReturn []
+  | h :: t => match h with
+               | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => tmFail "constructor not fully inverted"
+               | _ => rest <- chkFullInv t ;; tmReturn (h :: rest)
+              end  
+ end.
+ 
+
+  
 Definition flipConj (conj : term) : term :=
  match conj with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => tApp <%eq%> [typeT; tVar str2; tVar str1] 
@@ -2899,9 +3057,10 @@ vars should be known at this point in the computation *)
          ; tConstruct ind_type k lst]]              
   | _ => <% false %>
   end.
+(*Change this to add a recursive case for first inverting constructor application and then handling the resulting conjs normally *)
 
 Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : term -> term) : option (list string * (term -> term)) :=
-  if isListSubStr (tl (extractOrderedVars conj)) knownVar then
+   if isListSubStr (tl (extractOrderedVars conj)) knownVar then
   (let t' := animateOneConjSucc conj partialProg in
     match t' with
     | Some t'' => Some (app knownVar (extractOrderedVars conj), t'')
@@ -2915,6 +3074,77 @@ Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : 
            end) 
          else None).   
  
+
+
+Definition animateOneConjNew (conj : term) (knownVar : list string) (partialProg : term -> term) (fuel : nat) : TemplateMonad (option (list string * (term -> term))) :=
+  match conj with
+   | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => if isListSubStr (extractOrderedVars t1) knownVar then 
+                                                                           conjs <- reduceTypeConIter conj fuel ;; 
+                                                                           conjs' <- chkFullInv conjs;;
+                                                                           (let t' := animateOneConjSuccRec conjs' partialProg in
+                                                                            match t' with
+                                                                            | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars conj), t''))
+                                                                            | None => tmReturn (None)
+                                                                             end)
+                                                                           else 
+                                                                           match conj with
+                                                                            | (tApp <%eq%> [tp; tApp (tConstruct indInfo' k' lst') lstArgs' ; t1']) => if isListSubStr (extractOrderedVars t1') knownVar then 
+                                                                                                                                                   let conj' := (tApp <%eq%> [tp; t1'; tApp (tConstruct indInfo' k' lst') lstArgs']) in
+                                                                                                                                                   conjs <- reduceTypeConIter conj' fuel ;; 
+                                                                                                                                                   conjs' <- chkFullInv conjs;;
+                                                                                                                                                   (let t' := animateOneConjSuccRec conjs' partialProg in
+                                                                                                                                                    match t' with
+                                                                                                                                                    | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars conj), t''))
+                                                                                                                                                    | None => tmReturn (None)
+                                                                                                                                                    end) 
+                                                                                                                                                    else tmReturn None
+                                                                            | _ => tmReturn None
+                                                                           end                                                                          
+                                                                           
+                                                                             
+                                                                               
+(*   
+   
+   | (tApp <%eq%> [tp; tApp (tConstruct indInfo k lst) lstArgs; t1]) => if isListSubStr (extractOrderedVars t1) knownVar then 
+                                                                           let conj' := (tApp <%eq%> [tp; t1; tApp (tConstruct indInfo k lst) lstArgs]) in
+                                                                           conjs <- reduceTypeConIter conj' fuel ;; 
+                                                                           conjs' <- chkFullInv conjs;;
+                                                                           (let t' := animateOneConjSuccRec conjs' partialProg in
+                                                                            match t' with
+                                                                            | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars conj), t''))
+                                                                            | None => tmReturn (None)
+                                                                             end)
+                                                                           else 
+                                                                           match conj with
+                                                                            | (tApp <%eq%> [tp; t1'; tApp (tConstruct indInfo' k' lst') lstArgs' ]) => if isListSubStr (extractOrderedVars t1') knownVar then 
+                                                                                                                                                   conjs <- reduceTypeConIter conj fuel ;; 
+                                                                                                                                                   conjs' <- chkFullInv conjs;;
+                                                                                                                                                   (let t' := animateOneConjSuccRec conjs' partialProg in
+                                                                                                                                                    match t' with
+                                                                                                                                                    | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars conj), t''))
+                                                                                                                                                    | None => tmReturn (None)
+                                                                                                                                                    end) 
+                                                                                                                                                    else tmReturn None
+                                                                            | _ => tmReturn None
+                                                                           end                                                                          
+*)                                                        
+   
+   | _ => if isListSubStr (tl (extractOrderedVars conj)) knownVar then
+          (let t' := animateOneConjSucc conj partialProg in
+            match t' with
+            | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars conj), t''))
+            | None => tmReturn None
+            end)
+          else (if isListSubStr (tl (extractOrderedVars (flipConj conj))) knownVar then
+          (let t' := animateOneConjSucc (flipConj conj) partialProg in
+           match t' with
+            | Some t'' => tmReturn (Some (app knownVar (extractOrderedVars (flipConj conj)), t''))
+            | None => tmReturn (None)
+           end) 
+         else tmReturn None)   
+end.    
+  
+
 
 
 Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVar : list string)
@@ -3173,6 +3403,50 @@ End animateEqual.
 Search (_ -> _ -> {_=_}+{~_=_}).
 
 
+
+(* Integration of all animation pieces *)
+
+
+
+
+Inductive genRel : nat -> list nat -> nat -> nat -> Prop :=
+ | genRelcstr : forall (a b c d e : nat) (l: list nat),  a :: l = [b;c] /\ e = d /\ d = (fun x => x+ 1) c  -> genRel (S a) l (S d) e.
+
+Inductive genReli1 : nat -> list nat -> nat -> Prop :=
+ | genRelcstri1 : forall (a i1 : nat) (i2: list nat),  i1 = S a  -> genReli1 i1 i2 a. 
+
+Inductive genReli2 : nat -> list nat -> list nat -> Prop :=
+ | genRelcstri2 : forall (a i1 : nat) (l i2: list nat),  i2 = l  -> genReli2 i1 i2 l. 
+
+
+Inductive genRel11 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr11 : forall (a b c d e : nat) (l: list nat),  a :: l = [b;c] -> genRel11 a l b .
+ 
+ 
+Inductive genRel12 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr12 : forall (a b c d e : nat) (l: list nat),  a :: l = [b;c] -> genRel12 (a) l c .
+ 
+Inductive genRel21 : nat -> nat -> Prop :=
+ | genRelcstr21 : forall (a b c d e : nat) (l: list nat),  d = (fun x => x+ 1) c -> genRel21 c (d) .
+ 
+Inductive genRel31 : nat -> nat -> Prop :=
+ | genRelcstr31 : forall (a b c d e : nat) (l: list nat),  e = d -> genRel31 (d) e.
+ 
+Inductive genRelo1 : nat -> nat -> Prop :=
+ | genRelcstro1 : forall (d o1 : nat),  o1 = S d  -> genRelo1 d o1. 
+ 
+Inductive genRelo2 : nat -> nat -> Prop :=
+ | genRelcstro2 : forall (e o2 : nat),  o2 = e  -> genRelo2 e o2. 
+  
+ 
+(* 
+Therefore 
+genRelAnimated (x, y) = (genRelo1Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), (genReli1Animated (x,y))))),       genRelo2Animated (genRel31Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), genReli1Animated (x,y))))))
+ 
+
+(Can animate each conjunct separately and then do dependency analysis to work out the sequence of compositions that will give final result)
+
+*)
 (* Decidable equality typeclass ________________________ *)
 
 
