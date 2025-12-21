@@ -2165,6 +2165,8 @@ match t with
 end ;; tmMsg "done".  
 
 
+
+
           
    
 (* Full example *)
@@ -2364,12 +2366,13 @@ Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_induc
               end 
  end.
    
-  
+(** Change the next 2 functions to not always return the full clause data but only bits of it **)
 Fixpoint mkNmTm (c : list constructor_body) (l : list name) :TemplateMonad (list (string × term)) :=
  match c with
   | [] => tmReturn []
   | (h :: t) => r <- DB.undeBruijn' l ((cstr_type h )) ;; r' <- tmEval all r ;; let hres := (cstr_name h, (reduceClauseTm r')) in rest <- mkNmTm t l ;; tmReturn (hres :: rest)
  end. 
+ 
  
 Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (list nat))) (nmCxt : list name) (inOutTps : list ((string × term) × term)) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
   
@@ -2381,9 +2384,10 @@ Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (li
                  end 
  
  end. 
- 
+(* Change above 2 functions *) 
 Definition getData' (kn : kername) (ln : list (prod (list nat) (list nat))) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
 mut <- tmQuoteInductive kn ;;
+tmPrint mut ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
 let inOutTps := getInOutTps ln lib in
@@ -2911,7 +2915,7 @@ Print Instance.t.
 
 
 (* extract ordered list of vars from conjunct *)
-Definition extractOrderedVars (t : term) : list string := 
+Fixpoint extractOrderedVars (t : term) : list string := 
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: extractOrderedVarsHelper (lst)
@@ -2921,7 +2925,9 @@ Definition extractOrderedVars (t : term) : list string :=
  
   (* Combine the pattern matches to handle fns of arbitrary arity *)
   
-  | _ => nil
+  | tVar str  => [str]
+  | tApp _ lst => concat (map extractOrderedVars lst)
+  | _ => []
   end.
 
 
@@ -3075,7 +3081,7 @@ Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : 
          else None).   
  
 
-
+(* NOT COMPILING : GIVES UNIVERSE ERROR 
 Definition animateOneConjNew (conj : term) (knownVar : list string) (partialProg : term -> term) (fuel : nat) : TemplateMonad (option (list string * (term -> term))) :=
   match conj with
    | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => if isListSubStr (extractOrderedVars t1) knownVar then 
@@ -3145,7 +3151,7 @@ Definition animateOneConjNew (conj : term) (knownVar : list string) (partialProg
 end.    
   
 
-
+*)
 
 Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVar : list string)
                          (fuel : nat) (partialProg : term -> term) : term -> term :=
@@ -3363,14 +3369,20 @@ Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : ter
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
 
+Check general.animate2.
+
+
 Definition genFunAnimateEq7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (fuel : nat) : TemplateMonad unit :=
  d <- mkClData' kn mode ;;
+ d'' <- tmEval all d ;;
+ tmPrint d'' ;; 
  mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
 let inOutTps := getInOutTps mode lib in
 myData <- getData lib mode nmCxt inOutTps ;;
 myData' <- tmEval all myData;;
+tmPrint myData';;
  let elt := hd datHdDef d in 
  let inputTm := snd (fst (fst (fst (fst elt)))) in
  let inputTp := snd ((fst (fst (fst elt)))) in
@@ -3384,7 +3396,134 @@ tmPrint inputTm.
   | h :: t => genFunAnimateEq (induct) (kn) (inputTm) (inputTp)  (outputTm) (outputTp) (myData') ((fst h)) (fuel)
  end. 
  
+
+Inductive foo'' : bool -> nat -> bool -> nat -> Prop :=
+ | cstr'' : forall (b  d : bool) (e f : nat), d = b /\ e =  f /\ ((fun x => x) e) = ((fun x => x + 1) f) -> foo'' b (S f) d (S e).
+
+MetaRocq Run (g <- general.animate2 <? foo'' ?> ;; tmDefinition "data''" g).
+Compute data''.
+Check getData.
+
+Definition genFunAnimateEqPartial' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+  
+  if checkBool (filterListConj fooTerm) then
+  (let postOut' := (constrFnBody outputTm outputTp
+    (animateListConj
+       (getListConjLetBind fooTerm) nil (inputVars) fuel (fun t : term => t))
+    (animateOneConjGuardList (getListConjGuardCon fooTerm))) in 
+    (*
+    po' <- tmEval all postOut' ;;
+    tmPrint po' ;;
+    *)
+    
+    let postOutType' := tApp <% @option %> [outputTp] in 
+    (*
+    poT' <- tmEval all postOutType' ;;
+    tmPrint poT' ;;
+    *)
+    let postInType' := inputTp in
+    (*
+    piT' <- tmEval all postInType' ;;
+    tmPrint piT' ;;
+    *)
+    let postIn' := inputTm in 
+    (*
+    pi' <- tmEval all postIn' ;;
+    tmPrint pi' ;;
+    *)
+    let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+    let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+    let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+    let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+
+
+
+ (*
+
+   animateOneClause induct [] postInTPairB postInType' postInTPairB postInType' (snd kn) fuel ;;
+*)
+    
+     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
+      (*
+      tmPrint t0 ;;
+      *)
+     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
+     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+     
+     f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
+
+
+
+Definition genFunAnimateEqPartial {A : Type} (kn : kername) (induct : A) (conjunct : named_term) (inputVars : list string)
+                                  (d : (list (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term)
+             × string))) (inOutTps : (list (((string × term) × term)))) (fuel : nat) : TemplateMonad unit :=
  
+ d'' <- tmEval all d ;;
+(* tmPrint d'' ;; *)
+ mut <- tmQuoteInductive kn ;;
+let lib := ind_bodies mut in
+let nmCxt := genCxt lib in
+
+nmCxt' <- tmEval all nmCxt ;;
+inOutTps' <- tmEval all inOutTps ;;
+tmPrint nmCxt';;
+tmPrint inOutTps';;
+
+(* tmPrint myData';; *)
+ let elt := hd datHdDef d in 
+ let inputTm := snd (fst (fst (fst (fst elt)))) in
+ let inputTp := snd ((fst (fst (fst elt)))) in
+ let outputTm := snd (((fst (fst elt)))) in
+ let outputTp := snd (((fst (elt)))) in 
+(* 
+tmPrint inputTm.
+*) 
+genFunAnimateEqPartial' (induct) (kn) (conjunct) (inputTm) (inputTp)  (outputTm) (outputTp) (inputVars) (fuel).
+
+ 
+
+Definition d : (list (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term)
+             × string)) := [([], tVar "b",
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
+  tVar "d",
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
+  "cstr''")].
+ 
+Definition myData : (list (((string × term) × term))) := [("foo''",
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [])].
+(*
+Definition myDataSimpl : (list (((string × term) × term) × list (string × term))) := [("foo''",
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
+  tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
+  [("cstr''",
+    
+      (
+         tApp <%eq%>
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0
+               |} [];
+             tVar "d"; tVar "b"]
+          )
+      )])].   
+*)             
+Definition conjunct : named_term := tApp <%eq%>
+            [tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0
+               |} [];
+             tVar "d"; tVar "b"].          
+   
+MetaRocq Run (animateEqual.genFunAnimateEqPartial' foo'' <? foo'' ?> conjunct (tVar "b") <%bool%> (tVar "d") <%bool%> ["b"] 50).
+
+
+Print foo''Animated.
+
 (** Examples ___________**)
 
 (*
@@ -3395,26 +3534,168 @@ Parameter oib'' : one_inductive_body.
 Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 
 *)
-End animateEqual.
 
 
 
 
+
+Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad unit :=
+
+match conjunct with
+ | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
+                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      (*
+                      gIn <- tmUnquote tIn ;;
+                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+                      gOut <- tmUnquote tOut ;;
+                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+                      
+                       
+                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')    
+                     
+                      *)
+                      
+                     
+                     
+                     
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in  
+                      u'' <- tmEval all u ;;
+                      (*tmPrint u';; *)
+                     
+                      u' <- DB.deBruijn u ;;
+                     (*
+                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      (*
+                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+                      (*
+                      tmPrint f
+                      *) 
+                      (*
+                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
+                     *)
+                     tmDefinition (String.append (snd kn) "Animated")  (f)  
+                     *)
+                     *)
+                     f <- tmUnquote u';;
+                     tmPrint f ;;  
+                     (* tmDefinition (String.append (snd kn) "Animated")  (f) 
+                     *)
+                     
+                     tmEval hnf (my_projT2 f) >>=
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
+                     
+ 
+ 
+ | tApp <%eq%> [typeVar; patMatTerm; tVar str] => 
+                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      (*
+                      gIn <- tmUnquote tIn ;;
+                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+                      gOut <- tmUnquote tOut ;;
+                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+                      
+                       
+                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')    
+                     
+                      *)
+                      
+                     
+                     
+                     
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in  
+                      u'' <- tmEval all u ;;
+                      (*tmPrint u';; *)
+                     
+                      u' <- DB.deBruijn u ;;
+                     (*
+                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+                      (*
+                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+                      (*
+                      tmPrint f
+                      *) 
+                      (*
+                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)  
+                     *)
+                     tmDefinition (String.append (snd kn) "Animated")  (f)  
+                     *)
+                     *)
+                     f <- tmUnquote u';;
+                     tmPrint f ;;  
+                     (* tmDefinition (String.append (snd kn) "Animated")  (f) 
+                     *)
+                     
+                     tmEval hnf (my_projT2 f) >>=
+                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
+                     
+                     
+ 
+
+ | _ => tmFail "incorrect inductive shape" 
+ end ;; tmMsg "done".  
+
+Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+match conjunct with
+| tApp <%eq%> [typeVar; t1; t2] => if isListSubStr (extractOrderedVars t1) inputVars then  
+                                   extractPatMatBindersPartial'' induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if isListSubStr (extractOrderedVars t2) inputVars then 
+                                   extractPatMatBindersPartial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
+| _ => tmFail "incorrect inductive shape" 
+end ;; tmMsg "done". 
+
+Search (bool -> bool).                                 
+
+
+(*
 Search (_ -> _ -> {_=_}+{~_=_}).
-
+*)
 
 
 (* Integration of all animation pieces *)
 
+Definition animateAny {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+match conj with
+ | tApp <%eq%> [typeVar; t1; t2] => if (andb (isListSubStr (extractOrderedVars t1) inputVars)  (negb (isListSubStr (extractOrderedVars t2) inputVars))) then 
+                                    match t2 with
+                                    | tVar str =>  genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tConstruct ind_type k lst => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | _ => tmFail "unknown Vars"
+                                    end
+                                    else 
+                                    (if  (andb (isListSubStr (extractOrderedVars t2) inputVars)  (negb (isListSubStr (extractOrderedVars t1) inputVars))) then 
+                                    match t1 with
+                                    | tVar str =>  genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tConstruct ind_type k lst => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | _ => tmFail "unknown Vars" 
+                                    end 
+                                    else genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel)
+ | _ => tmFail "incorrect Conj shape"                                   
+end.                                       
 
 
 
+(* TEST CASES *)
 Inductive genRel : nat -> list nat -> nat -> nat -> Prop :=
- | genRelcstr : forall (a b c d e : nat) (l: list nat),  a :: l = [b;c] /\ e = d /\ d = (fun x => x+ 1) c  -> genRel (S a) l (S d) e.
+ | genRelcstr : forall (a b c : nat)  (l: list nat),  a :: l = [b;c] -> genRel (S a) l (S b) c. (* Input (S a , l) Output : (S b, c) *)  
 
-Inductive genReli1 : nat -> list nat -> nat -> Prop :=
- | genRelcstri1 : forall (a i1 : nat) (i2: list nat),  i1 = S a  -> genReli1 i1 i2 a. 
-
+Inductive genReli1 : nat -> nat -> Prop :=
+ | genRelcstri1 : forall (a i1 : nat) ,  i1 = S a  -> genReli1 (S a) (S i1). (* Input (S a) Output (S i1) *)
+  
+Inductive genReli1' : nat -> nat -> Prop :=
+ | genRelcstri1' : forall (a i1 : nat) ,  i1 = (fun x => x + 2) a  -> genReli1' (S a) (S i1). (* Input (S a) Output (S i1) *)
+    
+Inductive genReli1'' : nat -> nat -> Prop :=
+ | genRelcstri1'' : forall (a i1 : nat) ,  (fun x => x + 3) i1 = (fun x => x + 2) a  -> genReli1'' (S a) (S i1). (* Input (S a, S i1) *)
+    
+(*
 Inductive genReli2 : nat -> list nat -> list nat -> Prop :=
  | genRelcstri2 : forall (a i1 : nat) (l i2: list nat),  i2 = l  -> genReli2 i1 i2 l. 
 
@@ -3437,8 +3718,9 @@ Inductive genRelo1 : nat -> nat -> Prop :=
  
 Inductive genRelo2 : nat -> nat -> Prop :=
  | genRelcstro2 : forall (e o2 : nat),  o2 = e  -> genRelo2 e o2. 
-  
- 
+
+*)  
+End animateEqual. 
 (* 
 Therefore 
 genRelAnimated (x, y) = (genRelo1Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), (genReli1Animated (x,y))))),       genRelo2Animated (genRel31Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), genReli1Animated (x,y))))))

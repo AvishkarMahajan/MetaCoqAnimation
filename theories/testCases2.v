@@ -77,9 +77,9 @@ Inductive foo'' : bool -> nat -> bool -> nat -> Prop :=
  | cstr'' : forall (b  d : bool) (e f : nat), d = b /\ e =  f /\ ((fun x => x) e) = ((fun x => x + 1) f) -> foo'' b (S f) d (S e).
 
 Print hole.
-
-MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo'' ?> foo'' [([0;1],[3])] 50).
-
+(*
+MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo'' ?> foo'' [([0],[2])] 50).
+*)
 Check foo''Animated.
 
 
