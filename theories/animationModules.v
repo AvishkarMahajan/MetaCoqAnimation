@@ -3039,14 +3039,14 @@ Definition flipConj (conj : term) : term :=
 (* Instantiate partialGuard with Identity * No need to check for known vars when animating guard condition since all
 vars should be known at this point in the computation *)
 
- Definition animateOneConjSuccGuard (conj : term) (partialGuard : term) :  term :=
+ Definition animateOneConjSuccGuard (conj : term) (partialGuard : term)  :  term :=
   match conj with
-  | tApp <%eq%> [typeT; tApp fn1 lstStr1; tApp fn2 lstStr2] =>
+  | tApp <%eq%> [typeT; t1; t2] => 
     tApp (tConst <? andb ?> [])
          [ partialGuard
-         ; tApp (typeToBoolEq typeT) [tApp fn1 lstStr1
-         ; tApp fn2 lstStr2]]
-  | tApp <%eq%> [typeT; tApp fn1 lst1; tConstruct ind_type k lst] => 
+         ; tApp (typeToBoolEq typeT) [t1
+         ; t2]] 
+(* | tApp <%eq%> [typeT; tApp fn1 lst1; tConstruct ind_type k lst] => 
     tApp (tConst <? andb ?> [])
          [ partialGuard
          ; tApp (typeToBoolEq typeT) [tApp fn1 lst1
@@ -3060,26 +3060,31 @@ vars should be known at this point in the computation *)
     tApp (tConst <? andb ?> [])
          [ partialGuard
          ; tApp (typeToBoolEq typeT) [tConstruct ind_type2 k2 lst2
-         ; tConstruct ind_type k lst]]              
+         ; tConstruct ind_type k lst]]  *)            
   | _ => <% false %>
   end.
 (*Change this to add a recursive case for first inverting constructor application and then handling the resulting conjs normally *)
 
 Definition animateOneConj (conj : term) (knownVar : list string) (partialProg : term -> term) : option (list string * (term -> term)) :=
-   if isListSubStr (tl (extractOrderedVars conj)) knownVar then
-  (let t' := animateOneConjSucc conj partialProg in
-    match t' with
-    | Some t'' => Some (app knownVar (extractOrderedVars conj), t'')
-    | None => None
-    end)
-  else (if isListSubStr (tl (extractOrderedVars (flipConj conj))) knownVar then
+ match conj with 
+  | tApp <%eq%> [typeT; t1; t2] => if andb (isListSubStr (extractOrderedVars t2 ) knownVar) (negb (isListSubStr (extractOrderedVars t1 ) knownVar)) then
+   
+    (let t' := animateOneConjSucc conj partialProg in
+      match t' with
+      | Some t'' => Some (app knownVar (extractOrderedVars conj), t'')
+      | None => None
+      end)
+    else (if andb (isListSubStr (extractOrderedVars t1 ) knownVar) (negb (isListSubStr (extractOrderedVars t2 ) knownVar)) then
+
           (let t' := animateOneConjSucc (flipConj conj) partialProg in
            match t' with
             | Some t'' => Some (app knownVar (extractOrderedVars (flipConj conj)), t'')
             | None => None
            end) 
-         else None).   
- 
+         else None)
+            
+  | _ => None
+ end. 
 
 (* NOT COMPILING : GIVES UNIVERSE ERROR 
 Definition animateOneConjNew (conj : term) (knownVar : list string) (partialProg : term -> term) (fuel : nat) : TemplateMonad (option (list string * (term -> term))) :=
@@ -3177,8 +3182,28 @@ Fixpoint animateListConj (conjs : (list term)) (remConjs : (list term)) (knownVa
 Definition constrRetBodylst (outputTm : term) (outputTp : term) : term :=
  tApp <% @Some %> [outputTp; outputTm].                                                 
 
-Definition constrFnBody  (outputTm : term) (outputTp : term) (letBind : term -> term) (guardCon : term) : term :=
+Definition constrFnBody  (outputTm : term) (outputTp : term) (letBind : term -> term)  : term :=
  (letBind (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
+                ; ci_npar := 0; ci_relevance := Relevant |}
+               {| puinst := []
+                ; pparams := []
+                ; pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}]
+                ; preturn := tApp <% @option %> [outputTp]
+                |}
+                <%true %>
+                [{| bcontext := []
+                  ; bbody :=
+                       
+                          (constrRetBodylst outputTm outputTp)
+                   |};
+                   {| bcontext := []
+                    ; bbody :=
+                       tApp <% @None %> [outputTp]
+                   |}])). 
+
+
+Definition constrFnBodyGuardCon  (outputTm : term) (outputTp : term) (guardCon : term) : term :=
+ ((tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
                 ; ci_npar := 0; ci_relevance := Relevant |}
                {| puinst := []
                 ; pparams := []
@@ -3194,8 +3219,9 @@ Definition constrFnBody  (outputTm : term) (outputTp : term) (letBind : term -> 
                    {| bcontext := []
                     ; bbody :=
                        tApp <% @None %> [outputTp]
-                   |}])). 
+                   |}])).                    
 
+(*
 
 Fixpoint animateOneConjGuardList (conj : list term) : term :=
   match conj with
@@ -3205,7 +3231,8 @@ Fixpoint animateOneConjGuardList (conj : list term) : term :=
     | gt => animateOneConjSuccGuard h gt
     end
   end.
-
+*)
+(*
 Check (Some (let b :=1 in let a := 2 in  b + a)).
 
 Definition sillyFun (p : outcomePoly (prod nat nat)) : nat :=
@@ -3213,7 +3240,7 @@ Definition sillyFun (p : outcomePoly (prod nat nat)) : nat :=
   | successPoly (a,b) => let c := a in let d := b in (c + d)
   | _ => 0
  end.  
-
+*)
 (*
 
 Definition soundness' (f : (nat -> nat -> option (list nat))) (induct : nat -> nat -> nat -> nat -> nat -> Prop) (n1 : nat) (n2 : nat) : Type :=
@@ -3315,7 +3342,7 @@ fun k k' => match f k k' with
              | _ => noMatchPoly B
             end.         
 
-
+(*
 
 Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (myData' : list (((string × term) × term) × list (string × term))) (inArgs : list nat) (fuel : nat) : TemplateMonad unit :=
   fooTerm <- general.animate2 kn ;;
@@ -3403,14 +3430,14 @@ Inductive foo'' : bool -> nat -> bool -> nat -> Prop :=
 MetaRocq Run (g <- general.animate2 <? foo'' ?> ;; tmDefinition "data''" g).
 Compute data''.
 Check getData.
-
-Definition genFunAnimateEqPartial' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+*)
+Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
   
   if checkBool (filterListConj fooTerm) then
   (let postOut' := (constrFnBody outputTm outputTp
     (animateListConj
        (getListConjLetBind fooTerm) nil (inputVars) fuel (fun t : term => t))
-    (animateOneConjGuardList (getListConjGuardCon fooTerm))) in 
+     ) in 
     (*
     po' <- tmEval all postOut' ;;
     tmPrint po' ;;
@@ -3458,6 +3485,59 @@ Definition genFunAnimateEqPartial' {A : Type} (induct : A) (kn : kername) (fooTe
 
 
 
+Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad unit :=
+  
+  if checkBool (filterListConj fooTerm) then
+  (let postOut' := (constrFnBodyGuardCon outputTm outputTp
+    
+    (animateOneConjSuccGuard (fooTerm) <%true%>)) in 
+    (*
+    po' <- tmEval all postOut' ;;
+    tmPrint po' ;;
+    *)
+    
+    let postOutType' := tApp <% @option %> [outputTp] in 
+    (*
+    poT' <- tmEval all postOutType' ;;
+    tmPrint poT' ;;
+    *)
+    let postInType' := inputTp in
+    (*
+    piT' <- tmEval all postInType' ;;
+    tmPrint piT' ;;
+    *)
+    let postIn' := inputTm in 
+    (*
+    pi' <- tmEval all postIn' ;;
+    tmPrint pi' ;;
+    *)
+    let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+    let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+    let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+    let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+
+
+
+ (*
+
+   animateOneClause induct [] postInTPairB postInType' postInTPairB postInType' (snd kn) fuel ;;
+*)
+    
+     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
+      (*
+      tmPrint t0 ;;
+      *)
+     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
+     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+     
+     f <- tmUnquote t';;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
+
+
+(*
 Definition genFunAnimateEqPartial {A : Type} (kn : kername) (induct : A) (conjunct : named_term) (inputVars : list string)
                                   (d : (list (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term)
              × string))) (inOutTps : (list (((string × term) × term)))) (fuel : nat) : TemplateMonad unit :=
@@ -3536,7 +3616,7 @@ Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 *)
 
 
-
+*)
 
 
 Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad unit :=
@@ -3658,12 +3738,12 @@ Search (_ -> _ -> {_=_}+{~_=_}).
 
 (* Integration of all animation pieces *)
 
-Definition animateAny {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
+Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
                                  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => if (andb (isListSubStr (extractOrderedVars t1) inputVars)  (negb (isListSubStr (extractOrderedVars t2) inputVars))) then 
                                     match t2 with
-                                    | tVar str =>  genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | tConstruct ind_type k lst => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | _ => tmFail "unknown Vars"
@@ -3671,21 +3751,78 @@ match conj with
                                     else 
                                     (if  (andb (isListSubStr (extractOrderedVars t2) inputVars)  (negb (isListSubStr (extractOrderedVars t1) inputVars))) then 
                                     match t1 with
-                                    | tVar str =>  genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | tConstruct ind_type k lst => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | _ => tmFail "unknown Vars" 
                                     end 
-                                    else genFunAnimateEqPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel)
+                                    else 
+                                    (tmFail "incorrect Conj shape"))
  | _ => tmFail "incorrect Conj shape"                                   
-end.                                       
+end. 
 
+Definition animateAnyGuard {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+match conj with
+ | tApp <%eq%> [typeVar; t1; t2] =>  if (isListSubStr (extractOrderedVars conj) inputVars) then genFunAnimateEqPartialGuardCon' ind kn conj inputTm inputTp outputTm outputTp fuel
+                                     else tmFail "incorrect Conj shape"
+ | _ => tmFail "incorrect Conj shape"                                   
+end. 
+End animateEqual. 
+Definition joinOutcomeUnit (A: Type) (x : outcomePoly A) : outcomePoly A :=
+x.
 
+Definition joinOutcome (A : Type) (B : Type) (x : outcomePoly A) (y : outcomePoly B) : outcomePoly (prod A B) :=
+ match x with
+  | noMatchPoly => noMatchPoly (prod A B)
+  | fuelErrorPoly => fuelErrorPoly (prod A B)
+  | successPoly k => match y with
+                        | noMatchPoly => noMatchPoly (prod A B)
+                        | fuelErrorPoly => fuelErrorPoly (prod A B)
+                        | successPoly j => successPoly (prod A B) (k,j)
+                        end
+ end. 
 
+  
+Search (nat -> string).
+Search (string -> string -> string). 
+Fixpoint prodTerm (lstTypes : list term) : term :=
+match lstTypes with
+ | [] => <%bool%>
+ | [h] => h
+ | h :: t => tApp
+                     (tInd
+                        {|
+                          inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod");
+                          inductive_ind := 0
+                        |} []) [h ; (prodTerm t)]
+end.                                           
+
+Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
+match lstTypes with
+ | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
+ | [h] => tApp <%joinOutcomeUnit%> [h; tVar "o0"]
+ | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar "o0"; tVar "o1"]
+ | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]    
+end.
+
+Compute <% (fun o0 => (fun o1 o2 => (joinOutcome bool (prod nat bool) o0 (joinOutcome nat bool o1 o2)))) %>.
+
+Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
+match lstTypes with
+| [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
+| [h] => tLam "o0" (tApp <%outcomePoly%> [h]) fnBody
+| h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody) 
+end.
+
+Definition mkJoinOutcomeTm (lstTypes : list term) : term :=
+let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
+mkJoinOutcomeLam lstTypes 0 fnBody. 
 (* TEST CASES *)
-Inductive genRel : nat -> list nat -> nat -> nat -> Prop :=
- | genRelcstr : forall (a b c : nat)  (l: list nat),  a :: l = [b;c] -> genRel (S a) l (S b) c. (* Input (S a , l) Output : (S b, c) *)  
+Inductive genRel : list nat -> nat -> Prop :=
+ | genRelcstr : forall  (b : nat) (l: list nat),   [S b] = l -> genRel l b. (* Input (S a , l) Output : (S b, c) *)  
 
+MetaRocq Run (t <- general.animate2 <? genRel ?> ;; animateAnyLet genRel <? genRel ?> t (tVar "b") (<% nat %>) (tVar "l") (<% list nat %>) ["b"] 20).
 Inductive genReli1 : nat -> nat -> Prop :=
  | genRelcstri1 : forall (a i1 : nat) ,  i1 = S a  -> genReli1 (S a) (S i1). (* Input (S a) Output (S i1) *)
   
@@ -3720,7 +3857,7 @@ Inductive genRelo2 : nat -> nat -> Prop :=
  | genRelcstro2 : forall (e o2 : nat),  o2 = e  -> genRelo2 e o2. 
 
 *)  
-End animateEqual. 
+
 (* 
 Therefore 
 genRelAnimated (x, y) = (genRelo1Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), (genReli1Animated (x,y))))),       genRelo2Animated (genRel31Animated (genRel21Animated (genRel12Animated (genReli2Animated (x,y), genReli1Animated (x,y))))))

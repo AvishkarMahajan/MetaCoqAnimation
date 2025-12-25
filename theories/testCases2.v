@@ -80,8 +80,9 @@ Print hole.
 (*
 MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo'' ?> foo'' [([0],[2])] 50).
 *)
+(*
 Check foo''Animated.
-
+*)
 
 Inductive foo'lst : list nat -> list nat -> Prop :=
  | cstr'lst : forall (a  b : list nat), (fun l => tl l) a = (fun l => tl (tl l)) b -> foo'lst a b.
@@ -90,15 +91,15 @@ MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo'lst ?> foo'lst [([0;1],[])] 5
 
 
 
-Inductive foo5lst : nat -> nat -> Prop :=
- | cstr5lst : forall (a b c : nat), b :: [a] = b :: [c] -> foo5lst a c.
-
-Print hole.
+Inductive foo5lst : nat -> nat -> nat -> Prop :=
+ | cstr5lst : forall (a b c : nat),  c = b + 1 /\ a  = b -> foo5lst a b c.
 (*
-MetaRocq Run (extractPatMatBinders7 <? foo5lst ?> foo5lst [([0],[1])] 1 50).
+Print hole.
 *)
+MetaRocq Run (animateEqual.genFunAnimateEq7 <? foo5lst ?> foo5lst [([0;1],[2])]  50).
 
-Compute rel38AnimatedTopFn 20 (successPoly (nat × nat) (5, 2)).
+Print foo5lstAnimated.
+Compute foo5lstAnimated 20 (successPoly (nat × nat) (2, 1)).
 
 (**
 
