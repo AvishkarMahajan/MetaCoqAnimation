@@ -3431,7 +3431,7 @@ MetaRocq Run (g <- general.animate2 <? foo'' ?> ;; tmDefinition "data''" g).
 Compute data''.
 Check getData.
 *)
-Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
   
   if checkBool (filterListConj fooTerm) then
   (let postOut' := (constrFnBody outputTm outputTp
@@ -3478,14 +3478,15 @@ Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kernam
       *)
      let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
      t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
-     
+     tmReturn t')
+     (*
      f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
+              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") *) else tmFail "cannot process conj".
 
 
 
-Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad unit :=
+Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
   
   if checkBool (filterListConj fooTerm) then
   (let postOut' := (constrFnBodyGuardCon outputTm outputTp
@@ -3531,10 +3532,12 @@ Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername
       *)
      let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
      t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+     tmReturn t')
+     (*
      
      f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") else tmFail "cannot process conj".
+              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") *) else tmFail "cannot process conj".
 
 
 (*
@@ -3619,7 +3622,7 @@ Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 *)
 
 
-Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
 
 match conjunct with
  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
@@ -3645,6 +3648,7 @@ match conjunct with
                       (*tmPrint u';; *)
                      
                       u' <- DB.deBruijn u ;;
+                      tmReturn u'
                      (*
                       ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
                       ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
@@ -3659,6 +3663,7 @@ match conjunct with
                      tmDefinition (String.append (snd kn) "Animated")  (f)  
                      *)
                      *)
+                     (*
                      f <- tmUnquote u';;
                      tmPrint f ;;  
                      (* tmDefinition (String.append (snd kn) "Animated")  (f) 
@@ -3666,7 +3671,7 @@ match conjunct with
                      
                      tmEval hnf (my_projT2 f) >>=
                      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
-                     
+                     *)
  
  
  | tApp <%eq%> [typeVar; patMatTerm; tVar str] => 
@@ -3692,6 +3697,7 @@ match conjunct with
                       (*tmPrint u';; *)
                      
                       u' <- DB.deBruijn u ;;
+                      tmReturn u'
                      (*
                       ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
                       ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
@@ -3706,6 +3712,7 @@ match conjunct with
                      tmDefinition (String.append (snd kn) "Animated")  (f)  
                      *)
                      *)
+                     (*
                      f <- tmUnquote u';;
                      tmPrint f ;;  
                      (* tmDefinition (String.append (snd kn) "Animated")  (f) 
@@ -3713,20 +3720,20 @@ match conjunct with
                      
                      tmEval hnf (my_projT2 f) >>=
                      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt  
-                     
+                     *)
                      
  
 
  | _ => tmFail "incorrect inductive shape" 
- end ;; tmMsg "done".  
+ end.  
 
-Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 match conjunct with
 | tApp <%eq%> [typeVar; t1; t2] => if isListSubStr (extractOrderedVars t1) inputVars then  
                                    extractPatMatBindersPartial'' induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if isListSubStr (extractOrderedVars t2) inputVars then 
                                    extractPatMatBindersPartial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
 | _ => tmFail "incorrect inductive shape" 
-end ;; tmMsg "done". 
+end. 
 
 Search (bool -> bool).                                 
 
@@ -3739,7 +3746,7 @@ Search (_ -> _ -> {_=_}+{~_=_}).
 (* Integration of all animation pieces *)
 
 Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
-                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => if (andb (isListSubStr (extractOrderedVars t1) inputVars)  (negb (isListSubStr (extractOrderedVars t2) inputVars))) then 
                                     match t2 with
@@ -3762,13 +3769,13 @@ match conj with
 end. 
 
 Definition animateAnyGuard {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
-                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad unit :=
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] =>  if (isListSubStr (extractOrderedVars conj) inputVars) then genFunAnimateEqPartialGuardCon' ind kn conj inputTm inputTp outputTm outputTp fuel
                                      else tmFail "incorrect Conj shape"
  | _ => tmFail "incorrect Conj shape"                                   
 end. 
-End animateEqual. 
+
 Definition joinOutcomeUnit (A: Type) (x : outcomePoly A) : outcomePoly A :=
 x.
 
@@ -3801,8 +3808,8 @@ end.
 Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
 match lstTypes with
  | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
- | [h] => tApp <%joinOutcomeUnit%> [h; tVar "o0"]
- | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar "o0"; tVar "o1"]
+ | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
+ | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
  | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]    
 end.
 
@@ -3811,20 +3818,60 @@ Compute <% (fun o0 => (fun o1 o2 => (joinOutcome bool (prod nat bool) o0 (joinOu
 Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
 match lstTypes with
 | [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
-| [h] => tLam "o0" (tApp <%outcomePoly%> [h]) fnBody
+| [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) fnBody
 | h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody) 
 end.
 
 Definition mkJoinOutcomeTm (lstTypes : list term) : term :=
 let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
 mkJoinOutcomeLam lstTypes 0 fnBody. 
+
+Parameter lP : list nat.
+Parameter bP : nat.
+Compute <% (bP,lP)%>.
+
+Definition pairTm := 
+(tApp
+         (tConstruct
+            {|
+              inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod"); inductive_ind := 0
+            |} 0 [])
+         [<%nat%>;
+          tApp
+            (tInd
+               {|
+                 inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list"); inductive_ind := 0
+               |} [])
+            [<%nat%>];
+          tVar "b";
+          tVar "l"]
+     ).
 (* TEST CASES *)
 Inductive genRel : list nat -> nat -> Prop :=
  | genRelcstr : forall  (b : nat) (l: list nat),   [S b] = l -> genRel l b. (* Input (S a , l) Output : (S b, c) *)  
+(*
+MetaRocq Run (t <- general.animate2 <? genRel ?> ;; animateEqual.animateAnyLet genRel <? genRel ?> t (tVar "b") (<% nat %>) (tVar "b") (<% nat %>) ["b"] 20).
+*)
+MetaRocq Run (t <- general.animate2 <? genRel ?> ;; animateEqual.animateAnyLet genRel <? genRel ?> t (tVar "b") (<% nat %>) (tVar "l") (<% list nat %>) ["b"] 20).
 
-MetaRocq Run (t <- general.animate2 <? genRel ?> ;; animateAnyLet genRel <? genRel ?> t (tVar "b") (<% nat %>) (tVar "l") (<% list nat %>) ["b"] 20).
+Inductive genRelInv : list nat -> nat -> Prop :=
+ | genRelInvcstr : forall  (b a : nat) (l: list nat),   [S b; a] = l -> genRelInv l b. (* Input (S a , l) Output : (S b, c) *)  
+
+MetaRocq Run (t <- general.animate2 <? genRelInv ?> ;; animateEqual.animateAnyLet genRelInv <? genRelInv ?> t (tVar "l") (<% list nat %>) (tVar "b") (<% nat %>) ["l"] 20).
+
+Inductive genRelG : list nat -> nat -> Prop :=
+ | genRelGcstr : forall  (b : nat) (l: list nat),   [S b] = l -> genRelG l b. (* Input (S a , l) Output : (S b, c) *)  
+
+MetaRocq Run (t <- general.animate2 <? genRelG ?> ;; animateEqual.animateAnyGuard genRelG <? genRelG ?> t pairTm  (<%prod (nat) (list nat)%>) pairTm  (<%prod nat (list nat)%>) ["b"; "l"] 20).
+
+Compute (genRelAnimated 5 (successPoly nat 4)).
+Compute (genRelInvAnimated 5 (successPoly (list nat) [3;4])).
+Compute (genRelGAnimated 5 (successPoly (prod nat (list nat)) (4,[5]))).
+Compute (genRelGAnimated 5 (successPoly (prod nat (list nat)) (3,[5]))).
+MetaRocq Run (t <- tmEval all (mkJoinOutcomeTm [<%list nat%>; <%bool%>; <%nat%>]) ;; t' <- DB.deBruijn t ;; tmPrint t' ;; f <- tmUnquote t' ;; tmPrint f).  
+
 Inductive genReli1 : nat -> nat -> Prop :=
- | genRelcstri1 : forall (a i1 : nat) ,  i1 = S a  -> genReli1 (S a) (S i1). (* Input (S a) Output (S i1) *)
+ | genRelcstri1 : forall (a b : nat) ,  b = S a  -> genReli1 a (b). (* Input (S a) Output (S i1) *)
   
 Inductive genReli1' : nat -> nat -> Prop :=
  | genRelcstri1' : forall (a i1 : nat) ,  i1 = (fun x => x + 2) a  -> genReli1' (S a) (S i1). (* Input (S a) Output (S i1) *)
@@ -3866,6 +3913,7 @@ genRelAnimated (x, y) = (genRelo1Animated (genRel21Animated (genRel12Animated (g
 (Can animate each conjunct separately and then do dependency analysis to work out the sequence of compositions that will give final result)
 
 *)
+End animateEqual. 
 (* Decidable equality typeclass ________________________ *)
 
 
