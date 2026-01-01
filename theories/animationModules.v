@@ -3744,9 +3744,33 @@ Search (_ -> _ -> {_=_}+{~_=_}).
 
 
 (* Integration of all animation pieces *)
+Definition isEmptyLst {A : Type} (lst : list A) : bool :=
+match lst with
+ | [] => true
+ | _ => false
+end. 
 
-Definition getSortedOrientedConjs (conjs : list term) (kvInit : (list string)) : prod (list term) (list term). Admitted.
-
+Fixpoint getSortedOrientedConjs (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
+match fuel with
+ | 0 => if andb (isEmptyLst remConjs) (isEmptyLst currentConjs) then tmReturn (sortedConjs, guardConjs) else tmFail "insufficient fuel to sort conjs"
+         
+ | S n => if (andb (isEmptyLst remConjs) (isEmptyLst currentConjs)) then tmReturn (sortedConjs, guardConjs) else
+           match currentConjs with
+            | [] => getSortedOrientedConjs remConjs [] sortedConjs guardConjs kv n
+            | conj' :: t => match conj' with 
+                        | tApp <%eq%> [typeVar; t1; t2] => if andb (isListSubStr (extractOrderedVars t1) kv) (isListSubStr (extractOrderedVars t2) kv) then 
+                                                            getSortedOrientedConjs t remConjs sortedConjs (conj' :: guardConjs) kv n else 
+                                                            (if (isListSubStr (extractOrderedVars t1) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
+                                                            (if  (isListSubStr (extractOrderedVars t2) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
+                                                            (getSortedOrientedConjs t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n))) 
+                        | _ => tmFail "incorrect conj shape" 
+                        end
+           
+           end             
+end.                                           
+                                                            
+                                                          
+                          
 
 Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
                                  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
@@ -3755,7 +3779,7 @@ match conj with
                                     | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     
                                     | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
-                                    | _ => tmFail "unknown Vars" 
+                                    | _ => tmFail "incorrect Conj shape" 
                                     end 
                                    
  | _ => tmFail "incorrect Conj shape"                                   
