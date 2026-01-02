@@ -3486,58 +3486,6 @@ Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kernam
 
 
 
-Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
-  
-  if checkBool (filterListConj fooTerm) then
-  (let postOut' := (constrFnBodyGuardCon outputTm outputTp
-    
-    (animateOneConjSuccGuard (fooTerm) <%true%>)) in 
-    (*
-    po' <- tmEval all postOut' ;;
-    tmPrint po' ;;
-    *)
-    
-    let postOutType' := tApp <% @option %> [outputTp] in 
-    (*
-    poT' <- tmEval all postOutType' ;;
-    tmPrint poT' ;;
-    *)
-    let postInType' := inputTp in
-    (*
-    piT' <- tmEval all postInType' ;;
-    tmPrint piT' ;;
-    *)
-    let postIn' := inputTm in 
-    (*
-    pi' <- tmEval all postIn' ;;
-    tmPrint pi' ;;
-    *)
-    let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-    let postInType := tApp <%outcomePoly%> [postInType'] in                      
-
-    let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-    let postOutType := tApp <%outcomePoly%> [postOutType'] in 
-
-
-
-
- (*
-
-   animateOneClause induct [] postInTPairB postInType' postInTPairB postInType' (snd kn) fuel ;;
-*)
-    
-     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
-      (*
-      tmPrint t0 ;;
-      *)
-     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
-     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
-     tmReturn t')
-     (*
-     
-     f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") *) else tmFail "cannot process conj".
 
 
 (*
@@ -3785,13 +3733,6 @@ match conj with
  | _ => tmFail "incorrect Conj shape"                                   
 end. 
 
-Definition animateAnyGuard {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
-                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
-match conj with
- | tApp <%eq%> [typeVar; t1; t2] =>  genFunAnimateEqPartialGuardCon' ind kn conj inputTm inputTp outputTm outputTp fuel
-                                     
- | _ => tmFail "incorrect Conj shape"                                   
-end. 
 
 
 
@@ -3953,6 +3894,136 @@ match conjs with
 end. 
  
                                 
+Definition animateOneConjSuccGuard'' (conj : term) (partialGuard : term)  :  term :=
+  match conj with
+  | tApp <%eq%> [typeT; t1; t2] => 
+    tApp (tConst <? andb ?> [])
+         [ partialGuard
+         ; tApp (typeToBoolEq typeT) [t1
+         ; t2]] 
+          
+  | _ => <% false %>
+  end.
+  
+Fixpoint animateConjGuardList (conj : list term) : term :=
+  match conj with
+  | [] => <% true %>
+  | h :: t =>
+    match animateConjGuardList t with
+    | gt => animateOneConjSuccGuard'' h gt
+    end
+  end.
+
+Definition mkOutPolyProdTm (outVars : list (prod string term)) : term. Admitted.   
+
+
+Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
+  
+  
+  (let postOut' := (constrFnBodyGuardCon outputTm outputTp
+    
+    (animateConjGuardList (gConjs) )) in 
+    (*
+    po' <- tmEval all postOut' ;;
+    tmPrint po' ;;
+    *)
+    
+    let postOutType' := tApp <% @option %> [outputTp] in 
+    (*
+    poT' <- tmEval all postOutType' ;;
+    tmPrint poT' ;;
+    *)
+    let postInType' := inputTp in
+    (*
+    piT' <- tmEval all postInType' ;;
+    tmPrint piT' ;;
+    *)
+    let postIn' := inputTm in 
+    (*
+    pi' <- tmEval all postIn' ;;
+    tmPrint pi' ;;
+    *)
+    let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+    let postInType := tApp <%outcomePoly%> [postInType'] in                      
+
+    let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+    let postOutType := tApp <%outcomePoly%> [postOutType'] in 
+
+
+
+
+ 
+    
+     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
+      (*
+      tmPrint t0 ;;
+      *)
+     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in 
+     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+     tmReturn t').
+    
+Definition animateListConjGuard {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (outVars : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars outVars) (mkProdTypeVars outVars) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel. 
+
+Definition animateListLetClBody {A : Type} (ind : A) (kn : kername) (lConjs : list term) (outVars : list (prod string term)) (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) 
+;;
+tmReturn (letBind (mkOutPolyProdTm (outVars))). 
+
+  
+(*    
+Definition constrFnBody''  (outputTm : term) (outputTp : term) (letBind : term -> term)  : term :=
+ (letBind (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
+                ; ci_npar := 0; ci_relevance := Relevant |}
+               {| puinst := []
+                ; pparams := []
+                ; pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}]
+                ; preturn := tApp <% @option %> [outputTp]
+                |}
+                <%true %>
+                [{| bcontext := []
+                  ; bbody :=
+                       
+                          (constrRetBodylst outputTm outputTp)
+                   |};
+                   {| bcontext := []
+                    ; bbody :=
+                       tApp <% @None %> [outputTp]
+                   |}])). 
+
+*)
+(*
+Definition constrFnBodyGuardCon''  (outputTm : term) (outputTp : term) (guardCon : term) : term :=
+ ((tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
+                ; ci_npar := 0; ci_relevance := Relevant |}
+               {| puinst := []
+                ; pparams := []
+                ; pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}]
+                ; preturn := tApp <% @option %> [outputTp]
+                |}
+                guardCon
+                [{| bcontext := []
+                  ; bbody :=
+                       
+                          (constrRetBodylst outputTm outputTp)
+                   |};
+                   {| bcontext := []
+                    ; bbody :=
+                       tApp <% @None %> [outputTp]
+                   |}])).                    
+
+
+
+
+  
+
+Definition animateAnyGuard {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
+match conj with
+ | tApp <%eq%> [typeVar; t1; t2] =>  genFunAnimateEqPartialGuardCon' ind kn conj inputTm inputTp outputTm outputTp fuel
+                                     
+ | _ => tmFail "incorrect Conj shape"                                   
+end. 
                                 
                              
 (*                               
@@ -4072,6 +4143,7 @@ genRelAnimated (x, y) = (genRelo1Animated (genRel21Animated (genRel12Animated (g
 
 (Can animate each conjunct separately and then do dependency analysis to work out the sequence of compositions that will give final result)
 
+*)
 *)
 End animateEqual. 
 (* Decidable equality typeclass ________________________ *)
