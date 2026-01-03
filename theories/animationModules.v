@@ -3914,7 +3914,9 @@ Fixpoint animateConjGuardList (conj : list term) : term :=
     end
   end.
 
-Definition mkOutPolyProdTm (outVars : list (prod string term)) : term. Admitted.   
+Definition mkOutPolyProdTm (outVars : list (prod string term)) : term :=
+tApp (mkJoinOutcomeTm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
+   
 
 
 Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
@@ -3963,12 +3965,21 @@ Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername
      tmReturn t').
     
 Definition animateListConjGuard {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (outVars : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars outVars) (mkProdTypeVars outVars) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel. 
+genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars outVars) (mkProdTypeVars outVars) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel.
+ 
 
-Definition animateListLetClBody {A : Type} (ind : A) (kn : kername) (lConjs : list term) (outVars : list (prod string term)) (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) 
-;;
-tmReturn (letBind (mkOutPolyProdTm (outVars))). 
+
+Fixpoint animateListLetClLam (inVars : list (prod string term)) (fnBody : term) :=
+match inVars with   
+| [] => fnBody
+
+| h :: t => tLam (fst h) (tApp <%outcomePoly%> [snd h]) (animateListLetClLam t fnBody) 
+end.
+
+Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (outVars : list (prod string term)) (inVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
+gFun <- animateListConjGuard ind kn gConjs outVars fuel ;;
+tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (outVars)]))).
 
   
 (*    
