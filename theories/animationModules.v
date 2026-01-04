@@ -2846,19 +2846,20 @@ match l with
 Fixpoint getListConjGuardCon (bigConj : term) : list term := 
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
-  | tApp <%eq%> [typeT; tApp fn1 lst1; tApp fn2 lst2] =>
-      [tApp <%eq%> [typeT; tApp fn1 lst1; tApp fn2 lst2]] 
-  | tApp <%eq%> [typeT; tApp fn1 lst1; tConstruct ind_type k lst] =>
-      [tApp <%eq%> [typeT; tApp fn1 lst1; tConstruct ind_type k lst]]
-  
-  | tApp <%eq%> [typeT; tConstruct ind_type k lst; tApp fn1 lst1] =>
-      [tApp <%eq%> [typeT; tConstruct ind_type k lst; tApp fn1 lst1]]    
-             
-  | tApp <%eq%> [typeT; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2] =>
-      [tApp <%eq%> [typeT; tConstruct ind_type k lst; tConstruct ind_type2 k2 lst2]]    
-                        
+  | tApp <%eq%> [typeT; t1; t2] =>
+      [tApp <%eq%> [typeT; t1; t2]] 
+                 
   | _ => []
  end.
+ 
+Definition getListConjAll (bigConj : term) : list term := 
+  match bigConj with
+  | tApp <%and%> ls => concat (map getListConjGuardCon ls)
+  | tApp <%eq%> [typeT; t1; t2] =>
+      [tApp <%eq%> [typeT; t1; t2]] 
+                 
+  | _ => []
+ end. 
 
 Fixpoint filterListConj (bigConj : term) : list bool :=
  match bigConj with
@@ -3717,6 +3718,15 @@ match fuel with
            end             
 end.                                           
                                                             
+Definition getSortedOrientedConjsLet (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
+sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
+lConjs <- tmEval all (fst sConjs);;
+tmReturn lConjs.
+
+Definition getSortedOrientedConjsGuard (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
+sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
+gConjs <- tmEval all (snd sConjs);;
+tmReturn gConjs.
                                                           
                           
 
@@ -3823,11 +3833,11 @@ Print term.
 Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod term term)) (animationFn : term) (partialLetfn : term -> term) : (term -> term) :=
  match inputVarsLst with
   | [] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>]) outputVarTp)  t) )
+                                 (tApp animationFn [<%5%>]) (tApp <%outcomePoly%> [outputVarTp]))  t) )
   | [h] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>; fst h]) outputVarTp) t ))
+                                 (tApp animationFn [<%5%>; fst h]) (tApp <%outcomePoly%> [outputVarTp])) t ))
   | _ =>  (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>; (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLst))]) outputVarTp) t))
+                                 (tApp animationFn [<%5%>; (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLst))]) (tApp <%outcomePoly%> [outputVarTp])) t))
  end. 
 (* 
 Definition mkProdTm'' (lst : list (prod string term)) : term. Admitted.
@@ -3892,7 +3902,12 @@ match conjs with
  | [] => tmReturn partialLetfn
  | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl ind kn t allVarTpInf lFn' fuel
 end. 
- 
+
+Fixpoint animateListConjLetCl' (A : Type) (ind : A) (kn : kername) (conjs : list term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
+match conjs with
+ | [] => tmReturn partialLetfn
+ | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl' A ind kn t allVarTpInf lFn' fuel
+end. 
                                 
 Definition animateOneConjSuccGuard'' (conj : term) (partialGuard : term)  :  term :=
   match conj with
@@ -3975,11 +3990,145 @@ match inVars with
 
 | h :: t => tLam (fst h) (tApp <%outcomePoly%> [snd h]) (animateListLetClLam t fnBody) 
 end.
+Print reductionStrategy.
 
 Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (outVars : list (prod string term)) (inVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
 letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs outVars fuel ;;
 tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (outVars)]))).
+
+
+
+(*
+
+Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad unit :=
+bigConj <- general.animate2 kn ;;
+let listAllConjs := getListConjAll bigConj in
+lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] (map fst inVars) fuel) ;;
+lConjs <- tmEval (unfold <?getSortedOrientedConjs?>) lConjs' ;;
+gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] (map fst inVars) fuel) ;;
+gConjs <- tmEval (unfold <?snd term × term?>) gConjs' ;;
+
+
+
+letBind <- animateListConjLetCl (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
+gFun <- animateListConjGuard ind kn gConjs outVars fuel ;;
+tmPrint (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (outVars)]))) ;;
+ret tt.
+*)
+(* ;;
+clauseFn'' <- tmEval all clauseFn' ;;
+clauseFn <- tmEval all (removeopTm (DB.deBruijnOption clauseFn'')) ;;
+clFnAn <- tmUnquote clauseFn ;;
+tmPrint clFnAn ;;
+ret tt.
+*)     
+(*
+Definition partFn := (fun (a : outcomePoly nat) (l: outcomePoly (list nat)) => composeOutcomePoly (nat × list nat) (list nat) nat
+    (fun fuel : nat =>
+     match fuel with
+     | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+     | S _ =>
+         defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
+           (noMatchPoly (list nat))
+           (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
+              [fun v2 : outcomePoly (nat × list nat) =>
+               match v2 with
+               | @successPoly _ (a, l) => Some (successPoly (list nat) (a :: l))
+               | _ => None
+               end;
+               fun v2 : outcomePoly (nat × list nat) =>
+               match v2 with
+               | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+               | _ => None
+               end])
+     end)
+    (fun fuel : nat =>
+     match fuel with
+     | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) nat
+     | S _ =>
+         defaultVal (outcomePoly (list nat)) (outcomePoly nat) (noMatchPoly nat)
+           (dispatchInternal (outcomePoly (list nat)) (outcomePoly nat)
+              [fun v2 : outcomePoly (list nat) =>
+               match v2 with
+               | @successPoly _ [b; _] => Some (successPoly nat b)
+               | @successPoly _ [b] | @successPoly _ (b :: _ :: _ :: _) => None
+               | _ => None
+               end;
+               fun v2 : outcomePoly (list nat) =>
+               match v2 with
+               | @fuelErrorPoly _ => Some (fuelErrorPoly nat)
+               | _ => None
+               end])
+     end)
+    5
+    ((fun (o0 : outcomePoly nat) (o1 : outcomePoly (list nat)) =>
+      joinOutcome nat (list nat) o0 o1) a l)).
+
+Compute (partFn (successPoly nat 3) (successPoly (list nat) [4])).
+
+*)
+
+Inductive genRel11 : nat -> nat -> Prop :=
+ | genRelcstr11 : forall (a d : nat),  d = a  -> genRel11 a d .
+ 
+
+MetaRocq Run (bigConj <- general.animate2 <?genRel11?> ;; tmDefinition "bC" bigConj).
+
+MetaRocq Run (
+let listAllConjs := getListConjAll bC in
+lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] ["a"] 30) ;;
+lConjs <- tmEval (all) lConjs' ;;
+gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] ["a"] 30) ;;
+gConjs <- tmEval (all) gConjs' ;;
+tmDefinition "lC" lConjs ;;
+tmDefinition "gC" gConjs). 
+
+MetaRocq Run (t <- (animateListLetAndGuard  genRel11 <?genRel11?> (rev lC) gC [("d", <%nat%>)]  [("a", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>)]  (30)) ;; t' <- tmEval all t ;; t'' <- DB.deBruijn t';; tmDefinition "fnTerm" t'').
+Print fnTerm.
+Check (fun a : outcomePoly nat =>
+ optionToOutcome nat nat
+    (fun fuel : nat =>
+     match fuel with
+     | 0 => fuelErrorPolyCstFn (outcomePoly nat) (option nat)
+     | S _ =>
+         defaultVal (outcomePoly nat) (outcomePoly (option nat)) 
+           (noMatchPoly (option nat))
+           (dispatchInternal (outcomePoly nat) (outcomePoly (option nat))
+              [fun v2 : outcomePoly nat =>
+               match v2 with
+               | @successPoly _ a =>
+                   Some
+                     (successPoly (option nat) (let d := a in if true then Some d else None))
+               | _ => None
+               end;
+               fun v2 : outcomePoly nat =>
+               match v2 with
+               | @fuelErrorPoly _ => Some (fuelErrorPoly (option nat))
+               | _ => None
+               end])
+     end)
+    5 a).
+      
+      
+      
+      
+MetaRocq Run (f <- tmUnquote fnTerm ;; tmPrint f).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   
 (*    
