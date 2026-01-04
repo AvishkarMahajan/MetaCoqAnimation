@@ -3979,8 +3979,8 @@ Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername
      t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
      tmReturn t').
     
-Definition animateListConjGuard {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (outVars : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars outVars) (mkProdTypeVars outVars) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel.
+Definition animateListConjGuard {A : Type} (induct : A) (kn : kername) (gConjs : list term) (allVarTpInf : list (prod string term))  (outVars : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars allVarTpInf) (mkProdTypeVars allVarTpInf) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel.
  
 
 
@@ -3992,10 +3992,10 @@ match inVars with
 end.
 Print reductionStrategy.
 
-Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (outVars : list (prod string term)) (inVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (inVars : list (prod string term)) (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
 letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
-gFun <- animateListConjGuard ind kn gConjs outVars fuel ;;
-tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (outVars)]))).
+gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
+tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (allVarTpInf)]))).
 
 
 
@@ -4069,52 +4069,166 @@ Compute (partFn (successPoly nat 3) (successPoly (list nat) [4])).
 
 *)
 
-Inductive genRel11 : nat -> nat -> Prop :=
- | genRelcstr11 : forall (a d : nat),  d = a  -> genRel11 a d .
+Inductive genRel11 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr11 : forall (a d b c: nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c -> genRel11 a l d .
  
 
 MetaRocq Run (bigConj <- general.animate2 <?genRel11?> ;; tmDefinition "bC" bigConj).
 
 MetaRocq Run (
 let listAllConjs := getListConjAll bC in
-lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] ["a"] 30) ;;
+lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] ["a"; "l"] 30) ;;
 lConjs <- tmEval (all) lConjs' ;;
-gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] ["a"] 30) ;;
+gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] ["a"; "l"] 30) ;;
 gConjs <- tmEval (all) gConjs' ;;
 tmDefinition "lC" lConjs ;;
 tmDefinition "gC" gConjs). 
 
-MetaRocq Run (t <- (animateListLetAndGuard  genRel11 <?genRel11?> (rev lC) gC [("d", <%nat%>)]  [("a", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>)]  (30)) ;; t' <- tmEval all t ;; t'' <- DB.deBruijn t';; tmDefinition "fnTerm" t'').
+MetaRocq Run (t <- (animateListLetAndGuard  genRel11 <?genRel11?> (rev lC) gC [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)]  (30)) ;; t' <- tmEval all t ;; t'' <- DB.deBruijn t';; tmDefinition "fnTerm" t'').
 Print fnTerm.
-Check (fun a : outcomePoly nat =>
- optionToOutcome nat nat
-    (fun fuel : nat =>
-     match fuel with
-     | 0 => fuelErrorPolyCstFn (outcomePoly nat) (option nat)
-     | S _ =>
-         defaultVal (outcomePoly nat) (outcomePoly (option nat)) 
-           (noMatchPoly (option nat))
-           (dispatchInternal (outcomePoly nat) (outcomePoly (option nat))
-              [fun v2 : outcomePoly nat =>
-               match v2 with
-               | @successPoly _ a =>
-                   Some
-                     (successPoly (option nat) (let d := a in if true then Some d else None))
-               | _ => None
-               end;
-               fun v2 : outcomePoly nat =>
-               match v2 with
-               | @fuelErrorPoly _ => Some (fuelErrorPoly (option nat))
-               | _ => None
-               end])
-     end)
-    5 a).
-      
+
       
       
       
 MetaRocq Run (f <- tmUnquote fnTerm ;; tmPrint f).
 
+
+Definition genRel11An :=
+fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
+    let b :=
+      composeOutcomePoly (nat × list nat) (list nat) nat
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+         | S _ =>
+             defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat)) 
+               (noMatchPoly (list nat))
+               (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (nat × list nat) =>
+                   match v2 with
+                   | @successPoly _ (a0, l0) => Some (successPoly (list nat) (a0 :: l0))
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (nat × list nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+                   | _ => None
+                   end])
+         end)
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) nat
+         | S _ =>
+             defaultVal (outcomePoly (list nat)) (outcomePoly nat) (noMatchPoly nat)
+               (dispatchInternal (outcomePoly (list nat)) (outcomePoly nat)
+                  [fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @successPoly _ [b; _] => Some (successPoly nat b)
+                   | @successPoly _ [b] | @successPoly _ (b :: _ :: _ :: _) => None
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly nat)
+                   | _ => None
+                   end])
+         end)
+        5
+        ((fun (o0 : outcomePoly nat) (o1 : outcomePoly (list nat)) => joinOutcome nat (list nat) o0 o1)
+           a l)
+      in
+    let c :=
+      composeOutcomePoly (nat × list nat) (list nat) nat
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+         | S _ =>
+             defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat)) 
+               (noMatchPoly (list nat))
+               (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (nat × list nat) =>
+                   match v2 with
+                   | @successPoly _ (a0, l0) => Some (successPoly (list nat) (a0 :: l0))
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (nat × list nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
+                   | _ => None
+                   end])
+         end)
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) nat
+         | S _ =>
+             defaultVal (outcomePoly (list nat)) (outcomePoly nat) (noMatchPoly nat)
+               (dispatchInternal (outcomePoly (list nat)) (outcomePoly nat)
+                  [fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @successPoly _ [_; c] => Some (successPoly nat c)
+                   | @successPoly _ (_ :: c :: _ :: _) => None
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly (list nat) =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly nat)
+                   | _ => None
+                   end])
+         end)
+        5
+        ((fun (o0 : outcomePoly nat) (o1 : outcomePoly (list nat)) => joinOutcome nat (list nat) o0 o1)
+           a l)
+      in
+    let d :=
+      optionToOutcome nat nat
+        (fun fuel : nat =>
+         match fuel with
+         | 0 => fuelErrorPolyCstFn (outcomePoly nat) (option nat)
+         | S _ =>
+             defaultVal (outcomePoly nat) (outcomePoly (option nat)) (noMatchPoly (option nat))
+               (dispatchInternal (outcomePoly nat) (outcomePoly (option nat))
+                  [fun v2 : outcomePoly nat =>
+                   match v2 with
+                   | @successPoly _ c0 =>
+                       Some (successPoly (option nat) (let d := c0 in if true then Some d else None))
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly nat =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (option nat))
+                   | _ => None
+                   end])
+         end)
+        5 c
+      in
+    optionToOutcome (nat × nat × nat × nat × list nat) nat
+      (fun fuel : nat =>
+       match fuel with
+       | 0 => fuelErrorPolyCstFn (outcomePoly (nat × nat × nat × nat × list nat)) (option nat)
+       | S _ =>
+           defaultVal (outcomePoly (nat × nat × nat × nat × list nat)) (outcomePoly (option nat))
+             (noMatchPoly (option nat))
+             (dispatchInternal (outcomePoly (nat × nat × nat × nat × list nat))
+                (outcomePoly (option nat))
+                [fun v2 : outcomePoly (nat × nat × nat × nat × list nat) =>
+                 match v2 with
+                 | @successPoly _ (d0, (_, (b0, (c0, _)))) =>
+                     Some
+                       (successPoly (option nat) (if (true && (b0 =? c0))%bool then Some d0 else None))
+                 | _ => None
+                 end;
+                 fun v2 : outcomePoly (nat × nat × nat × nat × list nat) =>
+                 match v2 with
+                 | @fuelErrorPoly _ => Some (fuelErrorPoly (option nat))
+                 | _ => None
+                 end])
+       end)
+      5
+      ((fun (o0 o1 o2 o3 : outcomePoly nat) (o4 : outcomePoly (list nat)) =>
+        joinOutcome nat (nat × nat × nat × list nat) o0
+          (joinOutcome nat (nat × nat × list nat) o1
+             (joinOutcome nat (nat × list nat) o2 (joinOutcome nat (list nat) o3 o4))))
+         d a b c l).
 
 
 
