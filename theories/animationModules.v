@@ -6,7 +6,9 @@ Import monad_utils.MRMonadNotation.
 Require Import Animation.utils.
 Import MetaRocqNotations.
 Unset MetaRocq Strict Unquote Universe Mode.
+(*
 Unset Universe Checking.
+*)
 Require Import PeanoNat.
 Local Open Scope nat_scope.
 Open Scope bs.
@@ -4003,6 +4005,33 @@ tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm
 
 
 Check tmReturn.
+
+(* Universe Inconsistency example 
+
+
+
+Definition animateListLetAndGuard'' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+bigConj <- general.animate2 kn ;;
+let listAllConjs := getListConjAll bigConj in
+lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] (map fst inVars) fuel) ;;
+lConjs <- tmEval (all) lConjs' ;;
+gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] (map fst inVars) fuel) ;;
+gConjs <- tmEval (all) gConjs' ;;
+letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
+gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
+t <- (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (allVarTpInf)])));;
+(*
+t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel ;;
+*)
+t' <- tmEval all t ;; 
+t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;; 
+f <- tmUnquote t'' ;;
+tmPrint f ;;
+tmReturn t''.
+*)
+
+Unset Universe Checking.
+
 Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
@@ -4090,7 +4119,7 @@ Compute (partFn (successPoly nat 3) (successPoly (list nat) [4])).
 
 *)
 *)
-
+(*
 Inductive genRel11 : nat -> list nat -> nat -> Prop :=
  | genRelcstr11 : forall (a d b c: nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c -> genRel11 a l d .
  
@@ -4108,11 +4137,11 @@ tmDefinition "gC" gConjs).
 
 MetaRocq Run (t <- (animateListLetAndGuard  genRel11 <?genRel11?> (lC) gC [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)]  (30)) ;; t' <- tmEval all t ;; t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;; tmDefinition "fnTerm" t'').
 Print fnTerm.
+*)
+      
+      
+      
 
-      
-      
-      
-MetaRocq Run (f <- tmUnquote fnTerm ;; tmPrint f).
 
 
 Definition genRel11An :=
@@ -4256,7 +4285,7 @@ fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
 
 
 
-
+MetaRocq Run (f' <- tmEval all genRel11An ;; tmPrint f').
 
 
 
