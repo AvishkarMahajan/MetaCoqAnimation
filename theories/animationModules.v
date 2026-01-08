@@ -4004,10 +4004,8 @@ tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm
 
 
 
-Check tmReturn.
 
-(* Universe Inconsistency example 
-
+(* Universe error
 
 
 Definition animateListLetAndGuard'' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
@@ -4020,14 +4018,20 @@ gConjs <- tmEval (all) gConjs' ;;
 letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
 t <- (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (allVarTpInf)])));;
+
+
 (*
 t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel ;;
 *)
+
+
+
 t' <- tmEval all t ;; 
 t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;; 
 f <- tmUnquote t'' ;;
 tmPrint f ;;
 tmReturn t''.
+
 *)
 
 Unset Universe Checking.
@@ -4043,7 +4047,9 @@ t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel
 t' <- tmEval all t ;; 
 t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;; 
 f <- tmUnquote t'' ;;
-tmPrint f ;;
+tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+
 tmReturn t''.
 
 Inductive genRel11 : nat -> list nat -> nat -> Prop :=
@@ -4052,6 +4058,7 @@ Inductive genRel11 : nat -> list nat -> nat -> Prop :=
 
 MetaRocq Run (animateListLetAndGuard' genRel11 <? genRel11 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 30).
 
+Compute (genRel11Animated (successPoly nat 3) (successPoly (list nat) [3])). 
 (*
 letBind <- animateListConjLetCl (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
