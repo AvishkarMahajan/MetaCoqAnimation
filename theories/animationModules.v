@@ -1,168 +1,49 @@
-From Stdlib Require Import List.
+From Stdlib Require Import List PeanoNat.
 
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
+Unset MetaRocq Strict Unquote Universe Mode.
 
 Require Import Animation.utils.
 Import MetaRocqNotations.
-Unset MetaRocq Strict Unquote Universe Mode.
-(*
-Unset Universe Checking.
-*)
-Require Import PeanoNat.
+
 Local Open Scope nat_scope.
 Open Scope bs.
 
-
- 
-
-(*
-From Stdlib Require Export RelationClasses.
-From Stdlib Require Import Bool Morphisms Setoid.
-Module Type Typ.
-  Parameter Inline(10) t : Type.
-End Typ.
-
-Module Type HasEqb (Import T:Typ).
-  Parameter Inline eqb : t -> t -> bool.
-End HasEqb.
-
-Module Type HasEq (Import T:Typ).
-  Parameter Inline(30) eq : t -> t -> Prop.
-End HasEq.
-
-Module Type Eq := Typ <+ HasEq.
-
-Module Type EqNotation (Import E:Eq).
-  Infix "==" := eq (at level 70, no associativity).
-  Notation "x ~= y" := (~eq x y) (at level 70, no associativity).
-End EqNotation.
-
-Module Type Eq' := Eq <+ EqNotation.
-
-Module Type EqbSpec (T:Typ)(X:HasEq T)(Y:HasEqb T).
-  Parameter eqb_eq : forall x y, Y.eqb x y = true <-> X.eq x y.
-End EqbSpec.
-
-Module Type EqbNotation (T:Typ)(E:HasEqb T).
-  Infix "=?" := E.eqb (at level 70, no associativity).
-End EqbNotation.
-
-Module Type HasEqBool (E:Eq) := HasEqb E <+ EqbSpec E E.
-
-*)
-
-Check (let b := 1 in b). 
-
-
-
+(* Module path notations *)
 Notation "<?and?>" := (MPfile ["Logic"; "Init"; "Corelib"], "and").
 Notation "<?eq?>" := (MPfile ["Logic"; "Init"; "Corelib"], "eq").
 Notation "<?nat?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "nat").
+Notation "<?list?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "list").
+Notation "<?prod?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "prod").
+Notation "<?option?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "option").
+Notation "<?bool?>" := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool").
+
+(* Inductive type notations *)
 Notation "<%and%>" := (tInd {| inductive_mind := <?and?>; inductive_ind := 0 |} []).
 Notation "<%eq%>" := (tInd {| inductive_mind := <?eq?>; inductive_ind := 0 |} []).
 Notation "<%nat%>" := (tInd {| inductive_mind := <?nat?>; inductive_ind := 0 |} []).
-
-
-(* 
-Axiom functional_extensionality_dep : forall {A} {B : A -> Type},
-  forall (f g : forall x : A, B x),
-  (forall x, f x = g x) -> f = g.
-
-Lemma functional_extensionality {A B} (f g : A -> B) :
-  (forall x, f x = g x) -> f = g. Proof. Admitted.
-
-
-
-
-
-Definition test : TemplateMonad unit :=
-  t <- @tmQuote bool ((fun (n : nat) =>
-                         match n with
-                         | O => true
-                         | S n' => false
-                         end) 5) ;;
-  t' <- DB.undeBruijn t ;;
-  t'' <- DB.deBruijn t' ;;
-  tmMsg "BEFORE" ;;
-  tmPrint t ;;
-  tmMsg "AFTER" ;;
-  tmPrint t' ;;
-  tmMsg "ROUND TRIP" ;;
-  tmPrint t''.
-
-
-Definition animate_conjunct
-           (c : constructor_body) (conjunct : context_decl) : TemplateMonad named_term :=
-  (* t is the MetaRocq term for the conjunct like (e = b /\ d = c /\ c = a + e) *)
-  let t : term := decl_type conjunct in
-  (* tl here only works because we assume there is only one, large, nested "and" conjunct *)
-  t_named <- DB.undeBruijn' (tl (map (fun arg => binder_name (decl_name arg)) (cstr_args c))) t ;;
-  (* now you can work with the named representation, as you can see below: *)
-  tmPrint t_named ;;
-  ret hole.
-
-Fixpoint collect_conjuncts (cs : list constructor_body) : TemplateMonad (list named_term) :=
-  match cs with
-  | [] => ret []
-  | c :: cs =>
-      match cstr_args c with
-      | conjunct :: _ =>
-          conjunct' <- animate_conjunct c conjunct ;;
-          cs' <- collect_conjuncts cs ;;
-          ret (conjunct' :: cs')
-      | _ => tmFail "No arguments for constructor c"
-      end
-  end.
-
-
-
-Definition animate (kn : kername) : TemplateMonad unit :=
-  mut <- tmQuoteInductive kn ;;
-  match ind_bodies mut with
-  | [ one ] =>
-    conjuncts <- collect_conjuncts (ind_ctors one) ;;
-    (* sepConj <- tAppDes conjuncts ;; *)
-    (* there has to be something clever here *)
-     ret conjuncts
-  | _ => tmFail "Not one type in mutually inductive block."
-  end ;;
-  ret tt. *) 
-  
-(* MetaRocq Run (t <- tmQuote ((fun x : nat => match x with
-                                            | S y  => Some [y; y]
-                                            | _ => None  
-                                            end))  ;; t' <- DB.undeBruijn t ;; tmPrint t').*)  
+Notation "<%list%>" := (tInd {| inductive_mind := <?list?>; inductive_ind := 0 |} []).
+Notation "<%prod%>" := (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} []).
+Notation "<%option%>" := (tInd {| inductive_mind := <?option?>; inductive_ind := 0 |} []).
+Notation "<%bool%>" := (tInd {| inductive_mind := <?bool?>; inductive_ind := 0 |} []).
 
 Inductive outcomePoly (A : Type) : Type :=
- | fuelErrorPoly
- | successPoly (x:A)
- | noMatchPoly.
-
-Compute (fst (1,2,3)).
-Compute <%Nat.eqb%>.
-Print Nat.eqb.
-Print Bool.eqb.
-
-
-
-
+| fuelErrorPoly : outcomePoly A
+| successPoly : A -> outcomePoly A
+| noMatchPoly : outcomePoly A.
 
 Module typeConstrPatMatch.
 
 Definition extractIndDecl (x : global_decl) : option mutual_inductive_body :=
- match x with
+  match x with
   | InductiveDecl y => Some y
   | _ => None
- end.
+  end.
  
-Parameter error : kername × global_decl.
-
-
+Parameter error : kername * global_decl.
 Parameter error2 : one_inductive_body.
-
 Parameter error3 : constructor_body.
-
 Parameter error4 : context_decl.
 Parameter termErr : term.
 
@@ -187,7 +68,7 @@ Definition extractPatMatData (p : program) : term :=
 Definition genVar (n : nat) : string :=
  String.append "v" (string_of_nat (n)).
 
-Fixpoint genVarlst (s : nat) (ls : list term) : list (string × term) :=
+Fixpoint genVarlst (s : nat) (ls : list term) : list (string * term) :=
  match ls with
   | [] => []
   | h :: t => ((genVar (s + 1)), h) :: (genVarlst (s + 1) t)
@@ -195,9 +76,9 @@ Fixpoint genVarlst (s : nat) (ls : list term) : list (string × term) :=
  
 
 
-Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs : list ((string × term) × list string)) 
-       (remTs :list (string × term)) : (((nat ×  list (string × term)) × 
-                                       list ((string × term) × list string)) × list (string × term))  :=
+Definition unfoldConsStep (i : nat) (currTs : list (string * term)) (resolvedTs : list ((string * term) * list string)) 
+       (remTs :list (string * term)) : (((nat *  list (string * term)) * 
+                                       list ((string * term) * list string)) * list (string * term))  :=
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
  | (str, ((tApp (tConstruct typeInfo cstrInd ls') args)))  :: t => (i + (length args), t, ((str, (tConstruct typeInfo cstrInd ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args)  remTs))
@@ -214,9 +95,9 @@ Definition unfoldConsStep (i : nat) (currTs : list (string × term)) (resolvedTs
  | (str, _) :: t => (i, t, resolvedTs, remTs) 
  end. 
  
-Fixpoint unfoldConsStepIter (fuel : nat) (st : (((nat ×  list (string × term)) × 
-                                       list ((string × term) × list string)) × list (string × term))) : (((nat ×  list (string × term)) × 
-                                       list ((string × term) × list string)) × list (string × term)) :=
+Fixpoint unfoldConsStepIter (fuel : nat) (st : (((nat *  list (string * term)) * 
+                                       list ((string * term) * list string)) * list (string * term))) : (((nat *  list (string * term)) * 
+                                       list ((string * term) * list string)) * list (string * term)) :=
   match fuel with
    | 0 => st
    | S m => unfoldConsStepIter m (unfoldConsStep  (fst (fst (fst st))) (snd (fst (fst st))) (snd (fst st)) (snd st))
@@ -229,19 +110,12 @@ Definition preProcCons (fuel : nat) (t : term) :=
 
 Definition reduce2 (x : nat) : (option nat) :=
  match x with
-  | S m => match m with
-            | S n => Some n
-            | _ => None
-           end
-  | _ => None
+ | S m => match m with
+          | S n => Some n
+          | _ => None
+          end
+ | _ => None
  end.           
-
-
-
-
- 
-
-
 
 Definition preProcConsRem (fuel : nat) (t : term) : bool :=
  let r := app (snd ((unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))) (snd (fst (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], []))))) in
@@ -250,13 +124,7 @@ Definition preProcConsRem (fuel : nat) (t : term) : bool :=
   | _ => false
   end.
    
-     
- 
-
-
-(* Print bazTerm. *)
-
-Fixpoint lookUpVarsOne (str : string) (ls : list ((string × term) × list string)) : list string × list term :=
+Fixpoint lookUpVarsOne (str : string) (ls : list ((string * term) * list string)) : list string * list term :=
  match ls with
   | [] => ([], [])
   | (h :: t) => if (String.eqb str (fst (fst h))) then (let t := snd (fst h) in 
@@ -271,7 +139,7 @@ Fixpoint lookUpVarsOne (str : string) (ls : list ((string × term) × list strin
                                                          else lookUpVarsOne str t
  end.
 
-Fixpoint lookUpVars (lsStr : list string) (ls : list ((string × term) × list string)) : list string × list term :=
+Fixpoint lookUpVars (lsStr : list string) (ls : list ((string * term) * list string)) : list string * list term :=
  match lsStr with
   | [] => ([], [])
   | (h :: t) => match lookUpVarsOne h ls with
@@ -282,8 +150,8 @@ Fixpoint lookUpVars (lsStr : list string) (ls : list ((string × term) × list s
                 end
  end.                                                               
 
-Fixpoint preProcConsTypeVar (ls : list ((string × term) × list string)) (ls' : list ((string × term) × list string)) : 
-                                     list (((string × term) × list string) × list term) :=
+Fixpoint preProcConsTypeVar (ls : list ((string * term) * list string)) (ls' : list ((string * term) * list string)) : 
+                                     list (((string * term) * list string) * list term) :=
   match ls' with
    | [] => []
    | (str1, <%eq%>, lstStr) :: t => preProcConsTypeVar ls t
@@ -348,10 +216,10 @@ Fixpoint genBinderannot (ind : list term) (cxt : list context_decl) : option (li
           
  
 
-Definition getcsAr (o : one_inductive_body) : string × list nat :=
+Definition getcsAr (o : one_inductive_body) : string * list nat :=
  (ind_name o, (map cstr_arity (ind_ctors o))).
                  
-Fixpoint extractTypeCsArlst (muts : list mutual_inductive_body) : list (string × list nat) :=
+Fixpoint extractTypeCsArlst (muts : list mutual_inductive_body) : list (string * list nat) :=
   match muts with
    | [] => []
    | (h :: t) => map getcsAr (ind_bodies h) ++ extractTypeCsArlst t
@@ -369,24 +237,24 @@ Fixpoint retVarVals' (lst : list string) : term :=
  match lst with
  | [] =>  tApp (tConstruct
                          {|
-                           inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                           inductive_mind := <?list?>;
                            inductive_ind := 0
                          |} 0 [])
                       [<%nat%>]
  | h :: rest => tApp
                    (tConstruct
                       {|
-                        inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "list");
+                        inductive_mind := <?list?>;
                         inductive_ind := 0
                       |} 1 [])
-                   [<%nat%>; tVar h; retVarVals' rest]                     
-                      
+                   [<%nat%>; tVar h; retVarVals' rest]
+
  end.
 
 Definition retVarVals (lst : list string) : term :=
  tApp (tConstruct
                 {|
-                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+                  inductive_mind := <?option?>; inductive_ind := 0
                 |} 0 [])
              [tApp
                 (tInd
@@ -395,7 +263,7 @@ Definition retVarVals (lst : list string) : term :=
                    |} [])
                 [<%nat%>]; (retVarVals' lst)].
              
-Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × list string)) : (list string) :=
+Fixpoint sortBindersOne (outputVar : string) (lst': list ((string * term) * list string)) : (list string) :=
  match lst' with
   | [] => []
   | (h :: rest) => match h with
@@ -406,7 +274,7 @@ Fixpoint sortBindersOne (outputVar : string) (lst': list ((string × term) × li
 (* Check concat. 
 Check map.*)
  
-Definition sortBinders (outputVars : list string) (lst : list ((string × term) × list string)) : ((list string)) :=
+Definition sortBinders (outputVars : list string) (lst : list ((string * term) * list string)) : ((list string)) :=
   concat (map (fun x : string => sortBindersOne x lst) outputVars). 
 Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
         ("v6", tVar "a", [])])). 
@@ -414,7 +282,7 @@ Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
 Compute (retVarVals ["v6"]).                      
  
       
-Definition getCstrIndex (s : ((string × term) × list string)) : nat := (* Get index of typeCon *)
+Definition getCstrIndex (s : ((string * term) * list string)) : nat := (* Get index of typeCon *)
   
   match s with
    | (str,
@@ -424,7 +292,7 @@ Definition getCstrIndex (s : ((string × term) × list string)) : nat := (* Get 
    | _ => error_nat        
   end. 
 
-Definition getType (s : ((string × term) × list string)) :=  (*Get type of scrutinee var*)
+Definition getType (s : ((string * term) * list string)) :=  (*Get type of scrutinee var*)
   
   match s with
    | (str,
@@ -435,7 +303,7 @@ Definition getType (s : ((string × term) × list string)) :=  (*Get type of scr
 Compute (getType (("x", <%eq%>, ["v1"; "v2"; "v3"]))).
 
 
-Definition getTypeNm (s : (string × term) × list string) : string := (* Get name of type *)
+Definition getTypeNm (s : (string * term) * list string) : string := (* Get name of type *)
  match s with 
   | (str,
          tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
@@ -449,8 +317,8 @@ Fixpoint chkMemberStr (s : string) (lStr : list string) : bool :=
   | (h :: t) => if (String.eqb s h) then true else chkMemberStr s t
  end.   
 
-Fixpoint filterTypeCon' (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : 
-                         list ((string × term) × list string) := (* Delete terms not corresponding to a valid typeCon *)
+Fixpoint filterTypeCon' (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) : 
+                         list ((string * term) * list string) := (* Delete terms not corresponding to a valid typeCon *)
    match ls with
     | [] => []
     | h :: t => match h with 
@@ -462,8 +330,8 @@ Fixpoint filterTypeCon' (ls : list ((string × term) × list string)) (mut : lis
    end.
 
 
-Definition filterTypeCon (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : 
-                         list ((string × term) × list string) := ls.
+Definition filterTypeCon (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) : 
+                         list ((string * term) * list string) := ls.
   
 
 
@@ -475,7 +343,7 @@ Definition filterTypeCon (ls : list ((string × term) × list string)) (mut : li
 
 
 
-Fixpoint getCstrArityLst' (typeName : string) (r : list (string × list nat)) : list nat := (* use String.eqb *)
+Fixpoint getCstrArityLst' (typeName : string) (r : list (string * list nat)) : list nat := (* use String.eqb *)
  
   match r with
    | [] => errorlstNat
@@ -530,7 +398,7 @@ Fixpoint restLst (n : nat) (l : list nat) : list nat :=
            end  (* Return l from the index after n *)
  end.
 
-Definition mkBrLst (s : (string × term) × list string) (l : list mutual_inductive_body) (t : term) : list (branch term) :=
+Definition mkBrLst (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) : list (branch term) :=
  
  let csArlst := (getCstrArityLst (getTypeNm s) l) in
   let index := getCstrIndex s in
@@ -538,7 +406,7 @@ Definition mkBrLst (s : (string × term) × list string) (l : list mutual_induct
    
   
       
-Definition mkCase'  (s' : ((string × term) × list string) × list term ) (l : list mutual_inductive_body) (t : term)  
+Definition mkCase'  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term)  
                       : term :=
   let s := fst s' in 
   (tCase
@@ -582,7 +450,7 @@ Definition identityTerm : term := idTerm. (* term rep of id function*)
 
 
 
-Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputVars : list (string)) 
+Fixpoint mkPmNested' (ls : list (((string * term) * list string) * list term)) (ls' : list (((string * term) * list string))) (outputVars : list (string)) 
             (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => identityTerm
@@ -593,11 +461,11 @@ Fixpoint mkPmNested' (ls : list (((string × term) × list string) × list term)
 
 
  
-Definition mkPmNested (ls' : list (((string × term) × list string))) (outputVars : list string) 
+Definition mkPmNested (ls' : list (((string * term) * list string))) (outputVars : list string) 
             (mut : list mutual_inductive_body) : term :=
             mkPmNested' (preProcConsTypeVar ls' ls') ls' outputVars mut.
  
-(*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
+(*Definition mkPmNested (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) : term :=
    mkPmNested'  (filterTypeCon ls mut) mut.*)
 
 Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
@@ -610,7 +478,7 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
 (* Need to modify*) 
 (*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
 
-Definition mkLam' (ls : list (((string × term) × list string))) (outputVars : list string) (mut : list mutual_inductive_body) : option term :=
+Definition mkLam' (ls : list (((string * term) * list string))) (outputVars : list string) (mut : list mutual_inductive_body) : option term :=
  match ls with 
  | [] => None
  | (h :: ((str, typeInfo, []) :: t))  => Some (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
@@ -621,7 +489,7 @@ Definition mkLam' (ls : list (((string × term) × list string))) (outputVars : 
  | _ => None                                
  end.
  
-Definition mkLam (ls : list (((string × term) × list string))) (outputVars : list string) (mut : list (option mutual_inductive_body)) : option term :=
+Definition mkLam (ls : list (((string * term) * list string))) (outputVars : list string) (mut : list (option mutual_inductive_body)) : option term :=
   mkLam' ls outputVars (removeOpt mut).    
  
 
@@ -652,7 +520,7 @@ Definition removeopTm (o : option term) : term :=
 tApp
              (tConstruct
                 {|
-                  inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "option"); inductive_ind := 0
+                  inductive_mind := <?option?>; inductive_ind := 0
                 |} 0 [])
              [tApp
                 (tInd
@@ -787,14 +655,14 @@ Definition sampleInput : term :=
 Definition mkNoneBranch2 (wildCardRet : term) (n : nat)  : branch term := typeConstrPatMatch.mkNoneBr n wildCardRet. (* Takes a arity and produces a branch term where return value is none *)
 
 
-Definition mkBrLst2 (s : (string × term) × list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
+Definition mkBrLst2 (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
  
  let csArlst := (typeConstrPatMatch.getCstrArityLst (typeConstrPatMatch.getTypeNm s) l) in
   let index := typeConstrPatMatch.getCstrIndex s in
   map (mkNoneBranch2 wildCardRet) (typeConstrPatMatch.untilLst index csArlst) ++ [typeConstrPatMatch.mkSomeBranch (rev (snd s)) t] ++ map (mkNoneBranch2 wildCardRet) (typeConstrPatMatch.restLst index csArlst).  
    
  
-Definition mkCase2'  (s' : ((string × term) × list string) × list term ) (l : list mutual_inductive_body) (t : term) (outputType : term) (wildCardRet : term) 
+Definition mkCase2'  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term) (outputType : term) (wildCardRet : term) 
                       : term :=
   let s := fst s' in 
   (tCase
@@ -813,7 +681,7 @@ Definition mkCase2'  (s' : ((string × term) × list string) × list term ) (l :
       (mkBrLst2 s l t wildCardRet)). 
       
       
-Fixpoint collectVarSets (l : list ((string × term) × list string)) : list string × list string :=
+Fixpoint collectVarSets (l : list ((string * term) * list string)) : list string * list string :=
  match l with
  | [] => ([], [])
  | h :: t => match snd (fst h) with
@@ -831,7 +699,7 @@ Fixpoint noRepeat (l1 : list string) (l2 : list string) : bool :=
  end. 
 
 
-Fixpoint origVarsMap (l : list ((string × term) × list string)) : list (string × string) :=
+Fixpoint origVarsMap (l : list ((string * term) * list string)) : list (string * string) :=
 match l with
  | [] => []
  | (str, tVar str1, lst) :: t => (str, str1) :: (origVarsMap t)
@@ -840,7 +708,7 @@ end.
 
 
 
-Fixpoint switchOneVar (s : string) (map : list (string × string)) : string :=
+Fixpoint switchOneVar (s : string) (map : list (string * string)) : string :=
  match map with
   | [] => s
   | (str, str1) :: t => if (String.eqb s str) then str1 else switchOneVar s t
@@ -849,20 +717,20 @@ Fixpoint switchOneVar (s : string) (map : list (string × string)) : string :=
 (*Compute (typeConstrPatMatch.preProcCons 30 term1''). 
 Check map. *)
 
-Definition switchVars  (d : list (string × string)) (o : ((string × term) × list string)) : ((string × term) × list string) :=
+Definition switchVars  (d : list (string * string)) (o : ((string * term) * list string)) : ((string * term) * list string) :=
  match o with
   | (s, t, l) => ((switchOneVar s d), t, (map (fun s => switchOneVar s d) l))
  end. 
  
-Definition switchVars' (d : list (string × string))  (l : list ((string × term) × list string)) := 
+Definition switchVars' (d : list (string * string))  (l : list ((string * term) * list string)) := 
  (map (switchVars d) l).
  
-Definition changeVars (l : list ((string × term) × list string)) : list ((string × term) × list string) :=
+Definition changeVars (l : list ((string * term) * list string)) : list ((string * term) * list string) :=
  switchVars' (origVarsMap l) l.
         
 
 
-Fixpoint mkPmNested2' (ls : list (((string × term) × list string) × list term)) (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
+Fixpoint mkPmNested2' (ls : list (((string * term) * list string) * list term)) (ls' : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
             (mut : list mutual_inductive_body)  : term :=
  match ls with
   | [] => typeConstrPatMatch.identityTerm
@@ -871,11 +739,11 @@ Fixpoint mkPmNested2' (ls : list (((string × term) × list string) × list term
  end. 
  
  
-Definition mkPmNested2 (ls' : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
+Definition mkPmNested2 (ls' : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
             (mut : list mutual_inductive_body)  : term :=
             mkPmNested2' (typeConstrPatMatch.preProcConsTypeVar ls' ls') ls' outputTerm outputType wildCardRet mut.
  
-(*Definition mkPmNested (ls : list ((string × term) × list string)) (mut : list mutual_inductive_body) : term :=
+(*Definition mkPmNested (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) : term :=
    mkPmNested'  (filterTypeCon ls mut) mut.*)
 
 Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
@@ -888,7 +756,7 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
 (* Need to modify*) 
 (*Definition getTypeVarVal (s : list string) : list term. Admitted.*)
 
-Definition mkLam2' (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body)  : option term :=
+Definition mkLam2' (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body)  : option term :=
  match ls with 
  | [] => None
  | (h :: ((str, typeInfo, []) :: ((str2, t', l') :: rest)))  => Some (tLambda {| binder_name := nNamed str2; binder_relevance := Relevant |}
@@ -899,7 +767,7 @@ Definition mkLam2' (ls : list (((string × term) × list string))) (outputTerm :
  | _ => None                                
  end.
  
-Definition mkLam2 (ls : list (((string × term) × list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body))  : option term :=
+Definition mkLam2 (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body))  : option term :=
   mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut).    
  
 
@@ -1137,7 +1005,7 @@ f <- tmUnquote t';;
               tmDefinitionRed_ false (nmFn) (Some hnf) ;; tmMsg "done".
               
 
-Fixpoint mklhsProdType (lhsIndPre : list (term × term)) : TemplateMonad term :=
+Fixpoint mklhsProdType (lhsIndPre : list (term * term)) : TemplateMonad term :=
  match lhsIndPre with 
   | [] => tmFail "no predicates on LHS"
   | [h] => tmReturn (snd h)
@@ -1151,7 +1019,7 @@ Fixpoint mklhsProdType (lhsIndPre : list (term × term)) : TemplateMonad term :=
 
 
 
-Fixpoint mklhsProdTm  (lhsIndPre : list (term × term )) : TemplateMonad term :=
+Fixpoint mklhsProdTm  (lhsIndPre : list (term * term )) : TemplateMonad term :=
  match lhsIndPre with 
   | [] => tmFail "no predicates on LHS"
   | [h] => tmReturn (fst h)
@@ -1163,28 +1031,28 @@ Fixpoint mklhsProdTm  (lhsIndPre : list (term × term )) : TemplateMonad term :=
 Compute <% (0,(0,0)) %>. 
 
 
-Definition mkPreConProdType  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+Definition mkPreConProdType  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
  mklhsProdType (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd). 
  
-Definition mkPreConProdTm  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+Definition mkPreConProdTm  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
  mklhsProdTm (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd). 
  
-Definition mkPostConProdType  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+Definition mkPostConProdType  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
  mklhsProdType (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd). 
  
-Definition mkPostConProdTm  (lhsInd : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+Definition mkPostConProdTm  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
  mklhsProdTm (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd). 
 
-Definition mkOutcome (lhsInd : ((((string × term) × term) × term) × term)) : ((((string × term) × term) × term) × term) :=
+Definition mkOutcome (lhsInd : ((((string * term) * term) * term) * term)) : ((((string * term) * term) * term) * term) :=
  match lhsInd with
   | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preConT; preCon])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postConT; postCon])), (tApp <%outcomePoly%> [postConT]))
  end.
 
-Definition mkOutcomeProd (lhsInd : list ((((string × term) × term) × term) × term)) : list ((((string × term) × term) × term) × term) :=
+Definition mkOutcomeProd (lhsInd : list ((((string * term) * term) * term) * term)) : list ((((string * term) * term) * term) * term) :=
  map (mkOutcome) lhsInd.
  
 
-Fixpoint mkproductAllPreInToPreOutOutcome (lhsIndOutcome : list ((((string × term) × term) × term) × term)) : TemplateMonad term :=
+Fixpoint mkproductAllPreInToPreOutOutcome (lhsIndOutcome : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
 match lhsIndOutcome with
  | [] => tmFail "no predicates on LHS"
  | [h] =>  tmReturn (tApp (tVar (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn")) [tVar "remFuel"; snd (fst (fst (fst h)))])
@@ -1200,7 +1068,7 @@ match lhsIndOutcome with
 
 
  
-Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string × term) × term) × term) × term)) (fnBody : term) : TemplateMonad term :=
+Fixpoint mklamOverAllOutcome  (lhsIndOutcome : list ((((string * term) * term) * term) * term)) (fnBody : term) : TemplateMonad term :=
  match lhsIndOutcome with
   | [] => tmFail "no predicates on LHS"
   | [h] => tmReturn (tLambda {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn") ; binder_relevance := Relevant |} (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (<%nat%>) (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (snd (fst (fst h))) (snd h)))  fnBody)
@@ -1216,7 +1084,7 @@ Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputTy
 
 
 
-Fixpoint genFuelErrorPatMat (lhsInd : list (term × term)) (index : nat) : list (list (term × term)) :=
+Fixpoint genFuelErrorPatMat (lhsInd : list (term * term)) (index : nat) : list (list (term * term)) :=
 match index with
  | 0 => []
  | S index' => match lhsInd with
@@ -1227,7 +1095,7 @@ match index with
 end.
 
 
-Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMonad (list term) :=
+Fixpoint mkProdTmFuelError (lhsIndl : list (list (term * term))) : TemplateMonad (list term) :=
 
   match lhsIndl with
    | [] => tmReturn []
@@ -1235,7 +1103,7 @@ Fixpoint mkProdTmFuelError (lhsIndl : list (list (term × term))) : TemplateMona
    | h :: t => resTail <- mkProdTmFuelError t ;; res <- mklhsProdTm h ;; tmReturn (res :: resTail)
   end.
 
-Definition mkFuelErrorPatMatData (lhsInd : list (term × term)) (fuelErrorOut : term) : TemplateMonad (list (term × term)) :=
+Definition mkFuelErrorPatMatData (lhsInd : list (term * term)) (fuelErrorOut : term) : TemplateMonad (list (term * term)) :=
 inData <- mkProdTmFuelError ( (*rev*) (tl (genFuelErrorPatMat lhsInd (S (length lhsInd))))) ;;
 
 tmReturn (map (fun s => (s, fuelErrorOut)) inData). 
@@ -1249,7 +1117,7 @@ tmReturn (map (fun s => (s, fuelErrorOut)) inData).
 
 
 
-Definition joinPatMatPolyGenFuelAware {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+Definition joinPatMatPolyGenFuelAware {A : Type} (induct : A) (lhsInd : list ((((string * term) * term) * term) * term))
                       (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
                         (fuel : nat) : TemplateMonad unit :=
 
@@ -1437,7 +1305,7 @@ tmReturn t'.
 
                         
                         
-Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string × term) × term) × term) × term))
+Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string * term) * term) * term) * term))
                       (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
                         (fuel : nat) : TemplateMonad unit :=
  match lhsInd with
@@ -1610,8 +1478,8 @@ Compute (recPredBaseAnimated 5 (successPoly nat 4)).
 
 
 
-Fixpoint animateAllClauses {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
-                      (term)) × (term)) × (term)) × (term)) × (string))))
+Fixpoint animateAllClauses {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string * term) * term) * term) * term)) *
+                      (term)) * (term)) * (term)) * (term)) * (string))))
                         (fuel : nat) : TemplateMonad unit := 
  match cstrData with
   | [] => tmFail "no constructors in Inductive"
@@ -1631,7 +1499,7 @@ tConst
 Definition quoteConst' (kn : kername) (nm : string) :=
 tConst (fst kn, nm) [].
 
-Fixpoint applyTopFn (kn : kername) (clauseData : list (string × (list string))) : list term :=
+Fixpoint applyTopFn (kn : kername) (clauseData : list (string * (list string))) : list term :=
 match clauseData with
 | [] => []
 | (postConCons, preConInd) :: t => match preConInd with
@@ -1710,7 +1578,7 @@ Print tPro.
 Compute <% (nat -> prod nat nat -> prod nat nat) %>.
 
 
-Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string × (list string))) (kn : kername) : def term :=
+Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
   
 {|
      dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
@@ -1758,7 +1626,7 @@ Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
  tFix ls j.
  
-Fixpoint mkAllIndTop' (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) (kn : kername) : list (def term) :=  
+Fixpoint mkAllIndTop' (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=  
  match inductData with 
   | [] => []
   | h :: t => (mkOneIndTop (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h) kn) :: mkAllIndTop' t kn
@@ -1793,12 +1661,12 @@ MetaRocq Run (dt' <- DB.undeBruijn dt ;; tmDefinition "dispatchExtTm'" dt').
 Definition dispatchExtTm := hd default (inspectFix dispatchExtTm'). 
 
  
-Definition mkAllIndTop (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) (kn : kername) : list (def term) := 
+Definition mkAllIndTop (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) := 
 app (mkAllIndTop' inductData kn) [dispatchExtTm]. 
 Print reductionStrategy.
 
-Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : string) (clauseData : (list ((((( (list ((((string × term) × term) × term) × term)) ×
-                      (term)) × (term)) × (term)) × (term)) × (string)))) (inductData : (list ((((string) × (term)) × (term)) × (list (string × (list string)))))) 
+Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : string) (clauseData : (list ((((( (list ((((string * term) * term) * term) * term)) *
+                      (term)) * (term)) * (term)) * (term)) * (string)))) (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) 
                         (kn : kername) (fuel : nat) : TemplateMonad unit :=
           animateAllClauses topInduct clauseData fuel ;;
           let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
@@ -1819,7 +1687,7 @@ Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : s
 
 
 
-Fixpoint mkProdTypeVars (outputData : list (string × term)) :  term :=
+Fixpoint mkProdTypeVars (outputData : list (string * term)) :  term :=
  match outputData with 
   | [] => <%bool%>
   | [h] =>  (snd h)
@@ -1833,7 +1701,7 @@ Fixpoint mkProdTypeVars (outputData : list (string × term)) :  term :=
 
 
 
-Fixpoint mkProdTmVars  (outputData : list (string × term )) : term :=
+Fixpoint mkProdTmVars  (outputData : list (string * term )) : term :=
  match outputData with 
   | [] => <%true%>
   | [h] => (tVar (fst h))
@@ -1846,11 +1714,11 @@ Fixpoint mkProdTmVars  (outputData : list (string × term )) : term :=
 
 
 
-Definition getOutputTerm (outputData : list (string × term))  : term :=
+Definition getOutputTerm (outputData : list (string * term))  : term :=
 tApp <% successPoly %> [mkProdTypeVars outputData; mkProdTmVars outputData].
 Print ident.
 
-Definition extractPatMatBinders {A : Type} (kn : kername) (induct : A) (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBinders {A : Type} (kn : kername) (induct : A) (outputData : list (string * term )) (fuel : nat) : TemplateMonad unit :=
 t <- general.animate2 kn ;;
 match t with
  | tApp <%eq%> [typeInputVar; patMatTerm; tVar inputVar] => 
@@ -1858,7 +1726,7 @@ match t with
  | _ => tmFail "incorrect inductive shape" 
 end ;; tmMsg "done".                       
 
-Inductive tlRel : ((list nat) × nat) -> (nat × nat) -> Prop :=
+Inductive tlRel : ((list nat) * nat) -> (nat * nat) -> Prop :=
  | tlRelCons: forall (a : list nat) (b c d : nat),  [c ; d] = (b :: a) -> tlRel (a, b) (c, d).
 
 MetaRocq Run (t <- general.animate2 <? tlRel ?>;; tmPrint t). 
@@ -1884,20 +1752,20 @@ Print tmDefinition.
 
 
 (* OUTPUT from animation
-Definition myFun := composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
+Definition myFun := composeOutcomePoly (list nat * nat) (list nat) (nat * nat)
         (fun fuel : nat =>
          match fuel with
-         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat × nat)) (list nat)
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat * nat)) (list nat)
          | S _ =>
-             defaultVal (outcomePoly (list nat × nat)) (outcomePoly (list nat)) 
+             defaultVal (outcomePoly (list nat * nat)) (outcomePoly (list nat)) 
                (noMatchPoly (list nat))
-               (dispatchInternal (outcomePoly (list nat × nat)) (outcomePoly (list nat))
-                  [fun v2 : outcomePoly (list nat × nat) =>
+               (dispatchInternal (outcomePoly (list nat * nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (list nat * nat) =>
                    match v2 with
                    | @successPoly _ (a, b) => Some (successPoly (list nat) (b :: a))
                    | _ => None
                    end;
-                   fun v2 : outcomePoly (list nat × nat) =>
+                   fun v2 : outcomePoly (list nat * nat) =>
                    match v2 with
                    | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
                    | _ => None
@@ -1905,27 +1773,27 @@ Definition myFun := composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
          end)
         (fun fuel : nat =>
          match fuel with
-         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat × nat)
+         | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat * nat)
          | S _ =>
-             defaultVal (outcomePoly (list nat)) (outcomePoly (nat × nat)) (noMatchPoly (nat × nat))
-               (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat × nat))
+             defaultVal (outcomePoly (list nat)) (outcomePoly (nat * nat)) (noMatchPoly (nat * nat))
+               (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat * nat))
                   [fun v2 : outcomePoly (list nat) =>
                    match v2 with
                    | @successPoly _ [c] => None
-                   | @successPoly _ [c; d] => Some (successPoly (nat × nat) (c, d))
+                   | @successPoly _ [c; d] => Some (successPoly (nat * nat) (c, d))
                    | @successPoly _ (c :: d :: _ :: _) => None
                    | _ => None
                    end;
                    fun v2 : outcomePoly (list nat) =>
                    match v2 with
-                   | @fuelErrorPoly _ => Some (fuelErrorPoly (nat × nat))
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (nat * nat))
                    | _ => None
                    end])
          end).
 
-Compute (myFun 10 (successPoly (list nat × nat) ([5; 6], 2))).
+Compute (myFun 10 (successPoly (list nat * nat) ([5; 6], 2))).
 
-Compute (myFun 10 (successPoly (list nat × nat) ([5], 2))).
+Compute (myFun 10 (successPoly (list nat * nat) ([5], 2))).
 *)          
 
 Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C) 
@@ -1957,7 +1825,7 @@ Definition orientEquality (t : term) (orientation : nat) : term :=
 
 
 
-Definition extractPatMatBinders5 {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBinders5 {A : Type} (kn : kername) (induct : A) (inputData : list (string * term ))  (outputData : list (string * term )) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
 t' <- general.animate2 kn ;;
 let t'' := orientEquality t' orientation in
 t <- tmEval all t'' ;;
@@ -2174,11 +2042,11 @@ end ;; tmMsg "done".
    
 (* Full example *)
 
-Inductive rel8: (nat × nat) -> (nat × nat)  -> Prop :=
+Inductive rel8: (nat * nat) -> (nat * nat)  -> Prop :=
  | rel8Base : forall a, rel8 (1, a) (3, S a) 
  | rel8Cons : forall a1 a2 b1 b2 b3 b4, rel8 (a1, a2) (b1, b3) /\ rel9 (a1, a2) (b4, b2) -> rel8 ((S a1), (S a2)) ((S b1), (S b2))
 
-with rel9: (nat × nat) -> (nat × nat)  -> Prop := 
+with rel9: (nat * nat) -> (nat * nat)  -> Prop := 
  | rel9Cons : forall a b, rel8 a b  -> rel9 a b.
 
        
@@ -2211,13 +2079,13 @@ MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData <? rel8 ?> 50
 Print rel8AnimatedTopFn.
 
 
-Compute (rel8AnimatedTopFn 50 (successPoly (nat × nat) (7,9))).
-Compute (rel8AnimatedTopFn 100 (successPoly (nat × nat) (8,13))).
+Compute (rel8AnimatedTopFn 50 (successPoly (nat * nat) (7,9))).
+Compute (rel8AnimatedTopFn 100 (successPoly (nat * nat) (8,13))).
 
 
-Compute (rel8AnimatedTopFn 70 (successPoly (nat × nat) (9,13))).
+Compute (rel8AnimatedTopFn 70 (successPoly (nat * nat) (9,13))).
 (*Takes very long 
-Compute (rel8AnimatedTopFn 70 (successPoly (nat × nat) (12,14))).
+Compute (rel8AnimatedTopFn 70 (successPoly (nat * nat) (12,14))).
 *)
 
 Lemma testrel8 : True -> rel8 (7,9) (9,10) .
@@ -2360,7 +2228,7 @@ Fixpoint getIndApp (l : list term) (indNames : list string) : list string :=
  end.
 
 Compute (fst (1,2,3)).
-Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_inductive_body) : list ((string × term) × term) := 
+Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_inductive_body) : list ((string * term) * term) := 
  match l with
   | [] => []
   | h :: t => match b with 
@@ -2370,14 +2238,14 @@ Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_induc
  end.
    
 (** Change the next 2 functions to not always return the full clause data but only bits of it **)
-Fixpoint mkNmTm (c : list constructor_body) (l : list name) :TemplateMonad (list (string × term)) :=
+Fixpoint mkNmTm (c : list constructor_body) (l : list name) :TemplateMonad (list (string * term)) :=
  match c with
   | [] => tmReturn []
   | (h :: t) => r <- DB.undeBruijn' l ((cstr_type h )) ;; r' <- tmEval all r ;; let hres := (cstr_name h, (reduceClauseTm r')) in rest <- mkNmTm t l ;; tmReturn (hres :: rest)
  end. 
  
  
-Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (list nat))) (nmCxt : list name) (inOutTps : list ((string × term) × term)) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
+Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (list nat))) (nmCxt : list name) (inOutTps : list ((string * term) * term)) : TemplateMonad (list (((string * term) * term) * (list (string * term))))  :=
   
  match lib with
   | [] => tmReturn []
@@ -2388,7 +2256,7 @@ Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (li
  
  end. 
 (* Change above 2 functions *) 
-Definition getData' (kn : kername) (ln : list (prod (list nat) (list nat))) : TemplateMonad (list (((string × term) × term) × (list (string × term))))  :=
+Definition getData' (kn : kername) (ln : list (prod (list nat) (list nat))) : TemplateMonad (list (((string * term) * term) * (list (string * term))))  :=
 mut <- tmQuoteInductive kn ;;
 tmPrint mut ;;
 let lib := ind_bodies mut in
@@ -2400,13 +2268,13 @@ MetaRocq Run (g <- getData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;; tmDef
 
 Compute (data).
 
-Fixpoint getIndApp' (l : list (string × term)) (indNames : list string) : list (string × (list string)) :=
+Fixpoint getIndApp' (l : list (string * term)) (indNames : list string) : list (string * (list string)) :=
  match l with 
   | [] => []
   | h :: t => (fst h, getIndApp (getClBody' (snd h)) indNames) :: getIndApp' t indNames
  end. 
  
-Fixpoint mkIndData (data : (list (((string × term) × term) × (list (string × term))))) (indNames : list string) :=
+Fixpoint mkIndData (data : (list (((string * term) * term) * (list (string * term))))) (indNames : list string) :=
  match data with
   | [] => []
   | h :: t => match h with
@@ -2427,18 +2295,18 @@ MetaRocq Run (inData <- mkIndData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;
 
 Compute indInf.
 
-Fixpoint findIndex (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option (list nat × list nat) :=
+Fixpoint findIndex (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option (list nat * list nat) :=
  match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd h) else findIndex s t
  end. 
-Fixpoint findInType (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option term :=
+Fixpoint findInType (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option term :=
 match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd (fst (fst h))) else findInType s t
 end. 
 (* ls is (nameOfInductive, inputType, outputType, modeInfo) *)
-Fixpoint findOutType (s : string) (ls : list (((string × term) × term) × (list nat × list nat))) : option term :=
+Fixpoint findOutType (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option term :=
 match ls with
   | [] => None
   | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some ((snd (fst h))) else findOutType s t
@@ -2469,8 +2337,8 @@ match lsArgs with
 
 Definition mkProdTm3 (mode : list nat) (lsArgs : list term) (tpTm : term) : term :=
 mkProdTm3' (mkProdTm3Helper mode lsArgs) tpTm.
-Fixpoint extractClinfo (ts : list term) (ls : list (((string × term) × term) × (list nat × list nat))) 
-                              : list ((((string × term) × term) × term) × term)  :=
+Fixpoint extractClinfo (ts : list term) (ls : list (((string * term) * term) * (list nat * list nat))) 
+                              : list ((((string * term) * term) * term) * term)  :=
 (* output is list of (inductiveNm, inputTerm, inputType, outputTerm, outputType) one tuple per conjunct in precondition *)                             
 match ts with
 | [] => []
@@ -2496,10 +2364,10 @@ match ts with
 
 end.
 
-Parameter noClHdError :((((term) × term) × term) × term).  
+Parameter noClHdError :((((term) * term) * term) * term).  
 
-Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × (list nat × list nat))) 
-                              : ((((term) × term) × term) × term) :=
+Definition extractClinfoHd (h : term) (ls : list (((string * term) * term) * (list nat * list nat))) 
+                              : ((((term) * term) * term) * term) :=
                 match h with
                 | tApp (tVar str) lstArgs => match findIndex str ls with
                                                 | Some mode => match findInType str ls with
@@ -2520,18 +2388,18 @@ Definition extractClinfoHd (h : term) (ls : list (((string × term) × term) × 
                 | _ => noClHdError
                end.                                    
 
-Definition mkClauseInfo  (ls : list (((string × term) × term) × (list nat × list nat))) (cl : (string × term)) := 
+Definition mkClauseInfo  (ls : list (((string * term) * term) * (list nat * list nat))) (cl : (string * term)) := 
  match extractClinfoHd (getClHead' (snd cl)) ls with
   | (t1, t2, t3, t4) => ((extractClinfo (getClBody' (snd cl)) ls), t1, t2, t3, t4, (fst cl))
  end. 
 
-Fixpoint mkClauseInfoLst  (ls : list (((string × term) × term) × (list nat × list nat))) (clist : list (string × term)) := 
+Fixpoint mkClauseInfoLst  (ls : list (((string * term) * term) * (list nat * list nat))) (clist : list (string * term)) := 
  match clist with
   | [] => []
   | h :: t => (mkClauseInfo ls h) :: mkClauseInfoLst ls t
  end. 
  
-Fixpoint appendIndex (ln : list (list nat × list nat)) (ls : list (((string × term) × term))) :=
+Fixpoint appendIndex (ln : list (list nat * list nat)) (ls : list (((string * term) * term))) :=
 match ln with
  | [] => []
  | h :: t => match ls with
@@ -2546,7 +2414,7 @@ Check mkClauseInfo.
 Search (forall A : Type, list (list A) -> list A).
 *)
 Search (string -> string -> string).
-Definition mkClData' (kn : kername) (ln : list (list nat × list nat)) :=
+Definition mkClData' (kn : kername) (ln : list (list nat * list nat)) :=
 mut <- tmQuoteInductive kn ;;
 let lib := ind_bodies mut in
 let nmCxt := genCxt lib in
@@ -2566,7 +2434,7 @@ lisCons <- tmEval all lisCons' ;;
 tmReturn (mkClauseInfoLst ls lisCons).
 
 
-Definition animateInductivePredicate' {A : Type} (induct : A) (nm : string) (kn : kername) (modelst: list (list nat × list nat) ) (fuel : nat) :=
+Definition animateInductivePredicate' {A : Type} (induct : A) (nm : string) (kn : kername) (modelst: list (list nat * list nat) ) (fuel : nat) :=
 clData <- mkClData' kn modelst ;;
 clData' <- tmEval all clData ;;
 indData <- mkIndData' kn modelst ;;
@@ -2589,7 +2457,7 @@ Definition tmHd {A : Type} (lst : list A) : (TemplateMonad A) :=
   | _ => tmFail "no head of empty list"
   end.
 
-Parameter datHdDef : (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term) × string).
+Parameter datHdDef : (((((list ((((string * term) * term) * term) * term) * term) * term) * term) * term) * string).
 Definition extractPatMatBinders7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
  d <- mkClData' kn mode ;;
  let elt := hd datHdDef d in 
@@ -2604,7 +2472,7 @@ Definition extractPatMatBinders7 {A : Type} (kn : kername) (induct : A) (mode :l
 (** Examples  _______________ **)
 
 
-Definition getIndRHSVar'' (lst : list (string × term)) : list term :=
+Definition getIndRHSVar'' (lst : list (string * term)) : list term :=
  match lst with
   | [] => []
   | h :: t => match snd h with
@@ -2614,7 +2482,7 @@ Definition getIndRHSVar'' (lst : list (string × term)) : list term :=
               end 
 
  end.
-Definition getIndRHSVar0 (lst : list (((string × term) × term) × list (string × term))) : list (string × term) :=
+Definition getIndRHSVar0 (lst : list (((string * term) * term) * list (string * term))) : list (string * term) :=
  match lst with 
   | [] => []
   | h :: t =>  snd h 
@@ -2635,7 +2503,7 @@ end.
 Definition getIndRHSVar4 (lst : list term) : list string :=
 concat (map getIndRHSVar3 lst). 
 
-Fixpoint getIndRHSVar (lst : list (((string × term) × term) × list (string × term))) (ln : list nat) : list string :=
+Fixpoint getIndRHSVar (lst : list (((string * term) * term) * list (string * term))) (ln : list nat) : list string :=
 match ln with
  | [] => []
  | h :: t => (nth h (getIndRHSVar4 (getIndRHSVar'' (getIndRHSVar0 lst))) "defaultVar") :: getIndRHSVar lst t
@@ -3348,7 +3216,7 @@ fun k k' => match f k k' with
 
 (*
 
-Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (myData' : list (((string × term) × term) × list (string × term))) (inArgs : list nat) (fuel : nat) : TemplateMonad unit :=
+Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (myData' : list (((string * term) * term) * list (string * term))) (inArgs : list nat) (fuel : nat) : TemplateMonad unit :=
   fooTerm <- general.animate2 kn ;;
   if checkBool (filterListConj fooTerm) then
   (let postOut' := (constrFnBody outputTm outputTp
@@ -3494,8 +3362,8 @@ Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kernam
 
 (*
 Definition genFunAnimateEqPartial {A : Type} (kn : kername) (induct : A) (conjunct : named_term) (inputVars : list string)
-                                  (d : (list (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term)
-             × string))) (inOutTps : (list (((string × term) × term)))) (fuel : nat) : TemplateMonad unit :=
+                                  (d : (list (((((list ((((string * term) * term) * term) * term) * term) * term) * term) * term)
+             * string))) (inOutTps : (list (((string * term) * term)))) (fuel : nat) : TemplateMonad unit :=
  
  d'' <- tmEval all d ;;
 (* tmPrint d'' ;; *)
@@ -3521,18 +3389,18 @@ genFunAnimateEqPartial' (induct) (kn) (conjunct) (inputTm) (inputTp)  (outputTm)
 
  
 
-Definition d : (list (((((list ((((string × term) × term) × term) × term) × term) × term) × term) × term)
-             × string)) := [([], tVar "b",
+Definition d : (list (((((list ((((string * term) * term) * term) * term) * term) * term) * term) * term)
+             * string)) := [([], tVar "b",
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
   tVar "d",
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
   "cstr''")].
  
-Definition myData : (list (((string × term) × term))) := [("foo''",
+Definition myData : (list (((string * term) * term))) := [("foo''",
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [])].
 (*
-Definition myDataSimpl : (list (((string × term) × term) × list (string × term))) := [("foo''",
+Definition myDataSimpl : (list (((string * term) * term) * list (string * term))) := [("foo''",
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
   tInd {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool"); inductive_ind := 0 |} [],
   [("cstr''",
@@ -4081,20 +3949,20 @@ tmPrint clFnAn ;;
 ret tt.
 *)     
 (*
-Definition partFn := (fun (a : outcomePoly nat) (l: outcomePoly (list nat)) => composeOutcomePoly (nat × list nat) (list nat) nat
+Definition partFn := (fun (a : outcomePoly nat) (l: outcomePoly (list nat)) => composeOutcomePoly (nat * list nat) (list nat) nat
     (fun fuel : nat =>
      match fuel with
-     | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+     | 0 => fuelErrorPolyCstFn (outcomePoly (nat * list nat)) (list nat)
      | S _ =>
-         defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
+         defaultVal (outcomePoly (nat * list nat)) (outcomePoly (list nat))
            (noMatchPoly (list nat))
-           (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
-              [fun v2 : outcomePoly (nat × list nat) =>
+           (dispatchInternal (outcomePoly (nat * list nat)) (outcomePoly (list nat))
+              [fun v2 : outcomePoly (nat * list nat) =>
                match v2 with
                | @successPoly _ (a, l) => Some (successPoly (list nat) (a :: l))
                | _ => None
                end;
-               fun v2 : outcomePoly (nat × list nat) =>
+               fun v2 : outcomePoly (nat * list nat) =>
                match v2 with
                | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
                | _ => None
@@ -4154,20 +4022,20 @@ Print fnTerm.
 Definition genRel11An :=
 fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
     let b :=
-      composeOutcomePoly (nat × list nat) (list nat) nat
+      composeOutcomePoly (nat * list nat) (list nat) nat
         (fun fuel : nat =>
          match fuel with
-         | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+         | 0 => fuelErrorPolyCstFn (outcomePoly (nat * list nat)) (list nat)
          | S _ =>
-             defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat)) 
+             defaultVal (outcomePoly (nat * list nat)) (outcomePoly (list nat)) 
                (noMatchPoly (list nat))
-               (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
-                  [fun v2 : outcomePoly (nat × list nat) =>
+               (dispatchInternal (outcomePoly (nat * list nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (nat * list nat) =>
                    match v2 with
                    | @successPoly _ (a0, l0) => Some (successPoly (list nat) (a0 :: l0))
                    | _ => None
                    end;
-                   fun v2 : outcomePoly (nat × list nat) =>
+                   fun v2 : outcomePoly (nat * list nat) =>
                    match v2 with
                    | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
                    | _ => None
@@ -4196,20 +4064,20 @@ fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
            a l)
       in
     let c :=
-      composeOutcomePoly (nat × list nat) (list nat) nat
+      composeOutcomePoly (nat * list nat) (list nat) nat
         (fun fuel : nat =>
          match fuel with
-         | 0 => fuelErrorPolyCstFn (outcomePoly (nat × list nat)) (list nat)
+         | 0 => fuelErrorPolyCstFn (outcomePoly (nat * list nat)) (list nat)
          | S _ =>
-             defaultVal (outcomePoly (nat × list nat)) (outcomePoly (list nat)) 
+             defaultVal (outcomePoly (nat * list nat)) (outcomePoly (list nat)) 
                (noMatchPoly (list nat))
-               (dispatchInternal (outcomePoly (nat × list nat)) (outcomePoly (list nat))
-                  [fun v2 : outcomePoly (nat × list nat) =>
+               (dispatchInternal (outcomePoly (nat * list nat)) (outcomePoly (list nat))
+                  [fun v2 : outcomePoly (nat * list nat) =>
                    match v2 with
                    | @successPoly _ (a0, l0) => Some (successPoly (list nat) (a0 :: l0))
                    | _ => None
                    end;
-                   fun v2 : outcomePoly (nat × list nat) =>
+                   fun v2 : outcomePoly (nat * list nat) =>
                    match v2 with
                    | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
                    | _ => None
@@ -4259,23 +4127,23 @@ fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
          end)
         5 c
       in
-    optionToOutcome (nat × nat × nat × nat × list nat) nat
+    optionToOutcome (nat * nat * nat * nat * list nat) nat
       (fun fuel : nat =>
        match fuel with
-       | 0 => fuelErrorPolyCstFn (outcomePoly (nat × nat × nat × nat × list nat)) (option nat)
+       | 0 => fuelErrorPolyCstFn (outcomePoly (nat * nat * nat * nat * list nat)) (option nat)
        | S _ =>
-           defaultVal (outcomePoly (nat × nat × nat × nat × list nat)) (outcomePoly (option nat))
+           defaultVal (outcomePoly (nat * nat * nat * nat * list nat)) (outcomePoly (option nat))
              (noMatchPoly (option nat))
-             (dispatchInternal (outcomePoly (nat × nat × nat × nat × list nat))
+             (dispatchInternal (outcomePoly (nat * nat * nat * nat * list nat))
                 (outcomePoly (option nat))
-                [fun v2 : outcomePoly (nat × nat × nat × nat × list nat) =>
+                [fun v2 : outcomePoly (nat * nat * nat * nat * list nat) =>
                  match v2 with
                  | @successPoly _ (d0, (_, (b0, (c0, _)))) =>
                      Some
                        (successPoly (option nat) (if (true && (b0 =? c0))%bool then Some d0 else None))
                  | _ => None
                  end;
-                 fun v2 : outcomePoly (nat × nat × nat × nat × list nat) =>
+                 fun v2 : outcomePoly (nat * nat * nat * nat * list nat) =>
                  match v2 with
                  | @fuelErrorPoly _ => Some (fuelErrorPoly (option nat))
                  | _ => None
@@ -4283,9 +4151,9 @@ fun (a : outcomePoly nat) (l : outcomePoly (list nat)) =>
        end)
       5
       ((fun (o0 o1 o2 o3 : outcomePoly nat) (o4 : outcomePoly (list nat)) =>
-        joinOutcome nat (nat × nat × nat × list nat) o0
-          (joinOutcome nat (nat × nat × list nat) o1
-             (joinOutcome nat (nat × list nat) o2 (joinOutcome nat (list nat) o3 o4))))
+        joinOutcome nat (nat * nat * nat * list nat) o0
+          (joinOutcome nat (nat * nat * list nat) o1
+             (joinOutcome nat (nat * list nat) o2 (joinOutcome nat (list nat) o3 o4))))
          d a b c l).
 
 
@@ -4612,7 +4480,7 @@ Definition constrFn (inputVars : list string) (outputVars : list string) (letBin
 
 (* Construct final function of shape fun a b : nat => ... option ([c ; d ; e]) *)
 (*
-Fixpoint constrFnStart (inputVars : list (string × term)) : term -> term :=
+Fixpoint constrFnStart (inputVars : list (string * term)) : term -> term :=
  match inputVars with
  | [] => fun t : term => t
  | (str, typeT) :: rest => fun t => tLambda {| binder_name := nNamed str %bs; binder_relevance := Relevant |} typeT ((constrFnStart rest) t)
@@ -4772,7 +4640,7 @@ Definition mkBigConj (lst : list term) : term :=
   | xs => (tApp <%and%> xs)
  end. 
 (*
-Definition justAnimateElimConstr {A : Type} (induct : A) (kn : kername) (inputVars : list (string × term)) (outputVars : list (string × term)) (fuel : nat) : TemplateMonad unit :=
+Definition justAnimateElimConstr {A : Type} (induct : A) (kn : kername) (inputVars : list (string * term)) (outputVars : list (string * term)) (fuel : nat) : TemplateMonad unit :=
   (* conjs <- general.animate2 kn ;; *)
   t <- general.animate2 kn ;;
   let fooTerm := (mkBigConj (typeConstrReduce.makeConjSimpl (typeConstrReduce.deconTypeConGen'' (typeConstrReduce.deConConj1 t) (typeConstrReduce.deConConj2 t) fuel))) in
@@ -4823,10 +4691,10 @@ End typeConstrReduce.
 *)
 
 (*
-Inductive rel8: (nat × nat) -> (nat × nat)  -> Prop :=
+Inductive rel8: (nat * nat) -> (nat * nat)  -> Prop :=
  | rel8Base : forall a, rel8 (1, a) (3, S a) 
  | rel8Cons : forall a1 a2 b1 b2 b3 b4, rel8 (a1, a2) (b1, b3) /\ rel9 (a1, a2) (b4, b2) -> rel8 ((S a1), (S a2)) ((S b1), (S b2))
-with rel9: (nat × nat) -> (nat × nat)  -> Prop := 
+with rel9: (nat * nat) -> (nat * nat)  -> Prop := 
  | rel9Cons : forall a b, rel8 a b  -> rel9 a b.
 
 
@@ -5159,7 +5027,7 @@ with recPred2TopFn (a : nat) (c : nat) : option outcome'  :=
 
 
 
-Definition extractPatMatBinders' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBinders' {A : Type} (kn : kername) (induct : A) (inputData : list (string * term ))  (outputData : list (string * term )) (fuel : nat) : TemplateMonad unit :=
 t <- general.animate2 kn ;;
 match t with
  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
@@ -5215,7 +5083,7 @@ end ;; tmMsg "done".
 
 
 
-Definition extractPatMatBinders'' {A : Type} (kn : kername) (induct : A) (inputData : list (string × term ))  (outputData : list (string × term )) (fuel : nat) : TemplateMonad unit :=
+Definition extractPatMatBinders'' {A : Type} (kn : kername) (induct : A) (inputData : list (string * term ))  (outputData : list (string * term )) (fuel : nat) : TemplateMonad unit :=
 t <- general.animate2 kn ;;
 match t with
  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] => 
@@ -5235,19 +5103,19 @@ Print tlRelAnimated.
 Print hnf.
 
 Definition tRelAn := 
-(composeOutcomePoly (list nat × nat) (list nat) (nat × nat)
+(composeOutcomePoly (list nat * nat) (list nat) (nat * nat)
    (fun fuel : nat =>
     match fuel with
-    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat × nat)) (list nat)
+    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat * nat)) (list nat)
     | S _ =>
-        defaultVal (outcomePoly (list nat × nat)) (outcomePoly (list nat)) (noMatchPoly (list nat))
-          (dispatchInternal (outcomePoly (list nat × nat)) (outcomePoly (list nat))
-             [fun v2 : outcomePoly (list nat × nat) =>
+        defaultVal (outcomePoly (list nat * nat)) (outcomePoly (list nat)) (noMatchPoly (list nat))
+          (dispatchInternal (outcomePoly (list nat * nat)) (outcomePoly (list nat))
+             [fun v2 : outcomePoly (list nat * nat) =>
               match v2 with
               | @successPoly _ (a, b) => Some (successPoly (list nat) (b :: a))
               | _ => None
               end;
-              fun v2 : outcomePoly (list nat × nat) =>
+              fun v2 : outcomePoly (list nat * nat) =>
               match v2 with
               | @fuelErrorPoly _ => Some (fuelErrorPoly (list nat))
               | _ => None
@@ -5255,29 +5123,29 @@ Definition tRelAn :=
     end)
    (fun fuel : nat =>
     match fuel with
-    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat × nat)
+    | 0 => fuelErrorPolyCstFn (outcomePoly (list nat)) (nat * nat)
     | S _ =>
-        defaultVal (outcomePoly (list nat)) (outcomePoly (nat × nat)) (noMatchPoly (nat × nat))
-          (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat × nat))
+        defaultVal (outcomePoly (list nat)) (outcomePoly (nat * nat)) (noMatchPoly (nat * nat))
+          (dispatchInternal (outcomePoly (list nat)) (outcomePoly (nat * nat))
              [fun v2 : outcomePoly (list nat) =>
               match v2 with
               | @successPoly _ [c] => None
-              | @successPoly _ [c; d] => Some (successPoly (nat × nat) (c, d))
+              | @successPoly _ [c; d] => Some (successPoly (nat * nat) (c, d))
               | @successPoly _ (c :: d :: _ :: _) => None
               | _ => None
               end;
               fun v2 : outcomePoly (list nat) =>
               match v2 with
-              | @fuelErrorPoly _ => Some (fuelErrorPoly (nat × nat))
+              | @fuelErrorPoly _ => Some (fuelErrorPoly (nat * nat))
               | _ => None
               end])
     end)).
 
 
 
-Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5; 6], 2))).
+Compute (tlRelAnimated 10 (successPoly (list nat * nat) ([5; 6], 2))).
 
-Compute (tlRelAnimated 10 (successPoly (list nat × nat) ([5], 2))).
+Compute (tlRelAnimated 10 (successPoly (list nat * nat) ([5], 2))).
 
 *)
 (*
@@ -5295,19 +5163,15 @@ Definition indData''' :=
 
 MetaRocq Run (animateInductivePredicate rel28 "rel28" clData''' indData''' 50).
 
-Compute (rel28AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
+Compute (rel28AnimatedTopFn 100 (successPoly (nat * nat) (6,6))).
 
 
 
 
-Compute (rel18AnimatedTopFn 100 (successPoly (nat × nat) (6,6))).
+Compute (rel18AnimatedTopFn 100 (successPoly (nat * nat) (6,6))).
 
 
 
 
 Lemma testMode : true -> rel28 6 8 6 7. Admitted.
 *)
-
-
-
-
