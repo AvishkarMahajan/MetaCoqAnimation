@@ -121,7 +121,7 @@ Definition unfoldConsStep
  | (str, tConstruct typeInfo k []) :: t =>
      (i, t, (str, (tConstruct typeInfo k []), nil) :: resolvedTs, remTs)
  | (str, tApp <%eq%> args) :: t =>
-     (i + length args, t, (str, <%eq%>, map fst (genVarlst i args)) :: resolvedTs, app (genVarlst i args) remTs) 
+     (i + length args, t, (str, <%eq%>, map fst (genVarlst i args)) :: resolvedTs, app (genVarlst i args) remTs)
 
  | (str, tApp func args) :: t =>
      (i, t, (str, tApp func args, nil) :: resolvedTs, remTs)
@@ -1267,131 +1267,139 @@ Definition joinPatMatPolyGenFuelAware
   tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;;
   tmMsg "done".
 
-(** Fuel-aware join without LHS predicates (base case).
-    Simpler version for constructors with no recursive premises. *)
-Definition joinPatMatPolyGenFuelAwareNoLHS {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad unit :=
-
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-
-
-
-let u :=
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType)
-
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-
-                              |}]
-                     )) in
-
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
+(* Fuel-aware join without LHS predicates (base case).
+   Simpler version for constructors with no recursive premises. *)
+Definition joinPatMatPolyGenFuelAwareNoLHS
+           {A : Type}
+           (induct : A)
+           (postIn' : term)
+           (postInType' : term)
+           (postOut' : term)
+           (postOutType' : term)
+           (nmCon : string)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+  let postInType := tApp <%outcomePoly%> [postInType'] in
+  let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+  let postOutType := tApp <%outcomePoly%> [postOutType'] in
+  tBody' <- mkMulPatMatFn
+              induct
+              [(postIn, postOut);
+               (tApp <%fuelErrorPoly%> [postInType'],
+                tApp <%fuelErrorPoly%> [postOutType'])]
+              postInType
+              postOutType
+              (tApp <%noMatchPoly%> [postOutType'])
+              fuel ;;
+  let u :=
+      (tLam "fuel" <%nat%>
+         (tCase
+            {| ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+               ci_npar := 0;
+               ci_relevance := Relevant |}
+            {| puinst := [];
+               pparams := [];
+               pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+               preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                                postInType
+                                postOutType) |}
+            (tVar "fuel")
+            [{| bcontext := [];
+                bbody := (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType']) |};
+             {| bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                bbody := tBody' |}])) in
+  t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+  f <- tmUnquote t' ;;
+  tmEval hnf (my_projT2 f) >>=
+  tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;;
+  tmMsg "done".
 
 
 
-Definition joinPatMatPolyGenFuelAwareNoLHSTm {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad term :=
-
-
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-
-
-
-
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-
-
-
-let u :=
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType)
-
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-
-                              |}]
-                     )) in
+(* Fuel-aware join without LHS predicates, returning term.
+   Simpler version for constructors with no recursive premises. *)
+Definition joinPatMatPolyGenFuelAwareNoLHSTm
+           {A : Type}
+           (induct : A)
+           (postIn' : term)
+           (postInType' : term)
+           (postOut' : term)
+           (postOutType' : term)
+           (nmCon : string)
+           (fuel : nat)
+  : TemplateMonad term :=
+  let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+  let postInType := tApp <%outcomePoly%> [postInType'] in
+  let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+  let postOutType := tApp <%outcomePoly%> [postOutType'] in
+  tBody' <- mkMulPatMatFn
+              induct
+              [(postIn, postOut);
+               (tApp <%fuelErrorPoly%> [postInType'],
+                tApp <%fuelErrorPoly%> [postOutType'])]
+              postInType
+              postOutType
+              (tApp <%noMatchPoly%> [postOutType'])
+              fuel ;;
+  let u :=
+      tLam "fuel" <%nat%>
+        (tCase
+           {| ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+              ci_npar := 0;
+              ci_relevance := Relevant |}
+           {| puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+              preturn := tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                               postInType
+                               postOutType |}
+           (tVar "fuel")
+           [{| bcontext := [];
+               bbody := tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'] |};
+            {| bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+               bbody := tBody' |}]) in
+  t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+  tmReturn t'.
 
 
 
 
 
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-
-tmReturn t'.
-
-
-
-
-
-Definition animateOneClause {A : Type} (induct : A) (lhsInd : list ((((string * term) * term) * term) * term))
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad unit :=
- match lhsInd with
-  | [] =>  joinPatMatPolyGenFuelAwareNoLHS induct
-                      (postIn') (postInType') (postOut') (postOutType') (nmCon)
-                        (fuel)
-  | lst =>  joinPatMatPolyGenFuelAware (induct) (lst)
-                      (postIn') (postInType') (postOut') (postOutType') (nmCon)
-                        (fuel)
- end.
+(* Animate one clause of an inductive predicate.
+   Dispatches to the appropriate fuel-aware join based on whether there are LHS predicates. *)
+Definition animateOneClause
+           {A : Type}
+           (induct : A)
+           (lhsInd : list ((((string * term) * term) * term) * term))
+           (postIn' : term)
+           (postInType' : term)
+           (postOut' : term)
+           (postOutType' : term)
+           (nmCon : string)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  match lhsInd with
+  | [] =>
+      joinPatMatPolyGenFuelAwareNoLHS
+        induct
+        postIn'
+        postInType'
+        postOut'
+        postOutType'
+        nmCon
+        fuel
+  | lst =>
+      joinPatMatPolyGenFuelAware
+        induct
+        lst
+        postIn'
+        postInType'
+        postOut'
+        postOutType'
+        nmCon
+        fuel
+  end.
 
 
 
@@ -1551,16 +1559,40 @@ Compute (recPredBaseAnimated 5 (successPoly nat 4)).
     This section contains the top-level functions for animating entire
     inductive predicates by composing animations of all constructors. *)
 
-(** Animate all constructor clauses for an inductive predicate.
-    Calls animateOneClause for each constructor. *)
-Fixpoint animateAllClauses {A : Type} (topInduct : A) (cstrData : (list ((((( (list ((((string * term) * term) * term) * term)) *
-                      (term)) * (term)) * (term)) * (term)) * (string))))
-                        (fuel : nat) : TemplateMonad unit :=
- match cstrData with
-  | [] => tmFail "no constructors in Inductive"
-  | [h] => animateOneClause topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel
-  | h :: t =>  animateAllClauses topInduct t fuel ;; animateOneClause topInduct (fst (fst (fst (fst (fst h))))) (snd (fst (fst (fst (fst h))))) (snd (fst (fst (fst h)))) (snd (fst (fst h))) (snd (fst  h)) (snd h) fuel
- end.
+(* Animate all constructor clauses for an inductive predicate.
+   Calls animateOneClause for each constructor. *)
+Fixpoint animateAllClauses
+         {A : Type}
+         (topInduct : A)
+         (cstrData : list ((((((list ((((string * term) * term) * term) * term)) *
+                              term) * term) * term) * term) * string))
+         (fuel : nat)
+  : TemplateMonad unit :=
+  match cstrData with
+  | [] =>
+      tmFail "no constructors in Inductive"
+  | [h] =>
+      animateOneClause
+        topInduct
+        (fst (fst (fst (fst (fst h)))))
+        (snd (fst (fst (fst (fst h)))))
+        (snd (fst (fst (fst h))))
+        (snd (fst (fst h)))
+        (snd (fst h))
+        (snd h)
+        fuel
+  | h :: t =>
+      animateAllClauses topInduct t fuel ;;
+      animateOneClause
+        topInduct
+        (fst (fst (fst (fst (fst h)))))
+        (snd (fst (fst (fst (fst h)))))
+        (snd (fst (fst (fst h))))
+        (snd (fst (fst h)))
+        (snd (fst h))
+        (snd h)
+        fuel
+  end.
 
 (** Quote a constant from the current module. *)
 Definition quoteConst (s : string) : term :=
@@ -1741,19 +1773,27 @@ Definition dispatchExtTm := hd default (inspectFix dispatchExtTm').
 Definition mkAllIndTop (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
 app (mkAllIndTop' inductData kn) [dispatchExtTm].
 
-(** Main entry point: animate an entire inductive predicate.
-    Generates animated functions for all constructors and composes them into
-    a mutually recursive fixpoint. *)
-Definition animateInductivePredicate {A : Type} (topInduct : A) (nmTopInduct : string) (clauseData : (list ((((( (list ((((string * term) * term) * term) * term)) *
-                      (term)) * (term)) * (term)) * (term)) * (string)))) (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string))))))
-                        (kn : kername) (fuel : nat) : TemplateMonad unit :=
-          animateAllClauses topInduct clauseData fuel ;;
-          let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
-          u' <- tmEval all u ;;
-          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-               f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
+(* Main entry point: animate an entire inductive predicate.
+   Generates animated functions for all constructors and composes them into
+   a mutually recursive fixpoint. *)
+Definition animateInductivePredicate
+           {A : Type}
+           (topInduct : A)
+           (nmTopInduct : string)
+           (clauseData : list ((((((list ((((string * term) * term) * term) * term)) *
+                                   term) * term) * term) * term) * string))
+           (inductData : list ((((string) * term) * term) * list (string * list string)))
+           (kn : kername)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  animateAllClauses topInduct clauseData fuel ;;
+  let u := mkrecFn (mkAllIndTop inductData kn) 0 in
+  u' <- tmEval all u ;;
+  t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+  f <- tmUnquote t' ;;
+  tmEval hnf (my_projT2 f) >>=
+  tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;;
+  tmMsg "done".
 
 
 
@@ -1788,14 +1828,28 @@ Fixpoint mkProdTmVars  (outputData : list (string * term )) : term :=
 Definition getOutputTerm (outputData : list (string * term))  : term :=
   tApp <% successPoly %> [mkProdTypeVars outputData; mkProdTmVars outputData].
 
-(** Extract pattern match binders from an animated predicate.
-    Utility function for simple predicates without LHS premises. *)
-Definition extractPatMatBinders {A : Type} (kn : kername) (induct : A) (outputData : list (string * term )) (fuel : nat) : TemplateMonad unit :=
+(* Extract pattern match binders from an animated predicate.
+   Utility function for simple predicates without LHS premises. *)
+Definition extractPatMatBinders
+           {A : Type}
+           (kn : kername)
+           (induct : A)
+           (outputData : list (string * term))
+           (fuel : nat)
+  : TemplateMonad unit :=
   t <- general.animate2 kn ;;
   match t with
   | tApp <%eq%> [typeInputVar; patMatTerm; tVar inputVar] =>
-    joinPatMatPolyGenFuelAwareNoLHS induct patMatTerm typeInputVar (mkProdTmVars outputData) (mkProdTypeVars outputData) (snd kn) fuel
-  | _ => tmFail "incorrect inductive shape"
+      joinPatMatPolyGenFuelAwareNoLHS
+        induct
+        patMatTerm
+        typeInputVar
+        (mkProdTmVars outputData)
+        (mkProdTypeVars outputData)
+        (snd kn)
+        fuel
+  | _ =>
+      tmFail "incorrect inductive shape"
   end ;;
   tmMsg "done".
 
@@ -1867,9 +1921,14 @@ Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> o
 Print tmDefinition.
 Compute (Some hnf).
 Print tmDefinitionRed_.
-Definition mkDeffromTpTm (kn : kername) (t : typed_term) : TemplateMonad unit :=
-x <- tmEval hnf (my_projT2 t) ;;
-tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) x ;; ret tt.
+(* Create a definition from a kernel name and typed term. *)
+Definition mkDeffromTpTm
+           (kn : kername)
+           (t : typed_term)
+  : TemplateMonad unit :=
+  x <- tmEval hnf (my_projT2 t) ;;
+  tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) x ;;
+  ret tt.
 
 
 
@@ -1886,215 +1945,179 @@ Definition orientEquality (t : term) (orientation : nat) : term :=
 
 
 
-Definition extractPatMatBinders5 {A : Type} (kn : kername) (induct : A) (inputData : list (string * term ))  (outputData : list (string * term )) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
-t' <- general.animate2 kn ;;
-let t'' := orientEquality t' orientation in
-t <- tmEval all t'' ;;
-match t with
- | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (mkProdTmVars inputData) (mkProdTypeVars inputData) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (mkProdTmVars outputData) (mkProdTypeVars outputData) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+(* Extract pattern match binders with orientation control (version 5).
+   Handles both function applications and variables on RHS. *)
+Definition extractPatMatBinders5
+           {A : Type}
+           (kn : kername)
+           (induct : A)
+           (inputData : list (string * term))
+           (outputData : list (string * term))
+           (orientation : nat)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  t' <- general.animate2 kn ;;
+  let t'' := orientEquality t' orientation in
+  t <- tmEval all t'' ;;
+  match t with
+  | tApp <%eq%> [typeVar; patMatTerm; tApp func lst] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               (mkProdTmVars inputData)
+               (mkProdTypeVars inputData)
+               (tApp func lst)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                (mkProdTmVars outputData)
+                (mkProdTypeVars outputData)
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      let u := tApp <%composeOutcomePoly%>
+                    [mkProdTypeVars inputData;
+                     typeVar;
+                     mkProdTypeVars outputData;
+                     tIn;
+                     tOut] in
+      u'' <- tmEval all u ;;
+      u' <- DB.deBruijn u ;;
+      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+      f <- tmUnquote u' ;;
+      tmPrint f ;;
+      tmEval hnf (my_projT2 f) >>=
+      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+      ret tt
 
+  | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               (mkProdTmVars inputData)
+               (mkProdTypeVars inputData)
+               (tVar str)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                (mkProdTmVars outputData)
+                (mkProdTypeVars outputData)
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      let u := tApp <%composeOutcomePoly%>
+                    [mkProdTypeVars inputData;
+                     typeVar;
+                     mkProdTypeVars outputData;
+                     tIn;
+                     tOut] in
+      u'' <- tmEval all u ;;
+      u' <- DB.deBruijn u ;;
+      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+      f <- tmUnquote u' ;;
+      tmPrint f ;;
+      tmEval hnf (my_projT2 f) >>=
+      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+      ret tt
 
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
-
-                      *)
-
-
-
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(mkProdTypeVars inputData); typeVar ; (mkProdTypeVars outputData) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-
-
-
- | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (mkProdTmVars inputData) (mkProdTypeVars inputData) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (mkProdTmVars outputData) (mkProdTypeVars outputData) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
-
-
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
-
-                      *)
-
-
-
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(mkProdTypeVars inputData); typeVar ; (mkProdTypeVars outputData) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-
-
-
-
- | _ => tmFail "incorrect inductive shape"
-end ;; tmMsg "done".
+  | _ =>
+      tmFail "incorrect inductive shape"
+  end ;;
+  tmMsg "done".
 
 MetaRocq Run (extractPatMatBinders5 <? tlRel ?> tlRel [("a", <%list nat%>); ("b", <%nat%>)] [("c", <%nat%>); ("d", <%nat%>)] 0 50).
 
 Print tlRelAnimated.
 
-Definition extractPatMatBinders6 {A : Type} (kn : kername) (induct : A) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term)  (orientation : nat) (fuel : nat) : TemplateMonad unit :=
-t' <- general.animate2 kn ;;
-let t'' := orientEquality t' orientation in
-t <- tmEval all t'' ;;
-match t with
- | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+(* Extract pattern match binders with explicit input/output terms (version 6).
+   Similar to version 5 but uses explicit terms instead of data lists. *)
+Definition extractPatMatBinders6
+           {A : Type}
+           (kn : kername)
+           (induct : A)
+           (inputTm : term)
+           (inputTp : term)
+           (outputTm : term)
+           (outputTp : term)
+           (orientation : nat)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  t' <- general.animate2 kn ;;
+  let t'' := orientEquality t' orientation in
+  t <- tmEval all t'' ;;
+  match t with
+  | tApp <%eq%> [typeVar; patMatTerm; tApp func lst] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               inputTm
+               inputTp
+               (tApp func lst)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                outputTm
+                outputTp
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      let u := tApp <%composeOutcomePoly%>
+                    [inputTp;
+                     typeVar;
+                     outputTp;
+                     tIn;
+                     tOut] in
+      u'' <- tmEval all u ;;
+      u' <- DB.deBruijn u ;;
+      f <- tmUnquote u' ;;
+      tmPrint f ;;
+      tmEval hnf (my_projT2 f) >>=
+      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+      ret tt
 
+  | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               inputTm
+               inputTp
+               (tVar str)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                outputTm
+                outputTp
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      let u := tApp <%composeOutcomePoly%>
+                    [inputTp;
+                     typeVar;
+                     outputTp;
+                     tIn;
+                     tOut] in
+      u'' <- tmEval all u ;;
+      u' <- DB.deBruijn u ;;
+      f <- tmUnquote u' ;;
+      tmPrint f ;;
+      tmEval hnf (my_projT2 f) >>=
+      tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+      ret tt
 
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
-
-                      *)
-
-
-
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-                     (*
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-                     *)
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-
-
-
- | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
-
-
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
-
-                      *)
-
-
-
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-                     (*
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-                     *)
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-
-
-
-
- | _ => tmFail "incorrect inductive shape"
-end ;; tmMsg "done".
+  | _ =>
+      tmFail "incorrect inductive shape"
+  end ;;
+  tmMsg "done".
 
 
 
@@ -2314,32 +2337,56 @@ Fixpoint getInOutTps (l : list (prod (list nat) (list nat))) (b : list one_induc
               end
  end.
 
-(** Change the next 2 functions to not always return the full clause data but only bits of it **)
-Fixpoint mkNmTm (c : list constructor_body) (l : list name) :TemplateMonad (list (string * term)) :=
- match c with
-  | [] => tmReturn []
-  | (h :: t) => r <- DB.undeBruijn' l ((cstr_type h )) ;; r' <- tmEval all r ;; let hres := (cstr_name h, (reduceClauseTm r')) in rest <- mkNmTm t l ;; tmReturn (hres :: rest)
- end.
+(* Build list of constructor names with their types (de-Bruijn converted). *)(* Change the next 2 functions to not always return the full clause data but only bits of it *)
+Fixpoint mkNmTm
+         (c : list constructor_body)
+         (l : list name)
+  : TemplateMonad (list (string * term)) :=
+  match c with
+  | [] =>
+      tmReturn []
+  | h :: t =>
+      r <- DB.undeBruijn' l (cstr_type h) ;;
+      r' <- tmEval all r ;;
+      let hres := (cstr_name h, reduceClauseTm r') in
+      rest <- mkNmTm t l ;;
+      tmReturn (hres :: rest)
+  end.
 
 
-Fixpoint getData (lib : list one_inductive_body) (ln : list (prod (list nat) (list nat))) (nmCxt : list name) (inOutTps : list ((string * term) * term)) : TemplateMonad (list (((string * term) * term) * (list (string * term))))  :=
+(* Get data for all inductives with mode information. *)
+Fixpoint getData
+         (lib : list one_inductive_body)
+         (ln : list (prod (list nat) (list nat)))
+         (nmCxt : list name)
+         (inOutTps : list ((string * term) * term))
+  : TemplateMonad (list (((string * term) * term) * list (string * term))) :=
+  match lib with
+  | [] =>
+      tmReturn []
+  | h' :: t' =>
+      match inOutTps with
+      | h :: t =>
+          dbth <- mkNmTm (ind_ctors h') nmCxt ;;
+          rest <- getData t' (tl ln) nmCxt (tl inOutTps) ;;
+          tmReturn ((h, dbth) :: rest)
+      | _ =>
+          tmReturn []
+      end
+  end.
 
- match lib with
-  | [] => tmReturn []
-  | h' :: t' => match inOutTps with
-                 | h :: t => dbth <- mkNmTm (ind_ctors h') nmCxt ;; rest <- getData t' (tl ln) nmCxt (tl inOutTps) ;; tmReturn ((h, dbth) :: rest)
-                 | _ => tmReturn []
-                 end
-
- end.
 (* Change above 2 functions *)
-Definition getData' (kn : kername) (ln : list (prod (list nat) (list nat))) : TemplateMonad (list (((string * term) * term) * (list (string * term))))  :=
-mut <- tmQuoteInductive kn ;;
-tmPrint mut ;;
-let lib := ind_bodies mut in
-let nmCxt := genCxt lib in
-let inOutTps := getInOutTps ln lib in
-getData lib ln nmCxt inOutTps.
+(* Get data for an inductive by kernel name and mode list. *)
+Definition getData'
+           (kn : kername)
+           (ln : list (prod (list nat) (list nat)))
+  : TemplateMonad (list (((string * term) * term) * list (string * term))) :=
+  mut <- tmQuoteInductive kn ;;
+  tmPrint mut ;;
+  let lib := ind_bodies mut in
+  let nmCxt := genCxt lib in
+  let inOutTps := getInOutTps ln lib in
+  getData lib ln nmCxt inOutTps.
 
 MetaRocq Run (g <- getData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;; tmDefinition "data" g).
 
@@ -2359,14 +2406,18 @@ Fixpoint mkIndData (data : (list (((string * term) * term) * (list (string * ter
               end
  end.
 
-Definition mkIndData' (kn : kername) (ln : list (prod (list nat) (list nat))) :=
-mut <- tmQuoteInductive kn ;;
-let lib := ind_bodies mut in
-let nmCxt := genCxt lib in
-let inOutTps := getInOutTps ln lib in
-data <- getData lib ln nmCxt inOutTps ;;
-let indNames := map (fun d => (fst (fst (fst d)))) data in
-tmReturn (mkIndData data indNames).
+(* Build inductive data with mode information and dependency analysis. *)
+Definition mkIndData'
+           (kn : kername)
+           (ln : list (prod (list nat) (list nat)))
+  : TemplateMonad (list (((string * term) * term) * list (string * list string))) :=
+  mut <- tmQuoteInductive kn ;;
+  let lib := ind_bodies mut in
+  let nmCxt := genCxt lib in
+  let inOutTps := getInOutTps ln lib in
+  data <- getData lib ln nmCxt inOutTps ;;
+  let indNames := map (fun d => fst (fst (fst d))) data in
+  tmReturn (mkIndData data indNames).
 
 MetaRocq Run (inData <- mkIndData' <? rel28 ?> [([0;2], [1;3]); ([0;1],[2;3])] ;; tmDefinition "indInf" inData).
 
@@ -2490,32 +2541,42 @@ Check mkClauseInfo.
 Search (forall A : Type, list (list A) -> list A).
 *)
 Search (string -> string -> string).
-Definition mkClData' (kn : kername) (ln : list (list nat * list nat)) :=
-mut <- tmQuoteInductive kn ;;
-let lib := ind_bodies mut in
-let nmCxt := genCxt lib in
-let inOutTps := getInOutTps ln lib in
-myData <- getData lib ln nmCxt inOutTps ;;
-myData' <- tmEval all myData;;
-tmDefinition (String.append (snd kn) "myData'") myData' ;;
-let ls' := getInOutTps ln lib in
-let ls'' := appendIndex ln ls' in
-ls <- tmEval all ls'' ;;
-(*tmPrint ls ;; *)
-let lislisCons := map (fun p => snd p) myData in
-let lisCons' := concat lislisCons in
-lisCons <- tmEval all lisCons' ;;
-(*tmPrint lisCons ;;*)
 
-tmReturn (mkClauseInfoLst ls lisCons).
+(* Build clause data from kernel name and mode list. *)
+Definition mkClData'
+           (kn : kername)
+           (ln : list (list nat * list nat))
+  : TemplateMonad (list (((((list ((((string * term) * term) * term) * term) *
+                              term) * term) * term) * term) * string)) :=
+  mut <- tmQuoteInductive kn ;;
+  let lib := ind_bodies mut in
+  let nmCxt := genCxt lib in
+  let inOutTps := getInOutTps ln lib in
+  myData <- getData lib ln nmCxt inOutTps ;;
+  myData' <- tmEval all myData ;;
+  tmDefinition (String.append (snd kn) "myData'") myData' ;;
+  let ls' := getInOutTps ln lib in
+  let ls'' := appendIndex ln ls' in
+  ls <- tmEval all ls'' ;;
+  let lislisCons := map (fun p => snd p) myData in
+  let lisCons' := concat lislisCons in
+  lisCons <- tmEval all lisCons' ;;
+  tmReturn (mkClauseInfoLst ls lisCons).
 
-
-Definition animateInductivePredicate' {A : Type} (induct : A) (nm : string) (kn : kername) (modelst: list (list nat * list nat) ) (fuel : nat) :=
-clData <- mkClData' kn modelst ;;
-clData' <- tmEval all clData ;;
-indData <- mkIndData' kn modelst ;;
-indData' <- tmEval all indData ;;
-animateInductivePredicate induct nm clData' indData' kn fuel.
+(* Animate an inductive predicate with explicit mode list. *)
+Definition animateInductivePredicate'
+           {A : Type}
+           (induct : A)
+           (nm : string)
+           (kn : kername)
+           (modelst : list (list nat * list nat))
+           (fuel : nat)
+  : TemplateMonad unit :=
+  clData <- mkClData' kn modelst ;;
+  clData' <- tmEval all clData ;;
+  indData <- mkIndData' kn modelst ;;
+  indData' <- tmEval all indData ;;
+  animateInductivePredicate induct nm clData' indData' kn fuel.
 (*
 MetaRocq Run (clData <- mkClData' <? rel8 ?> [0;0] ;; tmDefinition "clInf" clData).
 
@@ -2527,21 +2588,45 @@ Compute clInf.
 
 
 
-Definition tmHd {A : Type} (lst : list A) : (TemplateMonad A) :=
- match lst with
-  | h :: rest => tmReturn h
-  | _ => tmFail "no head of empty list"
+(* Get head of list in template monad, failing on empty list. *)
+Definition tmHd
+           {A : Type}
+           (lst : list A)
+  : TemplateMonad A :=
+  match lst with
+  | h :: rest =>
+      tmReturn h
+  | _ =>
+      tmFail "no head of empty list"
   end.
 
 Parameter datHdDef : (((((list ((((string * term) * term) * term) * term) * term) * term) * term) * term) * string).
-Definition extractPatMatBinders7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (orientation : nat) (fuel : nat) : TemplateMonad unit :=
- d <- mkClData' kn mode ;;
- let elt := hd datHdDef d in
- let inputTm := snd (fst (fst (fst (fst elt)))) in
- let inputTp := snd ((fst (fst (fst elt)))) in
- let outputTm := snd (((fst (fst elt)))) in
- let outputTp := snd (((fst (elt)))) in
- extractPatMatBinders6 (kn) (induct) (inputTm) (inputTp) (outputTm) (outputTp)  (orientation) (fuel).
+
+(* Extract pattern match binders (version 7).
+   Uses mode information to extract data and delegates to version 6. *)
+Definition extractPatMatBinders7
+           {A : Type}
+           (kn : kername)
+           (induct : A)
+           (mode : list (prod (list nat) (list nat)))
+           (orientation : nat)
+           (fuel : nat)
+  : TemplateMonad unit :=
+  d <- mkClData' kn mode ;;
+  let elt := hd datHdDef d in
+  let inputTm := snd (fst (fst (fst (fst elt)))) in
+  let inputTp := snd (fst (fst (fst elt))) in
+  let outputTm := snd (fst (fst elt)) in
+  let outputTp := snd (fst elt) in
+  extractPatMatBinders6
+    kn
+    induct
+    inputTm
+    inputTp
+    outputTm
+    outputTp
+    orientation
+    fuel.
 
 
 
@@ -2950,29 +3035,55 @@ match conj with
  | t => tmReturn [t]
 end.
 
-Fixpoint reduceTypCon (conjs : list term)  : TemplateMonad (list term) :=
-match conjs with
- | [] => tmReturn []
- | h :: t => lsh <- reduceTypCon' h ;; lst <- reduceTypCon t ;; tmReturn (app lsh lst)
-end.
+(* Reduce type constructors in a list of conjunctions. *)
+Fixpoint reduceTypCon
+         (conjs : list term)
+  : TemplateMonad (list term) :=
+  match conjs with
+  | [] =>
+      tmReturn []
+  | h :: t =>
+      lsh <- reduceTypCon' h ;;
+      lst <- reduceTypCon t ;;
+      tmReturn (app lsh lst)
+  end.
 
-Fixpoint reduceTypeConIter' (conjs : list term) (fuel : nat) : TemplateMonad (list term) :=
-match fuel with
- | 0 => tmReturn conjs
- | S m => newConjs <- reduceTypCon conjs ;; reduceTypeConIter' newConjs m
-end.
+(* Iteratively reduce type constructors with fuel. *)
+Fixpoint reduceTypeConIter'
+         (conjs : list term)
+         (fuel : nat)
+  : TemplateMonad (list term) :=
+  match fuel with
+  | 0 =>
+      tmReturn conjs
+  | S m =>
+      newConjs <- reduceTypCon conjs ;;
+      reduceTypeConIter' newConjs m
+  end.
 
-Definition reduceTypeConIter (conj : term) (fuel : nat) : TemplateMonad (list term) :=
-reduceTypeConIter' [conj] fuel.
+(* Reduce a single conjunction iteratively. *)
+Definition reduceTypeConIter
+           (conj : term)
+           (fuel : nat)
+  : TemplateMonad (list term) :=
+  reduceTypeConIter' [conj] fuel.
 
-Fixpoint chkFullInv (conjs : list term) : TemplateMonad (list term) :=
- match conjs with
-  | [] => tmReturn []
-  | h :: t => match h with
-               | (tApp <%eq%> [tp; t1 ; tApp (tConstruct indInfo k lst) lstArgs]) => tmFail "constructor not fully inverted"
-               | _ => rest <- chkFullInv t ;; tmReturn (h :: rest)
-              end
- end.
+(* Check that all constructors are fully inverted. *)
+Fixpoint chkFullInv
+         (conjs : list term)
+  : TemplateMonad (list term) :=
+  match conjs with
+  | [] =>
+      tmReturn []
+  | h :: t =>
+      match h with
+      | tApp <%eq%> [tp; t1; tApp (tConstruct indInfo k lst) lstArgs] =>
+          tmFail "constructor not fully inverted"
+      | _ =>
+          rest <- chkFullInv t ;;
+          tmReturn (h :: rest)
+      end
+  end.
 
 
 
@@ -3219,59 +3330,48 @@ Definition animate'' (kn : kername) (induct : nat -> nat -> nat -> nat -> nat ->
   tmMsg "done".
 
 *)
-Definition constrFunAnimateEq {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term)
-                        (fuel : nat) : TemplateMonad term :=
-
-
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-
-
-
-
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-tmPrint tBody' ;;
-
-
-let u :=
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType)
-
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-
-                              |}]
-                     )) in
-
-
-
-
-
-(*t'' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;; *)
-ret u.
+(* Construct animated function from equality constraints. *)
+Definition constrFunAnimateEq
+               {A : Type}
+               (induct : A)
+               (postIn' : term)
+               (postInType' : term)
+               (postOut' : term)
+               (postOutType' : term)
+               (fuel : nat)
+  : TemplateMonad term :=
+  let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+  let postInType := tApp <%outcomePoly%> [postInType'] in
+  let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+  let postOutType := tApp <%outcomePoly%> [postOutType'] in
+  tBody' <- mkMulPatMatFn
+              induct
+              [(postIn, postOut);
+               (tApp <%fuelErrorPoly%> [postInType'],
+                tApp <%fuelErrorPoly%> [postOutType'])]
+              postInType
+              postOutType
+              (tApp <%noMatchPoly%> [postOutType'])
+              fuel ;;
+  tmPrint tBody' ;;
+  let u :=
+      tLam "fuel" <%nat%>
+        (tCase
+           {| ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+              ci_npar := 0;
+              ci_relevance := Relevant |}
+           {| puinst := [];
+              pparams := [];
+              pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+              preturn := tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                               postInType
+                               postOutType |}
+           (tVar "fuel")
+           [{| bcontext := [];
+               bbody := tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'] |};
+            {| bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+               bbody := tBody' |}]) in
+  ret u.
 (*
 f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
@@ -3347,29 +3447,46 @@ Definition genFunAnimateEq {A : Type} (induct : A) (kn : kername) (inputTm : ter
 Check general.animate2.
 
 
-Definition genFunAnimateEq7 {A : Type} (kn : kername) (induct : A) (mode :list (prod (list nat) (list nat))) (fuel : nat) : TemplateMonad unit :=
- d <- mkClData' kn mode ;;
- d'' <- tmEval all d ;;
- tmPrint d'' ;;
- mut <- tmQuoteInductive kn ;;
-let lib := ind_bodies mut in
-let nmCxt := genCxt lib in
-let inOutTps := getInOutTps mode lib in
-myData <- getData lib mode nmCxt inOutTps ;;
-myData' <- tmEval all myData;;
-tmPrint myData';;
- let elt := hd datHdDef d in
- let inputTm := snd (fst (fst (fst (fst elt)))) in
- let inputTp := snd ((fst (fst (fst elt)))) in
- let outputTm := snd (((fst (fst elt)))) in
- let outputTp := snd (((fst (elt)))) in
-(*
-tmPrint inputTm.
-*)
- match mode with
+(* Generate animation function version 7 with mode information. *)
+Definition genFunAnimateEq7
+               {A : Type}
+               (kn : kername)
+               (induct : A)
+               (mode : list (prod (list nat) (list nat)))
+               (fuel : nat)
+  : TemplateMonad unit :=
+  d <- mkClData' kn mode ;;
+  d'' <- tmEval all d ;;
+  tmPrint d'' ;;
+  mut <- tmQuoteInductive kn ;;
+  let lib := ind_bodies mut in
+  let nmCxt := genCxt lib in
+  let inOutTps := getInOutTps mode lib in
+  myData <- getData lib mode nmCxt inOutTps ;;
+  myData' <- tmEval all myData ;;
+  tmPrint myData' ;;
+  let elt := hd datHdDef d in
+  let inputTm := snd (fst (fst (fst (fst elt)))) in
+  let inputTp := snd (fst (fst (fst elt))) in
+  let outputTm := snd (fst (fst elt)) in
+  let outputTp := snd (fst elt) in
+  (*
+  tmPrint inputTm.
+  *)
+  match mode with
   | [] => tmFail "no mode info"
-  | h :: t => genFunAnimateEq (induct) (kn) (inputTm) (inputTp)  (outputTm) (outputTp) (myData') ((fst h)) (fuel)
- end.
+  | h :: t =>
+      genFunAnimateEq
+        induct
+        kn
+        inputTm
+        inputTp
+        outputTm
+        outputTp
+        myData'
+        (fst h)
+        fuel
+  end.
 
 
 Inductive foo'' : bool -> nat -> bool -> nat -> Prop :=
@@ -3379,18 +3496,34 @@ MetaRocq Run (g <- general.animate2 <? foo'' ?> ;; tmDefinition "data''" g).
 Compute data''.
 Check getData.
 *)
-Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
-
+(* Generate animated function for partial let-binding clause. *)
+Definition genFunAnimateEqPartialLetClause'
+               {A : Type}
+               (induct : A)
+               (kn : kername)
+               (fooTerm : named_term)
+               (inputTm : term)
+               (inputTp : term)
+               (outputTm : term)
+               (outputTp : term)
+               (inputVars : list string)
+               (fuel : nat)
+  : TemplateMonad term :=
   if checkBool (filterListConj fooTerm) then
-  (let postOut' := (constrFnBody outputTm outputTp
-    (animateListConj
-       (getListConjLetBind fooTerm) nil (inputVars) fuel (fun t : term => t))
-     ) in
+    let postOut' :=
+        constrFnBody
+          outputTm
+          outputTp
+          (animateListConj
+             (getListConjLetBind fooTerm)
+             nil
+             inputVars
+             fuel
+             (fun t : term => t)) in
     (*
     po' <- tmEval all postOut' ;;
     tmPrint po' ;;
     *)
-
     let postOutType' := tApp <% @option %> [outputTp] in
     (*
     poT' <- tmEval all postOutType' ;;
@@ -3408,29 +3541,25 @@ Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kernam
     *)
     let postIn := tApp <%successPoly%> [postInType'; postIn'] in
     let postInType := tApp <%outcomePoly%> [postInType'] in
-
     let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
     let postOutType := tApp <%outcomePoly%> [postOutType'] in
+    (*
 
-
-
-
- (*
-
-   animateOneClause induct [] postInTPairB postInType' postInTPairB postInType' (snd kn) fuel ;;
-*)
-
-     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
-      (*
-      tmPrint t0 ;;
-      *)
-     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
-     tmReturn t')
-     (*
-     f <- tmUnquote t';;
+    animateOneClause induct [] postInTPairB postInType' postInTPairB postInType' (snd kn) fuel ;;
+    *)
+    t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType' fuel ;;
+    (*
+    tmPrint t0 ;;
+    *)
+    let t1 := tApp <%optionToOutcome%> [postInType'; outputTp; t0] in
+    t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+    tmReturn t'
+    (*
+    f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") *) else tmFail "cannot process conj".
+              tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;  tmMsg "done") *)
+  else
+    tmFail "cannot process conj".
 
 
 
@@ -3518,118 +3647,173 @@ Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 *)
 
 
-Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
-
-match conjunct with
- | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
-
-
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
-
-                      *)
-
-
-
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-                      tmReturn u'
-                     (*
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-                     *)
-                     (*
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-                     *)
+(* Extract pattern match binders with partial application (helper function). *)
+Definition extractPatMatBindersPartial''
+               {A : Type}
+               (induct : A)
+               (kn : kername)
+               (conjunct : named_term)
+               (inputTm : term)
+               (inputTp : term)
+               (outputTm : term)
+               (outputTp : term)
+               (fuel : nat)
+  : TemplateMonad term :=
+  match conjunct with
+  | tApp <%eq%> [typeVar; patMatTerm; tApp func lst] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               inputTm
+               inputTp
+               (tApp func lst)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                outputTm
+                outputTp
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      (*
+      gIn <- tmUnquote tIn ;;
+      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+      gOut <- tmUnquote tOut ;;
+      gOut' <- tmEval hnf (my_projT2 gOut) ;;
 
 
- | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
-                      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      (*
-                      gIn <- tmUnquote tIn ;;
-                      gIn' <- tmEval hnf (my_projT2 gIn) ;;
-                      gOut <- tmUnquote tOut ;;
-                      gOut' <- tmEval hnf (my_projT2 gOut) ;;
+      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
+
+      *)
+      let u := tApp <%composeOutcomePoly%> [inputTp; typeVar; outputTp; tIn; tOut] in
+      u'' <- tmEval all u ;;
+      (*tmPrint u';; *)
+      u' <- DB.deBruijn u ;;
+      tmReturn u'
+      (*
+      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+      (*
+      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+      (*
+      tmPrint f
+      *)
+      (*
+      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
+     *)
+     tmDefinition (String.append (snd kn) "Animated")  (f)
+     *)
+     *)
+     (*
+     f <- tmUnquote u';;
+     tmPrint f ;;
+     (* tmDefinition (String.append (snd kn) "Animated")  (f)
+     *)
+
+     tmEval hnf (my_projT2 f) >>=
+     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
+     *)
+
+  | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
+      tIn <- joinPatMatPolyGenFuelAwareNoLHSTm
+               induct
+               inputTm
+               inputTp
+               (tVar str)
+               typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm
+                induct
+                patMatTerm
+                typeVar
+                outputTm
+                outputTp
+                (String.append (snd kn) "OUT")
+                fuel ;;
+      (*
+      gIn <- tmUnquote tIn ;;
+      gIn' <- tmEval hnf (my_projT2 gIn) ;;
+      gOut <- tmUnquote tOut ;;
+      gOut' <- tmEval hnf (my_projT2 gOut) ;;
 
 
-                      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
+      tmDefinition (String.append (snd kn) "Animated") (composeOutcomePolyImpl gIn' gOut')
 
-                      *)
+      *)
+      let u := tApp <%composeOutcomePoly%> [inputTp; typeVar; outputTp; tIn; tOut] in
+      u'' <- tmEval all u ;;
+      (*tmPrint u';; *)
+      u' <- DB.deBruijn u ;;
+      tmReturn u'
+      (*
+      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
+      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
+      (*
+      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
+      (*
+      tmPrint f
+      *)
+      (*
+      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
+     *)
+     tmDefinition (String.append (snd kn) "Animated")  (f)
+     *)
+     *)
+     (*
+     f <- tmUnquote u';;
+     tmPrint f ;;
+     (* tmDefinition (String.append (snd kn) "Animated")  (f)
+     *)
 
+     tmEval hnf (my_projT2 f) >>=
+     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
+     *)
 
+  | _ => tmFail "incorrect inductive shape"
+  end.
 
-
-                      let u :=
-                       (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-                      (*tmPrint u';; *)
-
-                      u' <- DB.deBruijn u ;;
-                      tmReturn u'
-                     (*
-                      ftypeIn <- tmUnquoteTyped Type (mkProdTypeVars inputData) ;;
-                      ftypeOut <- tmUnquoteTyped Type (mkProdTypeVars outputData) ;;
-                      (*
-                      f <- tmUnquoteTyped (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) u' ;;
-                      (*
-                      tmPrint f
-                      *)
-                      (*
-                      @tmDefinition (String.append (snd kn) "Animated") (nat -> outcomePoly ftypeIn -> outcomePoly ftypeOut) (f)
-                     *)
-                     tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-                     *)
-                     (*
-                     f <- tmUnquote u';;
-                     tmPrint f ;;
-                     (* tmDefinition (String.append (snd kn) "Animated")  (f)
-                     *)
-
-                     tmEval hnf (my_projT2 f) >>=
-                     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf ) ;; ret tt
-                     *)
-
-
-
- | _ => tmFail "incorrect inductive shape"
- end.
-
-Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
-match conjunct with
-| tApp <%eq%> [typeVar; t1; t2] => if isListSubStr (extractOrderedVars t1) inputVars then
-                                   extractPatMatBindersPartial'' induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if isListSubStr (extractOrderedVars t2) inputVars then
-                                   extractPatMatBindersPartial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
-| _ => tmFail "incorrect inductive shape"
-end.
+(* Extract pattern match binders with partial application. *)
+Definition extractPatMatBindersPartial'
+               {A : Type}
+               (induct : A)
+               (kn : kername)
+               (conjunct : named_term)
+               (inputTm : term)
+               (inputTp : term)
+               (outputTm : term)
+               (outputTp : term)
+               (inputVars : list string)
+               (fuel : nat)
+  : TemplateMonad term :=
+  match conjunct with
+  | tApp <%eq%> [typeVar; t1; t2] =>
+      if isListSubStr (extractOrderedVars t1) inputVars then
+        extractPatMatBindersPartial''
+          induct
+          kn
+          (tApp <%eq%> [typeVar; t2; t1])
+          inputTm
+          inputTp
+          outputTm
+          outputTp
+          fuel
+      else if isListSubStr (extractOrderedVars t2) inputVars then
+        extractPatMatBindersPartial''
+          induct
+          kn
+          conjunct
+          inputTm
+          inputTp
+          outputTm
+          outputTp
+          fuel
+      else
+        tmFail "incorrect inductive shape"
+  | _ => tmFail "incorrect inductive shape"
+  end.
 
 Search (bool -> bool).
 
@@ -3650,52 +3834,113 @@ match lst with
  | _ => false
 end.
 
-(** Sort and orient conjunctions for animation.
-    Separates guard conditions from let-binding equalities and orients equations
-    so that known variables appear on the left. *)
-Fixpoint getSortedOrientedConjs (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
-match fuel with
- | 0 => if andb (isEmptyLst remConjs) (isEmptyLst currentConjs) then tmReturn (sortedConjs, guardConjs) else tmFail "insufficient fuel to sort conjs"
- | S n => if (andb (isEmptyLst remConjs) (isEmptyLst currentConjs)) then tmReturn (sortedConjs, guardConjs) else
-           match currentConjs with
-            | [] => getSortedOrientedConjs remConjs [] sortedConjs guardConjs kv n
-            | conj' :: t => match conj' with
-                        | tApp <%eq%> [typeVar; t1; t2] => if andb (isListSubStr (extractOrderedVars t1) kv) (isListSubStr (extractOrderedVars t2) kv) then
-                                                            getSortedOrientedConjs t remConjs sortedConjs (conj' :: guardConjs) kv n else
-                                                            (if (isListSubStr (extractOrderedVars t1) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
-                                                            (if  (isListSubStr (extractOrderedVars t2) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
-                                                            (getSortedOrientedConjs t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)))
-                        | _ => tmFail "incorrect conj shape"
-                        end
-           end
-end.
+(* Sort and orient conjunctions for animation.
+   Separates guard conditions from let-binding equalities and orients equations
+   so that known variables appear on the left. *)
+Fixpoint getSortedOrientedConjs
+             (currentConjs : list term)
+             (remConjs : list term)
+             (sortedConjs : list term)
+             (guardConjs : list term)
+             (kv : list string)
+             (fuel : nat)
+  : TemplateMonad (list term * list term) :=
+  match fuel with
+  | 0 =>
+      if andb (isEmptyLst remConjs) (isEmptyLst currentConjs) then
+        tmReturn (sortedConjs, guardConjs)
+      else
+        tmFail "insufficient fuel to sort conjs"
+  | S n =>
+      if andb (isEmptyLst remConjs) (isEmptyLst currentConjs) then
+        tmReturn (sortedConjs, guardConjs)
+      else
+        match currentConjs with
+        | [] =>
+            getSortedOrientedConjs remConjs [] sortedConjs guardConjs kv n
+        | conj' :: t =>
+            match conj' with
+            | tApp <%eq%> [typeVar; t1; t2] =>
+                if andb (isListSubStr (extractOrderedVars t1) kv)
+                        (isListSubStr (extractOrderedVars t2) kv) then
+                  getSortedOrientedConjs t remConjs sortedConjs (conj' :: guardConjs) kv n
+                else if isListSubStr (extractOrderedVars t1) kv then
+                  getSortedOrientedConjs
+                    t
+                    remConjs
+                    (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs)
+                    guardConjs
+                    (app (extractOrderedVars t2) kv)
+                    n
+                else if isListSubStr (extractOrderedVars t2) kv then
+                  getSortedOrientedConjs
+                    t
+                    remConjs
+                    (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs)
+                    guardConjs
+                    (app (extractOrderedVars t1) kv)
+                    n
+                else
+                  getSortedOrientedConjs t (conj' :: remConjs) sortedConjs guardConjs kv n
+            | _ => tmFail "incorrect conj shape"
+            end
+        end
+  end.
 
-(** Extract just the let-binding conjunctions (in sorted order). *)
-Definition getSortedOrientedConjsLet (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
-sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
-lConjs <- tmEval all (rev (fst sConjs));;
-tmReturn lConjs.
+(* Extract just the let-binding conjunctions (in sorted order). *)
+Definition getSortedOrientedConjsLet
+               (currentConjs : list term)
+               (remConjs : list term)
+               (sortedConjs : list term)
+               (guardConjs : list term)
+               (kv : list string)
+               (fuel : nat)
+  : TemplateMonad (list term) :=
+  sConjs <- getSortedOrientedConjs currentConjs remConjs sortedConjs guardConjs kv fuel ;;
+  lConjs <- tmEval all (rev (fst sConjs)) ;;
+  tmReturn lConjs.
 
-(** Extract just the guard conjunctions. *)
-Definition getSortedOrientedConjsGuard (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
-sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
-gConjs <- tmEval all (snd sConjs);;
-tmReturn gConjs.
+(* Extract just the guard conjunctions. *)
+Definition getSortedOrientedConjsGuard
+               (currentConjs : list term)
+               (remConjs : list term)
+               (sortedConjs : list term)
+               (guardConjs : list term)
+               (kv : list string)
+               (fuel : nat)
+  : TemplateMonad (list term) :=
+  sConjs <- getSortedOrientedConjs currentConjs remConjs sortedConjs guardConjs kv fuel ;;
+  gConjs <- tmEval all (snd sConjs) ;;
+  tmReturn gConjs.
 
 
 
 (** Animate any conjunction, handling both variable equalities and pattern matches.
     Dispatches to appropriate animation strategy based on conjunction structure. *)
-Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
-                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
-match conj with
- | tApp <%eq%> [typeVar; t1; t2] => match t1 with
-                                    | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
-                                    | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
-                                    | _ => tmFail "incorrect Conj shape"
-                                    end
- | _ => tmFail "incorrect Conj shape"
-end.
+Definition animateAnyLet
+           {A : Type}
+           (ind : A)
+           (kn : kername)
+           (conj : term)
+           (inputTm : term)
+           (inputTp : term)
+           (outputTm : term)
+           (outputTp : term)
+           (inputVars : list string)
+           (fuel : nat) : TemplateMonad term :=
+  match conj with
+  | tApp <%eq%> [typeVar; t1; t2] =>
+      match t1 with
+      | tVar str =>
+          genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp
+                                           outputTm outputTp inputVars fuel
+      | tApp (tConstruct ind_type k lst) lstArgs =>
+          extractPatMatBindersPartial' ind kn conj inputTm inputTp
+                                       outputTm outputTp inputVars fuel
+      | _ => tmFail "incorrect Conj shape"
+      end
+  | _ => tmFail "incorrect Conj shape"
+  end.
 
 
 
@@ -3736,132 +3981,199 @@ end.
 Definition joinOutcomeUnit (A: Type) (x : outcomePoly A) : outcomePoly A :=
 x.
 
-Definition joinOutcome (A : Type) (B : Type) (x : outcomePoly A) (y : outcomePoly B) : outcomePoly (prod A B) :=
+Definition joinOutcome
+           (A : Type)
+           (B : Type)
+           (x : outcomePoly A)
+           (y : outcomePoly B) : outcomePoly (A * B) :=
  match x with
-  | noMatchPoly => noMatchPoly (prod A B)
-  | fuelErrorPoly => fuelErrorPoly (prod A B)
-  | successPoly k => match y with
-                        | noMatchPoly => noMatchPoly (prod A B)
-                        | fuelErrorPoly => fuelErrorPoly (prod A B)
-                        | successPoly j => successPoly (prod A B) (k,j)
-                        end
+ | noMatchPoly => noMatchPoly (A * B)
+ | fuelErrorPoly => fuelErrorPoly (A * B)
+ | successPoly k =>
+     match y with
+     | noMatchPoly => noMatchPoly (A * B)
+     | fuelErrorPoly => fuelErrorPoly (A * B)
+     | successPoly j => successPoly (A * B) (k,j)
+     end
  end.
 
 
-Search (nat -> string).
-Search (string -> string -> string).
 Fixpoint prodTerm (lstTypes : list term) : term :=
 match lstTypes with
  | [] => <%bool%>
  | [h] => h
- | h :: t => tApp
-                     (tInd
-                        {|
+ | h :: t => tApp (tInd {|
                           inductive_mind := <?prod?>;
                           inductive_ind := 0
                         |} []) [h ; (prodTerm t)]
 end.
 
 Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
-match lstTypes with
- | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
- | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
- | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
- | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]
-end.
+  match lstTypes with
+  | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
+  | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
+  | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
+  | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]
+  end.
 
-Compute <% (fun o0 => (fun o1 o2 => (joinOutcome bool (prod nat bool) o0 (joinOutcome nat bool o1 o2)))) %>.
+(* Compute <% (fun o0 => (fun o1 o2 => (joinOutcome bool (prod nat bool) o0 (joinOutcome nat bool o1 o2)))) %>. *)
 
 Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
-match lstTypes with
-| [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
-| [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) fnBody
-| h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody)
-end.
+  match lstTypes with
+  | [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
+  | [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) fnBody
+  | h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody)
+  end.
 
 Definition mkJoinOutcomeTm (lstTypes : list term) : term :=
-let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
-mkJoinOutcomeLam lstTypes 0 fnBody.
+  let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
+  mkJoinOutcomeLam lstTypes 0 fnBody.
 
-Print term.
-Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod term term)) (animationFn : term) (partialLetfn : term -> term) : (term -> term) :=
- match inputVarsLst with
+Definition animateOneConjAnyLet'
+  (outputVarNm : string)
+  (outputVarTp : term)
+  (inputVarsLst : list (term * term))
+  (animationFn : term)
+  (partialLetfn : term -> term) : (term -> term) :=
+  match inputVarsLst with
   | [] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
                                  (tApp animationFn [<%5%>]) (tApp <%outcomePoly%> [outputVarTp]))  t) )
   | [h] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
                                  (tApp animationFn [<%5%>; fst h]) (tApp <%outcomePoly%> [outputVarTp])) t ))
   | _ =>  (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
                                  (tApp animationFn [<%5%>; (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLst))]) (tApp <%outcomePoly%> [outputVarTp])) t))
- end.
+  end.
 (*
 Definition mkProdTm'' (lst : list (prod string term)) : term. Admitted.
 Definition mkProdTp''  (lst : list (prod string term)) : term. Admitted.
 *)
-Fixpoint mkLstTm (lst : list (prod string term)) : list (prod term term) :=
-match lst with
-| [] => []
-| (str,tp) :: t => (tVar str, tp) :: mkLstTm t
-end.
+Fixpoint mkLstTm (lst : list (string * term)) : list (term * term) :=
+  match lst with
+  | [] => []
+  | (str, tp) :: t => (tVar str, tp) :: mkLstTm t
+  end.
 
-
-Definition animateOneConjAnyLet {A : Type} (ind : A) (kn : kername) (conj : term)
-                                 (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-let inputTm := mkProdTmVars inputVarsLst in
-let inputTp := mkProdTypeVars inputVarsLst in
-let inputVarsLstTm := mkLstTm inputVarsLst in
-animationFn <-  animateAnyLet (ind) (kn) (conj) (inputTm) (inputTp)
-                                 (tVar outputVarNm) (outputVarTp) (map fst inputVarsLst) fuel ;;
-tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn)).
+(* Animate a single conjunction for any let-binding.
+   Builds animation function and wraps with let-binding term constructor. *)
+Definition animateOneConjAnyLet
+               {A : Type}
+               (ind : A)
+               (kn : kername)
+               (conj : term)
+               (outputVarNm : string)
+               (outputVarTp : term)
+               (inputVarsLst : list (prod string term))
+               (partialLetfn : term -> term)
+               (fuel : nat)
+  : TemplateMonad (term -> term) :=
+  let inputTm := mkProdTmVars inputVarsLst in
+  let inputTp := mkProdTypeVars inputVarsLst in
+  let inputVarsLstTm := mkLstTm inputVarsLst in
+  animationFn <- animateAnyLet ind kn conj inputTm inputTp
+                               (tVar outputVarNm) outputVarTp
+                               (map fst inputVarsLst) fuel ;;
+  tmReturn (animateOneConjAnyLet' outputVarNm outputVarTp inputVarsLstTm
+                                  animationFn partialLetfn).
 
 
 Fixpoint lookUpVarsOne (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match allVarTpInf with
-| [] => []
-| h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
-end.
+  match allVarTpInf with
+  | [] => []
+  | h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
+  end.
 
 Fixpoint lookUpVars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match lst with
-| [] => []
-| h :: t => match lookUpVarsOne h allVarTpInf with
-             | [h'] => h' :: lookUpVars t allVarTpInf
-             | _ =>  lookUpVars t allVarTpInf
-            end
-end.
+  match lst with
+  | [] => []
+  | h :: t =>
+      match lookUpVarsOne h allVarTpInf with
+      | [h'] => h' :: lookUpVars t allVarTpInf
+      | _ =>  lookUpVars t allVarTpInf
+      end
+  end.
+
 Definition getConjOutputVars (conj : term) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match conj with
- | tApp <%eq%> [typeVar; t1; t2] => lookUpVars (extractOrderedVars t1) allVarTpInf
- | _ => []
-end.
+  match conj with
+  | tApp <%eq%> [typeVar; t1; t2] => lookUpVars (extractOrderedVars t1) allVarTpInf
+  | _ => []
+  end.
+
 Definition getConjInputVarLst (conj : term) (allVarTpInf : list (prod string term)) : list (prod string term) :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => lookUpVars (extractOrderedVars t2) allVarTpInf
  | _ => []
 end.
-Fixpoint animateOneConjAnyLetMult {A : Type} (ind : A) (kn : kername) (conj : term)
-                                 (outputVars : list (prod string term)) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-match outputVars with
- | [] => tmReturn partialLetfn
- | h :: t =>  lFn' <- animateOneConjAnyLet A kn conj (fst h) (snd h) inputVarsLst partialLetfn fuel ;; animateOneConjAnyLetMult ind kn conj t inputVarsLst  lFn' fuel
-end.
 
+(* Animate multiple output variables from a single conjunction.
+   Recursively processes each output variable and threads the partial let function. *)
+Fixpoint animateOneConjAnyLetMult
+             {A : Type}
+             (ind : A)
+             (kn : kername)
+             (conj : term)
+             (outputVars : list (prod string term))
+             (inputVarsLst : list (prod string term))
+             (partialLetfn : term -> term)
+             (fuel : nat)
+  : TemplateMonad (term -> term) :=
+  match outputVars with
+  | [] => tmReturn partialLetfn
+  | h :: t =>
+      lFn' <- animateOneConjAnyLet A kn conj (fst h) (snd h) inputVarsLst
+                                   partialLetfn fuel ;;
+      animateOneConjAnyLetMult ind kn conj t inputVarsLst lFn' fuel
+  end.
 
-Definition animateOneConjLetCl {A : Type} (ind : A) (kn : kername) (conj : term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-let outputVars := getConjOutputVars conj allVarTpInf in
-let  inputVarsLst := getConjInputVarLst conj allVarTpInf in
-animateOneConjAnyLetMult ind kn conj outputVars inputVarsLst partialLetfn fuel.
+(* Animate a single conjunction for a let clause.
+   Extracts input/output variables and delegates to multiple output animation. *)
+Definition animateOneConjLetCl
+               {A : Type}
+               (ind : A)
+               (kn : kername)
+               (conj : term)
+               (allVarTpInf : list (prod string term))
+               (partialLetfn : term -> term)
+               (fuel : nat)
+  : TemplateMonad (term -> term) :=
+  let outputVars := getConjOutputVars conj allVarTpInf in
+  let inputVarsLst := getConjInputVarLst conj allVarTpInf in
+  animateOneConjAnyLetMult ind kn conj outputVars inputVarsLst partialLetfn fuel.
 
-Fixpoint animateListConjLetCl {A : Type} (ind : A) (kn : kername) (conjs : list term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-match conjs with
- | [] => tmReturn partialLetfn
- | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl ind kn t allVarTpInf lFn' fuel
-end.
+(* Animate a list of conjunctions for let clauses.
+   Processes each conjunction sequentially, threading the partial function. *)
+Fixpoint animateListConjLetCl
+             {A : Type}
+             (ind : A)
+             (kn : kername)
+             (conjs : list term)
+             (allVarTpInf : list (prod string term))
+             (partialLetfn : term -> term)
+             (fuel : nat)
+  : TemplateMonad (term -> term) :=
+  match conjs with
+  | [] => tmReturn partialLetfn
+  | h :: t =>
+      lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;;
+      animateListConjLetCl ind kn t allVarTpInf lFn' fuel
+  end.
 
-Fixpoint animateListConjLetCl' (A : Type) (ind : A) (kn : kername) (conjs : list term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-match conjs with
- | [] => tmReturn partialLetfn
- | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl' A ind kn t allVarTpInf lFn' fuel
-end.
+(* Animate a list of conjunctions for let clauses (alternate version with explicit type).
+   Similar to animateListConjLetCl but with explicit type parameter. *)
+Fixpoint animateListConjLetCl'
+             (A : Type)
+             (ind : A)
+             (kn : kername)
+             (conjs : list term)
+             (allVarTpInf : list (prod string term))
+             (partialLetfn : term -> term)
+             (fuel : nat)
+  : TemplateMonad (term -> term) :=
+  match conjs with
+  | [] => tmReturn partialLetfn
+  | h :: t =>
+      lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;;
+      animateListConjLetCl' A ind kn t allVarTpInf lFn' fuel
+  end.
 
 Definition animateOneConjSuccGuard'' (conj : term) (partialGuard : term)  :  term :=
   match conj with
@@ -3888,53 +4200,49 @@ tApp (mkJoinOutcomeTm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
 
 
 
-Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (gConjs : list term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
+(* Generate animated function for partial guard condition animation.
+   Constructs guard check term and wraps with outcome types. *)
+Definition genFunAnimateEqPartialGuardCon'
+               {A : Type}
+               (induct : A)
+               (kn : kername)
+               (gConjs : list term)
+               (inputTm : term)
+               (inputTp : term)
+               (outputTm : term)
+               (outputTp : term)
+               (fuel : nat)
+  : TemplateMonad term :=
+  let postOut' := constrFnBodyGuardCon outputTm outputTp
+                                        (animateConjGuardList gConjs) in
+  let postOutType' := tApp <% @option %> [outputTp] in
+  let postInType' := inputTp in
+  let postIn' := inputTm in
+  let postIn := tApp <%successPoly%> [postInType'; postIn'] in
+  let postInType := tApp <%outcomePoly%> [postInType'] in
+  let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
+  let postOutType := tApp <%outcomePoly%> [postOutType'] in
+  t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType' fuel ;;
+  let t1 := tApp <%optionToOutcome%> [postInType'; outputTp; t0] in
+  t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
+  tmReturn t'.
 
-
-  (let postOut' := (constrFnBodyGuardCon outputTm outputTp
-
-    (animateConjGuardList (gConjs) )) in
-    (*
-    po' <- tmEval all postOut' ;;
-    tmPrint po' ;;
-    *)
-
-    let postOutType' := tApp <% @option %> [outputTp] in
-    (*
-    poT' <- tmEval all postOutType' ;;
-    tmPrint poT' ;;
-    *)
-    let postInType' := inputTp in
-    (*
-    piT' <- tmEval all postInType' ;;
-    tmPrint piT' ;;
-    *)
-    let postIn' := inputTm in
-    (*
-    pi' <- tmEval all postIn' ;;
-    tmPrint pi' ;;
-    *)
-    let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-    let postInType := tApp <%outcomePoly%> [postInType'] in
-
-    let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-    let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-
-
-
-
-
-     t0 <- constrFunAnimateEq induct postIn' postInType' postOut' postOutType'  fuel ;;
-      (*
-      tmPrint t0 ;;
-      *)
-     let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
-     tmReturn t').
-
-Definition animateListConjGuard {A : Type} (induct : A) (kn : kername) (gConjs : list term) (allVarTpInf : list (prod string term))  (outVars : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-genFunAnimateEqPartialGuardCon' induct kn gConjs  (mkProdTmVars allVarTpInf) (mkProdTypeVars allVarTpInf) (mkProdTmVars outVars) (mkProdTypeVars outVars) fuel.
+(* Animate a list of guard conjunctions.
+   Builds product terms and delegates to guard condition animation. *)
+Definition animateListConjGuard
+               {A : Type}
+               (induct : A)
+               (kn : kername)
+               (gConjs : list term)
+               (allVarTpInf : list (prod string term))
+               (outVars : list (prod string term))
+               (fuel : nat)
+  : TemplateMonad term :=
+  genFunAnimateEqPartialGuardCon'
+    induct kn gConjs
+    (mkProdTmVars allVarTpInf) (mkProdTypeVars allVarTpInf)
+    (mkProdTmVars outVars) (mkProdTypeVars outVars)
+    fuel.
 
 
 
@@ -3946,10 +4254,24 @@ match inVars with
 end.
 Print reductionStrategy.
 
-Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (inVars : list (prod string term)) (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
-gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
-tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (allVarTpInf)]))).
+(* Animate both let-bindings and guard conditions together.
+   Combines let-binding clause animation with guard condition checking. *)
+Definition animateListLetAndGuard
+               {A : Type}
+               (ind : A)
+               (kn : kername)
+               (lConjs : list term)
+               (gConjs : list term)
+               (inVars : list (prod string term))
+               (outVars : list (prod string term))
+               (allVarTpInf : list (prod string term))
+               (fuel : nat)
+  : TemplateMonad term :=
+  letBind <- animateListConjLetCl ind kn lConjs allVarTpInf
+                                   (fun t : term => t) fuel ;;
+  gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
+  tmReturn (animateListLetClLam inVars
+                                 (letBind (tApp gFun [<%5%>; mkOutPolyProdTm allVarTpInf]))).
 
 
 
@@ -3987,21 +4309,32 @@ tmReturn t''.
 
 Unset Universe Checking.
 
-Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-bigConj <- general.animate2 kn ;;
-let listAllConjs := getListConjAll bigConj in
-lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] (map fst inVars) fuel) ;;
-lConjs <- tmEval (all) lConjs' ;;
-gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] (map fst inVars) fuel) ;;
-gConjs <- tmEval (all) gConjs' ;;
-t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel ;;
-t' <- tmEval all t ;;
-t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;;
-f <- tmUnquote t'' ;;
-tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
-
-tmReturn t''.
+(* Animate both let-bindings and guards, complete pipeline.
+   Extracts conjunctions from kernel name, sorts them, animates both types,
+   and defines the resulting function. *)
+Definition animateListLetAndGuard'
+               {A : Type}
+               (ind : A)
+               (kn : kername)
+               (inVars : list (string * term))
+               (outVars : list (string * term))
+               (allVarTpInf : list (string * term))
+               (fuel : nat)
+  : TemplateMonad term :=
+  bigConj <- general.animate2 kn ;;
+  let listAllConjs := getListConjAll bigConj in
+  lConjs' <- getSortedOrientedConjsLet listAllConjs [] [] [] (map fst inVars) fuel ;;
+  (* lConjs <- tmEval all lConjs' ;; *)
+  (* gConjs' <- getSortedOrientedConjsGuard listAllConjs [] [] [] (map fst inVars) fuel ;; *)
+  (* gConjs <- tmEval all gConjs' ;; *)
+  (* t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel ;; *)
+  (* t' <- tmEval all t ;; *)
+  (* t'' <- tmEval all (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;; *)
+  (* f <- tmUnquote t'' ;; *)
+  (* tmEval hnf (my_projT2 f) >>= *)
+  (*   tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;; *)
+  (* tmReturn t''. *)
+  tmReturn hole.
 
 Inductive genRel11 : nat -> list nat -> nat -> Prop :=
  | genRelcstr11 : forall (a d b c: nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c -> genRel11 a l d .
@@ -4009,7 +4342,7 @@ Inductive genRel11 : nat -> list nat -> nat -> Prop :=
 
 MetaRocq Run (animateListLetAndGuard' genRel11 <? genRel11 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 30).
 
-Compute (genRel11Animated (successPoly nat 3) (successPoly (list nat) [3])).
+(* Compute (genRel11Animated (successPoly nat 3) (successPoly (list nat) [3])). *)
 (*
 letBind <- animateListConjLetCl (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
@@ -4322,30 +4655,49 @@ MetaRocq Run (o <- tmInferInstance (Some all) (DecEq (list nat)) ;;
 
 Check @tmDefinition.
 
-Definition mkEqFn (A : Type) (nmTm : string) : TemplateMonad term :=
-o <- tmInferInstance (Some all) (DecEq A) ;;
-              match o with
-              | my_Some f => let myFun : A -> A -> bool := (fun x y => match @dec_eq A f x y with
-                                                                       | left _ => true
-                                                                       | right _ => false
-                                                                       end) in (tmPrint myFun ;; t' <- (tmQuote myFun) ;; t'' <- tmEval all t' ;; (* @tmDefinition nmTm term t'' ;; *) tmReturn t'')
-
-              | _ => tmFail "boo"
-              end.
+(* Create equality function term from a type using decidable equality typeclass.
+   Infers DecEq instance and generates boolean equality checker. *)
+Definition mkEqFn
+               (A : Type)
+               (nmTm : string)
+  : TemplateMonad term :=
+  o <- tmInferInstance (Some all) (DecEq A) ;;
+  match o with
+  | my_Some f =>
+      let myFun : A -> A -> bool :=
+          fun x y => match @dec_eq A f x y with
+                     | left _ => true
+                     | right _ => false
+                     end in
+      tmPrint myFun ;;
+      t' <- tmQuote myFun ;;
+      t'' <- tmEval all t' ;;
+      tmReturn t''
+  | _ => tmFail "boo"
+  end.
 
 MetaRocq Run (t <- mkEqFn (list nat) "listNatEq" ;; tmPrint t).
 
-Definition mkEqFnTm (t : term) : TemplateMonad term :=
-A <- tmUnquoteTyped Type t ;;
-o <- tmInferInstance (Some all) (DecEq A) ;;
-              match o with
-              | my_Some f => let myFun : A -> A -> bool := (fun x y => match @dec_eq A f x y with
-                                                                       | left _ => true
-                                                                       | right _ => false
-                                                                       end) in (tmPrint myFun ;; t' <- (tmQuote myFun) ;; t'' <- tmEval all t' ;; (* @tmDefinition nmTm term t'' ;; *) tmReturn t'')
-
-              | _ => tmFail "boo"
-              end.
+(* Create equality function term from a type term using decidable equality.
+   Unquotes type term, infers DecEq instance, and generates boolean equality checker. *)
+Definition mkEqFnTm
+               (t : term)
+  : TemplateMonad term :=
+  A <- tmUnquoteTyped Type t ;;
+  o <- tmInferInstance (Some all) (DecEq A) ;;
+  match o with
+  | my_Some f =>
+      let myFun : A -> A -> bool :=
+          fun x y => match @dec_eq A f x y with
+                     | left _ => true
+                     | right _ => false
+                     end in
+      tmPrint myFun ;;
+      t' <- tmQuote myFun ;;
+      t'' <- tmEval all t' ;;
+      tmReturn t''
+  | _ => tmFail "boo"
+  end.
 
 MetaRocq Run (t <- mkEqFnTm <%list nat%>  ;; tmPrint t).
 
