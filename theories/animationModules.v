@@ -2144,9 +2144,48 @@ Definition indData :=
 MetaRocq Run (animateInductivePredicate rel8 "rel8" clData indData <? rel8 ?> 50).
 Print rel8AnimatedTopFn.
 
+Definition rel8AnimatedTopFn' :=
+fix rel8AnimatedTopFn' (fuel : nat) (input : outcomePoly (nat × nat)) {struct fuel} :
+    outcomePoly (nat × nat) :=
+  match fuel with
+  | 0 => fuelErrorPoly (nat × nat)
+  | S remFuel =>
+      dispatchOutcomePolyExt (nat × nat) (nat × nat)
+        [rel8BaseAnimated; rel8ConsAnimated rel8AnimatedTopFn rel9AnimatedTopFn] remFuel input
+  end
+with rel9AnimatedTopFn (fuel : nat) (input : outcomePoly (nat × nat)) {struct fuel} :
+    outcomePoly (nat × nat) :=
+  match fuel with
+  | 0 => fuelErrorPoly (nat × nat)
+  | S remFuel =>
+      dispatchOutcomePolyExt (nat × nat) (nat × nat) [(fun g x y => g x y) rel8AnimatedTopFn] remFuel input
+  end
+with dispatchOutcomePolyExt
+  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
+  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  match fuel' with
+  | 0 => fuelErrorPoly B
+  | S remFuel' =>
+      match lst with
+      | [] => noMatchPoly B
+      | h :: t =>
+          match h remFuel' input' with
+          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
+          | _ => h remFuel' input'
+          end
+      end
+  end
+for
+rel8AnimatedTopFn'
+     : nat -> outcomePoly (nat × nat) -> outcomePoly (nat × nat).
 
-Compute (rel8AnimatedTopFn 50 (successPoly (nat * nat) (7,9))).
-Compute (rel8AnimatedTopFn 100 (successPoly (nat * nat) (8,13))).
+Print rel9ConsAnimated.
+
+Compute rel9ConsAnimated rel8AnimatedTopFn 10 (successPoly (nat * nat) (2,4)).
+Compute rel8AnimatedTopFn 9 (successPoly (nat * nat) (2,4)).
+
+Compute (rel8AnimatedTopFn' 50 (successPoly (nat * nat) (7,9))).
+Compute (rel8AnimatedTopFn' 100 (successPoly (nat * nat) (8,13))).
 
 
 Compute (rel8AnimatedTopFn 70 (successPoly (nat * nat) (9,13))).
@@ -2796,6 +2835,8 @@ Fixpoint getListConjGuardCon (bigConj : term) : list term :=
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
 
+  | tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs => [tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs]
+  
   | _ => []
  end.
 
@@ -2804,7 +2845,7 @@ Definition getListConjAll (bigConj : term) : list term :=
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
-
+  | tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs => [tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs]
   | _ => []
  end.
 
@@ -3518,6 +3559,7 @@ Compute (ind_type (hd oib'' (ind_bodies mutFoo))).
 *)
 
 
+
 Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
 
 match conjunct with
@@ -3623,6 +3665,12 @@ match conjunct with
  | _ => tmFail "incorrect inductive shape"
  end.
 
+Check (let (a, b) := (1,2) in a).
+Check ((nat -> term -> term) -> bool).
+
+
+
+
 Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 match conjunct with
 | tApp <%eq%> [typeVar; t1; t2] => if isListSubStr (extractOrderedVars t1) inputVars then
@@ -3631,9 +3679,244 @@ match conjunct with
 | _ => tmFail "incorrect inductive shape"
 end.
 
-Search (bool -> bool).
+
+Definition animatePredicate' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputVarProdTm : term) (inputVarProdTp : term) (predInArgs : list (term × term)) (predOutArgs : list (term × term))  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
+
+match conjunct with
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
+                      
+                      
+                      predOutProdTp <- mklhsProdType predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm predOutArgs ;;
+                      predInProdTp <- mklhsProdType predInArgs ;;
+                      predInProdTm <- mklhsProdTm predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tVar (String.append indNm "AnimatedTopFn"))])   in 
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
 
 
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                      u' <- DB.deBruijn u ;;
+                      tmReturn u'
+                     
+
+
+
+
+ | _ => tmFail "incorrect inductive shape"
+ end.
+
+Fixpoint extractOrderedVarsfmLst (l : list term) : list string :=
+match l with
+| [] => []
+| h :: t => app (extractOrderedVars h) (extractOrderedVarsfmLst t)
+end.
+Fixpoint listSearch' {A : Type} (ind : nat) (l : list A) : list A :=
+match ind with
+| 0 => match l with
+     | h :: t => [h]
+     | [] => []
+     end
+| S m => listSearch' m (tl l)
+end.     
+
+
+Fixpoint listSearch {A : Type} (indLst : list nat) (l : list A) : list A :=
+match indLst with 
+| [] => []
+| h :: t => app (listSearch' h l) (listSearch t l)
+end. 
+
+Fixpoint getInArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+match modes with
+| [] => []
+| h :: t => if String.eqb indNm (fst h) then listSearch (fst (snd h)) lstArgs else getInArgs indNm t lstArgs
+end. 
+
+Fixpoint getOutArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+match modes with
+| [] => []
+| h :: t => if String.eqb indNm (fst h) then listSearch (snd (snd h)) lstArgs else getOutArgs indNm t lstArgs
+end.     
+
+Search (list (term * term) -> TemplateMonad term).
+Print tLam.
+
+
+ 
+Fixpoint lookUpVarsOne (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+match allVarTpInf with
+| [] => []
+| h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
+end.
+
+Fixpoint mkLstTm (lst : list (prod string term)) : list (prod term term) :=
+match lst with
+| [] => []
+| (str,tp) :: t => (tVar str, tp) :: mkLstTm t
+end.
+Fixpoint lookUpVars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+match lst with
+| [] => []
+| h :: t => match lookUpVarsOne h allVarTpInf with
+             | [h'] => h' :: lookUpVars t allVarTpInf
+             | _ =>  lookUpVars t allVarTpInf
+            end
+end.
+
+
+Definition lookUpVarsOneDefBool (varNm: string) (allVarTpInf : list (prod string term)) : (term) :=
+match lookUpVarsOne varNm allVarTpInf with
+| [h] => snd h
+| _ => <%bool%>
+end.
+Fixpoint getModeFmLst (indNm : string) (modes : list (string * ((list nat) * (list nat)))) : (list nat) * (list nat) :=
+ match modes with
+  | [] => ([],[])
+  | h :: t => if String.eqb indNm (fst h) then (snd h) else getModeFmLst indNm t
+ end.
+
+Definition getInArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+listSearch (fst mode) lstArgs.
+ 
+Definition getOutArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+listSearch (snd mode) lstArgs.
+ 
+ 
+
+Search (list (term * term) -> TemplateMonad term).
+Print tLam.
+
+Fixpoint getPredTp (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
+match predTypeInf with
+| [] => []
+| h :: t => if String.eqb indNm (fst h) then snd h else getPredTp indNm t 
+end. 
+
+Fixpoint crossList {A : Type} {B : Type} (lst1 : list A) (lst2 : list B) : list (A * B) :=
+match lst1 with
+ | [] => []
+ | (h :: t) => match lst2 with
+                | [] => []
+                | h' :: t' => (h,h') :: crossList t t'
+               end  
+end.
+                
+
+Definition animatePredicate {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (outputTm : term) (outputTp : term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+match conjunct with
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm predOutArgs ;;
+                      predInProdTp <- mklhsProdType predInArgs ;;
+                      predInProdTm <- mklhsProdTm predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tVar (String.append indNm "AnimatedTopFn"))])   in 
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                      u' <- DB.deBruijn u ;;
+                      tmReturn u'
+                     
+
+
+
+
+ | _ => tmFail "incorrect inductive shape"
+ end. 
+
+
+Inductive genRel12 : nat -> nat -> Prop :=
+ | genRelcstr12 : forall (a b : nat), a = b -> genRel12 a b. (* a c input b d output *)
+
+Inductive genRel11 : nat -> nat -> Prop :=
+ | genRelcstr11 : forall (a f: nat), genRel12 (S a) (S (S f)) -> genRel11 a f .
+
+MetaRocq Run (conj <- general.animate2 <?genRel11?> ;; t <- animatePredicate genRel11 <?genRel11?> conj (tVar "f") <%nat%> [("genRel12", ([0],[1])); ("genRel11", ([0],[1]))] [("genRel11", [<%nat%>;<%nat%>]); ("genRel12", [<%nat%>;<%nat%>])] [("a",<%nat%>);("f",<%nat%>)] 50;; let tFinal := tLam "genRel12AnimatedTopFn" (<%nat -> outcomePoly nat -> outcomePoly nat%>) t in tFinal' <- tmEval all tFinal ;; tFinal'' <- DB.deBruijn tFinal';; f <- tmUnquote tFinal'';;  tmPrint f).
+
+Definition genRel11AnFn := 
+fun genRel12AnimatedTopFn : nat -> outcomePoly nat -> outcomePoly nat =>
+    composeOutcomePoly nat nat nat
+      (composeOutcomePoly nat nat nat
+         (fun fuel : nat =>
+          match fuel with
+          | 0 => fuelErrorPolyCstFn (outcomePoly nat) nat
+          | S _ =>
+              defaultVal (outcomePoly nat) (outcomePoly nat) (noMatchPoly nat)
+                (dispatchInternal (outcomePoly nat) (outcomePoly nat)
+                   [fun v2 : outcomePoly nat =>
+                    match v2 with
+                    | @successPoly _ a => Some (successPoly nat (S a))
+                    | _ => None
+                    end;
+                    fun v2 : outcomePoly nat =>
+                    match v2 with
+                    | @fuelErrorPoly _ => Some (fuelErrorPoly nat)
+                    | _ => None
+                    end])
+          end)
+         genRel12AnimatedTopFn)
+      (fun fuel : nat =>
+       match fuel with
+       | 0 => fuelErrorPolyCstFn (outcomePoly nat) nat
+       | S _ =>
+           defaultVal (outcomePoly nat) (outcomePoly nat) (noMatchPoly nat)
+             (dispatchInternal (outcomePoly nat) (outcomePoly nat)
+                [fun v2 : outcomePoly nat =>
+                 match v2 with
+                 | @successPoly _ (S (S f)) => Some (successPoly nat f)
+                 | _ => None
+                 end;
+                 fun v2 : outcomePoly nat =>
+                 match v2 with
+                 | @fuelErrorPoly _ => Some (fuelErrorPoly nat)
+                 | _ => None
+                 end])
+       end).
+       
+Definition genRel12AnFnT (fuel : nat) (input : outcomePoly nat) : outcomePoly nat :=
+match fuel with
+ | 0 => fuelErrorPoly nat
+ | S m => input
+end.
+
+Compute genRel11AnFn genRel12AnFnT 3 (successPoly nat 4).        
 (*
 Search (_ -> _ -> {_=_}+{~_=_}).
 *)
@@ -3641,7 +3924,7 @@ Search (_ -> _ -> {_=_}+{~_=_}).
 
 (** ** Integration of All Animation Pieces
     This section combines the various animation strategies into a unified framework
-    that handles let-bindings, partial application, and complex conjunctions. *)
+    that handles let-bindings, pattern matches, partial application, and complex conjunctions. *)
 
 (** Check if a list is empty. *)
 Definition isEmptyLst {A : Type} (lst : list A) : bool :=
@@ -3652,33 +3935,40 @@ end.
 
 (** Sort and orient conjunctions for animation.
     Separates guard conditions from let-binding equalities and orients equations
-    so that known variables appear on the left. *)
-Fixpoint getSortedOrientedConjs (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
+    so that known variables appear on the right. *)
+
+Fixpoint getSortedOrientedConjs (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
 match fuel with
  | 0 => if andb (isEmptyLst remConjs) (isEmptyLst currentConjs) then tmReturn (sortedConjs, guardConjs) else tmFail "insufficient fuel to sort conjs"
  | S n => if (andb (isEmptyLst remConjs) (isEmptyLst currentConjs)) then tmReturn (sortedConjs, guardConjs) else
            match currentConjs with
-            | [] => getSortedOrientedConjs remConjs [] sortedConjs guardConjs kv n
+            | [] => getSortedOrientedConjs modes remConjs [] sortedConjs guardConjs kv n
             | conj' :: t => match conj' with
                         | tApp <%eq%> [typeVar; t1; t2] => if andb (isListSubStr (extractOrderedVars t1) kv) (isListSubStr (extractOrderedVars t2) kv) then
-                                                            getSortedOrientedConjs t remConjs sortedConjs (conj' :: guardConjs) kv n else
-                                                            (if (isListSubStr (extractOrderedVars t1) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
-                                                            (if  (isListSubStr (extractOrderedVars t2) kv) then getSortedOrientedConjs t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
-                                                            (getSortedOrientedConjs t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)))
+                                                            getSortedOrientedConjs modes t remConjs sortedConjs (conj' :: guardConjs) kv n else
+                                                            (if (isListSubStr (extractOrderedVars t1) kv) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
+                                                            (if  (isListSubStr (extractOrderedVars t2) kv) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
+                                                            (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)))
+                        
+                        | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => if isListSubStr (extractOrderedVars conj') kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else
+                                                                                                              if isListSubStr (extractOrderedVarsfmLst (getInArgs indNm modes lstArgs)) kv then getSortedOrientedConjs modes t remConjs (conj' :: sortedConjs) (guardConjs) (app (extractOrderedVarsfmLst (getOutArgs indNm modes lstArgs)) kv) n else 
+                                                                                                              (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)                             
+                        
+                        
                         | _ => tmFail "incorrect conj shape"
                         end
            end
 end.
 
 (** Extract just the let-binding conjunctions (in sorted order). *)
-Definition getSortedOrientedConjsLet (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
-sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
+Definition getSortedOrientedConjsLet (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
+sConjs <- getSortedOrientedConjs modes (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
 lConjs <- tmEval all (rev (fst sConjs));;
 tmReturn lConjs.
 
 (** Extract just the guard conjunctions. *)
-Definition getSortedOrientedConjsGuard (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
-sConjs <- getSortedOrientedConjs (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
+Definition getSortedOrientedConjsGuard (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (list term) :=
+sConjs <- getSortedOrientedConjs modes (currentConjs) (remConjs) (sortedConjs) (guardConjs) (kv) (fuel) ;;
 gConjs <- tmEval all (snd sConjs);;
 tmReturn gConjs.
 
@@ -3687,13 +3977,17 @@ tmReturn gConjs.
 (** Animate any conjunction, handling both variable equalities and pattern matches.
     Dispatches to appropriate animation strategy based on conjunction structure. *)
 Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
-                                 (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
+                                 (outputTm : term) (outputTp : term) (inputVars : list string) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term))  (fuel : nat) : TemplateMonad term :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => match t1 with
                                     | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conj inputTm inputTp outputTm outputTp inputVars fuel
                                     | _ => tmFail "incorrect Conj shape"
                                     end
+ 
+ | tApp (tInd {| inductive_mind := (_path, _indNm); inductive_ind := 0 |} []) _lstArgs => animatePredicate (ind) (kn) (conj) (outputTm) (outputTp) (modes) (predTypeInf) (allVarTpInf) (fuel)
+
+ 
  | _ => tmFail "incorrect Conj shape"
 end.
 
@@ -3787,81 +4081,73 @@ Print term.
 Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod term term)) (animationFn : term) (partialLetfn : term -> term) : (term -> term) :=
  match inputVarsLst with
   | [] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>]) (tApp <%outcomePoly%> [outputVarTp]))  t) )
+                                 (tApp animationFn [tVar "fuel"]) (tApp <%outcomePoly%> [outputVarTp]))  t) )
   | [h] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>; fst h]) (tApp <%outcomePoly%> [outputVarTp])) t ))
+                                 (tApp animationFn [(tVar "fuel"); fst h]) (tApp <%outcomePoly%> [outputVarTp])) t ))
   | _ =>  (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [<%5%>; (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLst))]) (tApp <%outcomePoly%> [outputVarTp])) t))
+                                 (tApp animationFn [(tVar "fuel"); (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLst))]) (tApp <%outcomePoly%> [outputVarTp])) t))
  end.
 (*
 Definition mkProdTm'' (lst : list (prod string term)) : term. Admitted.
 Definition mkProdTp''  (lst : list (prod string term)) : term. Admitted.
 *)
-Fixpoint mkLstTm (lst : list (prod string term)) : list (prod term term) :=
-match lst with
-| [] => []
-| (str,tp) :: t => (tVar str, tp) :: mkLstTm t
-end.
 
 
-Definition animateOneConjAnyLet {A : Type} (ind : A) (kn : kername) (conj : term)
-                                 (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
+
+Definition animateOneConjAnyLet {A : Type} (ind : A) (kn : kername) (conj : term) (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) 
+                                           (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad (term -> term) :=
 let inputTm := mkProdTmVars inputVarsLst in
 let inputTp := mkProdTypeVars inputVarsLst in
 let inputVarsLstTm := mkLstTm inputVarsLst in
 animationFn <-  animateAnyLet (ind) (kn) (conj) (inputTm) (inputTp)
-                                 (tVar outputVarNm) (outputVarTp) (map fst inputVarsLst) fuel ;;
+                                 (tVar outputVarNm) (outputVarTp) (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
 tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn)).
 
 
-Fixpoint lookUpVarsOne (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match allVarTpInf with
-| [] => []
-| h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
-end.
 
-Fixpoint lookUpVars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match lst with
-| [] => []
-| h :: t => match lookUpVarsOne h allVarTpInf with
-             | [h'] => h' :: lookUpVars t allVarTpInf
-             | _ =>  lookUpVars t allVarTpInf
-            end
-end.
-Definition getConjOutputVars (conj : term) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+
+
+Definition getConjOutputVars (conj : term) (allVarTpInf : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) : list (prod string term) :=
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => lookUpVars (extractOrderedVars t1) allVarTpInf
- | _ => []
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => let mode := getModeFmLst indNm modes in
+                     
+                                                                                        let predOutArgsTm := getOutArgs' mode lstArgs in
+                     
+                                                                                        lookUpVars (extractOrderedVarsfmLst predOutArgsTm) allVarTpInf 
+ | _ => [] 
 end.
-Definition getConjInputVarLst (conj : term) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+Definition getConjInputVarLst (conj : term) (allVarTpInf : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) : list (prod string term) :=
+
 match conj with
  | tApp <%eq%> [typeVar; t1; t2] => lookUpVars (extractOrderedVars t2) allVarTpInf
- | _ => []
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => let mode := getModeFmLst indNm modes in
+                     
+                                                                                        let predInArgsTm := getInArgs' mode lstArgs in
+                     
+                                                                                        lookUpVars (extractOrderedVarsfmLst predInArgsTm) allVarTpInf 
+ | _ => [] 
 end.
 Fixpoint animateOneConjAnyLetMult {A : Type} (ind : A) (kn : kername) (conj : term)
-                                 (outputVars : list (prod string term)) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
+                                 (outputVars : list (prod string term)) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad (term -> term) :=
 match outputVars with
  | [] => tmReturn partialLetfn
- | h :: t =>  lFn' <- animateOneConjAnyLet A kn conj (fst h) (snd h) inputVarsLst partialLetfn fuel ;; animateOneConjAnyLetMult ind kn conj t inputVarsLst  lFn' fuel
+ | h :: t =>  lFn' <- animateOneConjAnyLet A kn conj (fst h) (snd h) inputVarsLst partialLetfn (modes) (predTypeInf) (allVarTpInf) fuel ;; animateOneConjAnyLetMult ind kn conj t inputVarsLst  lFn' (modes) (predTypeInf) (allVarTpInf) fuel
 end.
 
 
-Definition animateOneConjLetCl {A : Type} (ind : A) (kn : kername) (conj : term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-let outputVars := getConjOutputVars conj allVarTpInf in
-let  inputVarsLst := getConjInputVarLst conj allVarTpInf in
-animateOneConjAnyLetMult ind kn conj outputVars inputVarsLst partialLetfn fuel.
+Definition animateOneConjLetCl {A : Type} (ind : A) (kn : kername) (conj : term) (partialLetfn : term -> term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad (term -> term) :=
+let outputVars := getConjOutputVars conj allVarTpInf (modes) (predTypeInf) in
+let  inputVarsLst := getConjInputVarLst conj allVarTpInf (modes) (predTypeInf) in
+animateOneConjAnyLetMult ind kn conj outputVars inputVarsLst partialLetfn (modes) (predTypeInf) (allVarTpInf) fuel.
 
-Fixpoint animateListConjLetCl {A : Type} (ind : A) (kn : kername) (conjs : list term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
+Fixpoint animateListConjLetCl {A : Type} (ind : A) (kn : kername) (conjs : list term) (partialLetfn : term -> term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad (term -> term) :=
 match conjs with
  | [] => tmReturn partialLetfn
- | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl ind kn t allVarTpInf lFn' fuel
+ | h :: t => lFn' <- animateOneConjLetCl ind kn h partialLetfn (modes) (predTypeInf) (allVarTpInf) fuel ;; animateListConjLetCl ind kn t lFn' (modes) (predTypeInf) (allVarTpInf) fuel
 end.
 
-Fixpoint animateListConjLetCl' (A : Type) (ind : A) (kn : kername) (conjs : list term) (allVarTpInf : list (prod string term)) (partialLetfn : term -> term) (fuel : nat) : TemplateMonad (term -> term) :=
-match conjs with
- | [] => tmReturn partialLetfn
- | h :: t => lFn' <- animateOneConjLetCl ind kn h allVarTpInf partialLetfn fuel ;; animateListConjLetCl' A ind kn t allVarTpInf lFn' fuel
-end.
+
 
 Definition animateOneConjSuccGuard'' (conj : term) (partialGuard : term)  :  term :=
   match conj with
@@ -3944,12 +4230,26 @@ match inVars with
 
 | h :: t => tLam (fst h) (tApp <%outcomePoly%> [snd h]) (animateListLetClLam t fnBody)
 end.
-Print reductionStrategy.
 
-Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (inVars : list (prod string term)) (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
-letBind <- animateListConjLetCl  (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
+
+Fixpoint mkLamTp (inVars : list (prod string term)) (fnBody : term) :=
+match inVars with
+| [] => fnBody
+
+| h :: t => tLam (fst h) (snd h) (mkLamTp t fnBody)
+end.
+
+Fixpoint mkAnimatedFnNm (l : list (string * term)) : list (string * term) :=
+match l with
+| [] => []
+| (s,tp) :: t => ((String.append s "AnimatedTopFn"), tp) :: mkAnimatedFnNm t
+end.  
+(*Print reductionStrategy. *)
+
+Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+letBind <- animateListConjLetCl  (ind) kn  lConjs  (fun t : term => t) (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
-tmReturn (animateListLetClLam inVars (letBind (tApp gFun [<%5%>; mkOutPolyProdTm (allVarTpInf)]))).
+tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (animateListLetClLam inVars (letBind (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)])))).
 
 
 
@@ -3987,29 +4287,43 @@ tmReturn t''.
 
 Unset Universe Checking.
 
-Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term))  (allVarTpInf : list (prod string term)) (fuel : nat) : TemplateMonad term :=
+Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
-lConjs' <- (getSortedOrientedConjsLet listAllConjs [] [] [] (map fst inVars) fuel) ;;
+lAC' <- tmEval all listAllConjs ;;
+tmPrint lAC';;
+lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 lConjs <- tmEval (all) lConjs' ;;
-gConjs' <- (getSortedOrientedConjsGuard listAllConjs [] [] [] (map fst inVars) fuel) ;;
+gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 gConjs <- tmEval (all) gConjs' ;;
-t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars allVarTpInf fuel ;;
-t' <- tmEval all t ;;
-t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t')) ;;
+(*tmPrint lConjs;;*)
+t <- animateListLetAndGuard ind kn lConjs gConjs inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
+t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
+(*tmPrint t'';;*)
 f <- tmUnquote t'' ;;
 tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
 
 tmReturn t''.
 
-Inductive genRel11 : nat -> list nat -> nat -> Prop :=
- | genRelcstr11 : forall (a d b c: nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c -> genRel11 a l d .
+Set Universe Checking.
 
+Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
+ | genRelcstr14 : forall (a b c d : nat), a = b /\ c = d -> genRel14 a b c d. (* a c input b d output *)
 
-MetaRocq Run (animateListLetAndGuard' genRel11 <? genRel11 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("d", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 30).
+Inductive genRel13 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ genRel14 (S a) e d (S f)  -> genRel13 a l d .
 
-Compute (genRel11Animated (successPoly nat 3) (successPoly (list nat) [3])).
+(*
+MetaRocq Run (bigConj <- general.animate2 <?genRel11?> ;; tmPrint bigConj). 
+Compute <? genRel12 ?>.
+*)
+MetaRocq Run (animateListLetAndGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
+              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
+              [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
+Print genRel13Animated.
+Compute (genRel11Animated 1 (successPoly nat 3) (successPoly (list nat) [3])).
+Compute genRel11Animated.
 (*
 letBind <- animateListConjLetCl (ind) kn  lConjs  allVarTpInf  (fun t : term => t) (fuel) ;;
 gFun <- animateListConjGuard ind kn gConjs allVarTpInf outVars fuel ;;
