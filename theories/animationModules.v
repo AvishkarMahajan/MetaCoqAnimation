@@ -1054,7 +1054,7 @@ Definition joinPatMatPoly
 (* Construct a product type from a list of type pairs (for multiple LHS predicates). *)
 Fixpoint mklhsProdType (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
-  | [] => tmFail "no predicates on LHS"
+  | [] => tmFail "no predicates on LHS0"
   | [h] => tmReturn (snd h)
   | h :: t =>
       res <- mklhsProdType t ;;
@@ -1065,7 +1065,7 @@ Fixpoint mklhsProdType (lhsIndPre : list (term * term)) : TemplateMonad term :=
 (* Construct a product term from a list of term-type pairs. *)
 Fixpoint mklhsProdTm (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
-  | [] => tmFail "no predicates on LHS"
+  | [] => tmFail "no predicates on LHS1"
   | [h] => tmReturn (fst h)
   | h :: t =>
       res <- mklhsProdTm t ;;
@@ -1107,7 +1107,7 @@ Fixpoint mkproductAllPreInToPreOutOutcome
          (lhsIndOutcome : list ((((string * term) * term) * term) * term))
   : TemplateMonad term :=
   match lhsIndOutcome with
-  | [] => tmFail "no predicates on LHS"
+  | [] => tmFail "no predicates on LHS2"
   | [h] =>
       tmReturn (tApp (tVar (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn"))
                      [tVar "remFuel"; snd (fst (fst (fst h)))])
@@ -1129,7 +1129,7 @@ Fixpoint mklamOverAllOutcome
          (fnBody : term)
   : TemplateMonad term :=
   match lhsIndOutcome with
-  | [] => tmFail "no predicates on LHS"
+  | [] => tmFail "no predicates on LHS3"
   | [h] =>
       tmReturn (tLambda
                  {| binder_name := nNamed (String.append (fst (fst (fst (fst h)))) "AnimatedTopFn");
@@ -4483,8 +4483,19 @@ tmEval hnf (my_projT2 f) >>=
 
 tmReturn t''.
 
-Fixpoint filterConjsEq (lst : list term) : list term. Admitted.
-Fixpoint filterConjsPred (lst : list term) : list term. Admitted.
+Fixpoint filterConjsEq (lst : list term) : list term :=
+match lst with
+| [] => []
+| (tApp <%eq%> [typeVar; t1; t2]) :: rest => (tApp <%eq%> [typeVar; t1; t2]) :: filterConjsEq rest
+| _h :: rest => filterConjsEq rest
+end.
+Fixpoint filterConjsPred (lst : list term) : list term :=
+match lst with
+| [] => []
+| (tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs) :: rest => (tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs) :: filterConjsPred rest
+| _h :: rest => filterConjsPred rest
+end.
+                      
 Definition animateListLetAndPredGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
@@ -4496,13 +4507,14 @@ gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inV
 gConjs <- tmEval (all) gConjs' ;;
 let gConjsEq := filterConjsEq gConjs in
 let gConjsPred := filterConjsPred gConjs in
-(*tmPrint lConjs;;*)
+tmPrint lConjs;;
+tmPrint gConjsEq;;
 t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
 t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
-(*tmPrint t'';;*)
-f <- tmUnquote t'' ;;
+tmPrint t'';;
+(*f <- tmUnquote t'' ;;
 tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;*)
 
 tmReturn t''.
 
@@ -4510,15 +4522,22 @@ Set Universe Checking.
 
 Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
  | genRelcstr14 : forall (a b c d : nat), a = b /\ c = d -> genRel14 a b c d. (* a c input b d output *)
-
+(*
 Inductive genRel13 : nat -> list nat -> nat -> Prop :=
  | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ genRel14 (S a) e d (S f)  -> genRel13 a l d .
-
-
 MetaRocq Run (animateListLetAndGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
+
 Print genRel13Animated.
+*)
+Inductive genRel13 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ b = e /\ c = f /\ genRel14 (S a) e d (S f)  -> genRel13 a l d .
+
+MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
+              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
+              [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
+
 
 End animateEqual.
 (* Decidable equality typeclass ________________________ *)
