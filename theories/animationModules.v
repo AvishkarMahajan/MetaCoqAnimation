@@ -4009,7 +4009,7 @@ animationFn <-  animateAnyLet (ind) (kn) (conj) (inputTm) (inputTp)
                                  (tVar outputVarNm) (outputVarTp) (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
 tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn)).
 
-
+(*
 Definition animatePredGuard {A : Type} (ind : A) (kn : kername) (conj : term) (inputTm : term) (inputTp : term)
                                  (outputTm : term) (outputTp : term) (inputVars : list string) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term))  (fuel : nat) : TemplateMonad term :=
 match conj with
@@ -4020,6 +4020,7 @@ match conj with
  
  | _ => tmFail "incorrect Conj shape"
 end.
+*)
 Definition eqOutcomeTp (A : Type) (eqfn : A -> A -> bool) (x: outcomePoly A) (y : outcomePoly A) : outcomePoly bool :=
 match x with
 | successPoly j => match y with
@@ -4061,11 +4062,15 @@ Definition animateOneConjPredGuard {A : Type} (ind : A) (kn : kername) (conj : t
 let inputTm := mkProdTmVars inputVarsLst in
 let inputTp := mkProdTypeVars inputVarsLst in
 let inputVarsLstTm := mkLstTm inputVarsLst in
+inputTm' <- tmEval all inputTm;;
+inputTp' <- tmEval all inputTp;;
+tmPrint inputTm';;
+tmPrint inputTp';;
  
 match conj with
  
   | tApp (tInd {| inductive_mind := (_path, _indNm); inductive_ind := 0 |} []) _lstArgs => 
-                                  animationFn <- animatePredGuard (ind) (kn) (conj) (inputTm) (inputTp)
+                                  animationFn <- animateAnyLet (ind) (kn) (conj) (inputTm) (inputTp)
                                  (tVar outputVarNm) (outputVarTp) (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
                                  
                                  tmReturn (tApp <%compOutcomeBool%> [partialGuard ; tApp (typeToBoolEqOutcome outputVarTp (typeToBoolEq outputVarTp)) [tVar outputVarNm ; 
@@ -4284,7 +4289,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
              {|
                bcontext :=
                  [{|
-                    binder_name := nNamed "b"; binder_relevance := Relevant
+                    binder_name := nNamed "splitSuccCase"; binder_relevance := Relevant
                   |}];
                bbody :=
                  tCase
@@ -4299,7 +4304,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
                      pparams := [];
                      pcontext :=
                        [{|
-                          binder_name := nNamed "b";
+                          binder_name := nNamed "splitSuccCase";
                           binder_relevance := Relevant
                         |}];
                      preturn := retType
@@ -4330,7 +4335,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
                      pparams := [];
                      pcontext :=
                        [{|
-                          binder_name := nNamed "b";
+                          binder_name := nNamed "splitSuccCase";
                           binder_relevance := Relevant
                         |}];
                      preturn := retType
@@ -4343,13 +4348,13 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
                      pparams := [];
                      pcontext :=
                        [{|
-                          binder_name := nNamed "b";
+                          binder_name := nNamed "splitSuccCase";
                           binder_relevance := Relevant
                         |}];
                      preturn := retType
                    |};
                preturn := retType
-             |} (tVar "b")
+             |} (tVar "splitSuccCase")
              [{|
                 bcontext :=
                   bcontext
@@ -4389,7 +4394,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
 
 Definition animateListConjPredGuardBrOutBool {A : Type} (ind : A) (kn : kername) (predGuardConjs : list term)  (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (outVars : list (prod string term)) (guardConEqAn : term) (fuel : nat) : TemplateMonad (term) :=
 predGuardCon <- animateListConjPredGuardCl (ind) (kn) (predGuardConjs) <%successPoly bool true%> (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
-let brOutBool := branchOutcomeBoolfn (mkProdTmVars outVars) (guardConEqAn) (tApp <%noMatchPoly%> [mkProdTmVars outVars]) (tApp <%noMatchPoly%> [mkProdTmVars outVars]) (tApp <%fuelErrorPoly%> [mkProdTmVars outVars]) in
+let brOutBool := branchOutcomeBoolfn (tApp <%outcomePoly%> [mkProdTypeVars outVars]) (guardConEqAn) (tApp <%noMatchPoly%> [mkProdTypeVars outVars]) (tApp <%noMatchPoly%> [mkProdTypeVars outVars]) (tApp <%fuelErrorPoly%> [mkProdTypeVars outVars]) in
 tmReturn (tApp brOutBool [predGuardCon]).
 
 
@@ -4507,36 +4512,40 @@ gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inV
 gConjs <- tmEval (all) gConjs' ;;
 let gConjsEq := filterConjsEq gConjs in
 let gConjsPred := filterConjsPred gConjs in
-tmPrint lConjs;;
-tmPrint gConjsEq;;
+(*tmPrint lConjs;;
+tmPrint gConjsEq;;*)
 t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
 t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
 tmPrint t'';;
-(*f <- tmUnquote t'' ;;
+f <- tmUnquote t'' ;;
 tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;*)
+    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
 
 tmReturn t''.
 
 Set Universe Checking.
 
 Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
- | genRelcstr14 : forall (a b c d : nat), a = b /\ c = d -> genRel14 a b c d. (* a c input b d output *)
-(*
+ | genRelcstr14 : forall (a k c d : nat), a = k /\ c = d -> genRel14 a k c d. (* a c input b d output *)
+
 Inductive genRel13 : nat -> list nat -> nat -> Prop :=
  | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ genRel14 (S a) e d (S f)  -> genRel13 a l d .
-MetaRocq Run (animateListLetAndGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
+MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
 
 Print genRel13Animated.
-*)
-Inductive genRel13 : nat -> list nat -> nat -> Prop :=
- | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ b = e /\ c = f /\ genRel14 (S a) e d (S f)  -> genRel13 a l d .
 
-MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
-              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
+Inductive genRel15 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr15 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ b = e /\ c = f  /\ genRel14 (S a) e d (S f)  -> genRel15 a l d .
+
+MetaRocq Run (animateListLetAndPredGuard' genRel15 <? genRel15 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("d", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel15",([0;1],[2]))] 
+              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel15",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
+
+Print genRel15Animated.              
+              
+              
 
 
 End animateEqual.
