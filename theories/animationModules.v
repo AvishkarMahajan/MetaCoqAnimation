@@ -4420,10 +4420,56 @@ match l with
 end.  
 (*Print reductionStrategy. *)
 
+Definition splitOutcomePolyFst (A : Type) (B : Type) (x : outcomePoly (A * B)) : outcomePoly A :=
+match x with
+ | successPoly (a,b) => successPoly A a
+ | noMatchPoly => noMatchPoly A
+ | fuelErrorPoly => fuelErrorPoly A
+end. 
+
+Definition splitOutcomePolySnd (A : Type) (B : Type) (x : outcomePoly (A * B)) : outcomePoly B :=
+match x with
+ | successPoly (a,b) => successPoly B b
+ | noMatchPoly => noMatchPoly B
+ | fuelErrorPoly => fuelErrorPoly B
+end.
+Fixpoint splitInputs (inVars : list (string * term)) (inTerm : term) (fnBody : term) : term :=
+match inVars with
+| [] => fnBody
+| [h] => (tLetIn {| binder_name := nNamed (fst h); binder_relevance := Relevant |}
+                                 inTerm (tApp <%outcomePoly%> [(snd h)])) fnBody
+| h' :: rest' =>  (tLetIn {| binder_name := nNamed (fst h'); binder_relevance := Relevant |}
+                                 (tApp <% splitOutcomePolyFst %> [(snd h'); (mkProdTypeVars rest'); inTerm])  (tApp <%outcomePoly%> [(snd h')])) (splitInputs rest' (tApp <% splitOutcomePolySnd %> [(snd h'); (mkProdTypeVars rest'); inTerm]) fnBody)
+end.
+
+Definition splitInputs' (inVars : list (string * term)) (fnBody : term) : term :=
+splitInputs inVars (tVar "input") fnBody.                                                                    
+
+
+
+
+
+
+
+
+
+(*
+
 Definition animateListLetAndGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjs : list term) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 letBind <- animateListConjLetCl  (ind) kn  lConjs  (fun t : term => t) (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
 gFun <- animateListConjGuardEq ind kn gConjs allVarTpInf outVars fuel ;;
 tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (animateListLetClLam inVars (letBind (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)])))).
+*)
+(*
+Definition animateListLetAndPredGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjsEq : list term) (gConjsPred : list term) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+letBind <- animateListConjLetCl  (ind) kn  lConjs  (fun t : term => t) (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
+gFun <- animateListConjGuardEq ind kn gConjsEq allVarTpInf outVars fuel ;;
+let guardConEqAn := (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)]) in 
+combineGuard <- animateListConjPredGuardBrOutBool (ind) (kn) (gConjsPred) (modes) (predTypeInf) (allVarTpInf) (outVars) (guardConEqAn) (fuel);;
+
+tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (animateListLetClLam inVars (letBind combineGuard))).
+
+*)
 
 
 Definition animateListLetAndPredGuard {A : Type} (ind : A) (kn : kername) (lConjs : list term) (gConjsEq : list term) (gConjsPred : list term) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
@@ -4432,7 +4478,7 @@ gFun <- animateListConjGuardEq ind kn gConjsEq allVarTpInf outVars fuel ;;
 let guardConEqAn := (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)]) in 
 combineGuard <- animateListConjPredGuardBrOutBool (ind) (kn) (gConjsPred) (modes) (predTypeInf) (allVarTpInf) (outVars) (guardConEqAn) (fuel);;
 
-tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (animateListLetClLam inVars (letBind combineGuard))).
+tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%outcomePoly%> [mkProdTypeVars inVars])(splitInputs' inVars (letBind combineGuard)))).
 
 
 
@@ -4468,7 +4514,7 @@ tmReturn t''.
 *)
 
 Unset Universe Checking.
-
+(*
 Definition animateListLetAndGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
@@ -4487,7 +4533,7 @@ tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
 
 tmReturn t''.
-
+*)
 Fixpoint filterConjsEq (lst : list term) : list term :=
 match lst with
 | [] => []
