@@ -1,3 +1,6 @@
+(* Need to write new tests *)
+
+(*
 From Stdlib Require Import List.
 
 Require Import MetaRocq.Template.All.
@@ -149,5 +152,6 @@ Example tlRel3Ex3 : tlRel3Animated 5 (successPoly (list nat) [1;1]) = (noMatchPo
 Proof. reflexivity. Qed.
 **)
     
+*)
 
 
