@@ -1,6 +1,6 @@
 
 Require Import Animation.animationModulesSimplEq.
-Require Import Animation.animationModulesPathNotation.
+
 Require Import Animation.utils2.
 Require Import Animation.animationModulesPatMat.
 
@@ -63,102 +63,7 @@ gConjs <- tmEval all (snd sConjs);;
 tmReturn gConjs.
 
 
-Fixpoint extractOrderedVarsfmLst (l : list term) : list string :=
-match l with
-| [] => []
-| h :: t => app (extractOrderedVars h) (extractOrderedVarsfmLst t)
-end.
-Fixpoint listSearch' {A : Type} (ind : nat) (l : list A) : list A :=
-match ind with
-| 0 => match l with
-     | h :: t => [h]
-     | [] => []
-     end
-| S m => listSearch' m (tl l)
-end.     
 
-
-Fixpoint listSearch {A : Type} (indLst : list nat) (l : list A) : list A :=
-match indLst with 
-| [] => []
-| h :: t => app (listSearch' h l) (listSearch t l)
-end. 
-
-Fixpoint getInArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
-match modes with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then listSearch (fst (snd h)) lstArgs else getInArgs indNm t lstArgs
-end. 
-
-Fixpoint getOutArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
-match modes with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then listSearch (snd (snd h)) lstArgs else getOutArgs indNm t lstArgs
-end.     
-
-
-Print tLam.
-
-
- 
-Fixpoint lookUpVarsOne (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match allVarTpInf with
-| [] => []
-| h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
-end.
-
-Fixpoint mkLstTm (lst : list (prod string term)) : list (prod term term) :=
-match lst with
-| [] => []
-| (str,tp) :: t => (tVar str, tp) :: mkLstTm t
-end.
-Fixpoint lookUpVars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match lst with
-| [] => []
-| h :: t => match lookUpVarsOne h allVarTpInf with
-             | [h'] => h' :: lookUpVars t allVarTpInf
-             | _ =>  lookUpVars t allVarTpInf
-            end
-end.
-
-
-Definition lookUpVarsOneDefBool (varNm: string) (allVarTpInf : list (prod string term)) : (term) :=
-match lookUpVarsOne varNm allVarTpInf with
-| [h] => snd h
-| _ => <%bool%>
-end.
-Fixpoint getModeFmLst (indNm : string) (modes : list (string * ((list nat) * (list nat)))) : (list nat) * (list nat) :=
- match modes with
-  | [] => ([],[])
-  | h :: t => if String.eqb indNm (fst h) then (snd h) else getModeFmLst indNm t
- end.
-
-Definition getInArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
-listSearch (fst mode) lstArgs.
- 
-Definition getOutArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
-listSearch (snd mode) lstArgs.
- 
- 
-
-Search (list (term * term) -> TemplateMonad term).
-Print tLam.
-
-Fixpoint getPredTp (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
-match predTypeInf with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then snd h else getPredTp indNm t 
-end. 
-
-Fixpoint crossList {A : Type} {B : Type} (lst1 : list A) (lst2 : list B) : list (A * B) :=
-match lst1 with
- | [] => []
- | (h :: t) => match lst2 with
-                | [] => []
-                | h' :: t' => (h,h') :: crossList t t'
-               end  
-end.
-                
 
 Definition animatePredicate {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (outputTm : term) (outputTp : term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
 
@@ -235,53 +140,6 @@ end.
 
 
 
-Definition joinOutcomeUnit (A: Type) (x : outcomePoly A) : outcomePoly A :=
-x.
-
-Definition joinOutcome (A : Type) (B : Type) (x : outcomePoly A) (y : outcomePoly B) : outcomePoly (prod A B) :=
- match x with
-  | noMatchPoly => noMatchPoly (prod A B)
-  | fuelErrorPoly => fuelErrorPoly (prod A B)
-  | successPoly k => match y with
-                        | noMatchPoly => noMatchPoly (prod A B)
-                        | fuelErrorPoly => fuelErrorPoly (prod A B)
-                        | successPoly j => successPoly (prod A B) (k,j)
-                        end
- end.
-
-
-
-Fixpoint prodTerm (lstTypes : list term) : term :=
-match lstTypes with
- | [] => <%bool%>
- | [h] => h
- | h :: t => tApp
-                     (tInd
-                        {|
-                          inductive_mind := <?prod?>;
-                          inductive_ind := 0
-                        |} []) [h ; (prodTerm t)]
-end.
-
-Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
-match lstTypes with
- | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
- | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
- | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
- | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]
-end.
-
-
-Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
-match lstTypes with
-| [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
-| [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) fnBody
-| h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody)
-end.
-
-Definition mkJoinOutcomeTm (lstTypes : list term) : term :=
-let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
-mkJoinOutcomeLam lstTypes 0 fnBody.
 
 
 Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod term term)) (animationFn : term) (partialLetfn : term -> term) : (term -> term) :=
@@ -317,41 +175,7 @@ match conj with
  | _ => tmFail "incorrect Conj shape"
 end.
 *)
-Definition eqOutcomeTp (A : Type) (eqfn : A -> A -> bool) (x: outcomePoly A) (y : outcomePoly A) : outcomePoly bool :=
-match x with
-| successPoly j => match y with
-                    | successPoly k => if eqfn j k then (successPoly bool true) else (noMatchPoly bool) 
-                    | noMatchPoly => noMatchPoly bool
-                    | fuelErrorPoly => fuelErrorPoly bool
-                   end
-| fuelErrorPoly => fuelErrorPoly bool
-| noMatchPoly =>  match y with
-                    | fuelErrorPoly => fuelErrorPoly bool
-                    | _ => noMatchPoly bool
-                   end
-end.                                                           
-
-
-Definition typeToBoolEqOutcome (tpTm : term) (tpEqFn : term) : term := tApp <%eqOutcomeTp%> [tpTm; tpEqFn]. 
-
-Definition compOutcomeBool (x : outcomePoly bool) (y : outcomePoly bool) : outcomePoly bool :=
-match x with
- | fuelErrorPoly  => fuelErrorPoly bool
- | noMatchPoly => match y with
-                   | fuelErrorPoly => fuelErrorPoly bool
-                   | _ => noMatchPoly bool
-                  end
- | successPoly true => match y with 
-                        | successPoly true => successPoly bool true
-                        | successPoly false => noMatchPoly bool
-                        | noMatchPoly => noMatchPoly bool
-                        | fuelErrorPoly => fuelErrorPoly bool
-                       end
- | successPoly false => match y with
-                         | fuelErrorPoly => fuelErrorPoly bool
-                         | _ => noMatchPoly bool
-                        end
-end.                                                                 
+                              
 
 Definition animateOneConjPredGuard {A : Type} (ind : A) (kn : kername) (conj : term) (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod string term)) (partialGuard : term) 
                                            (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
@@ -454,8 +278,6 @@ Fixpoint animateListConjEqGuard (conj : list term) : term :=
   end.
 
 
-Definition mkOutPolyProdTm (outVars : list (prod string term)) : term :=
-tApp (mkJoinOutcomeTm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
 
 
 
@@ -678,33 +500,7 @@ match inVars with
 end.
 
 
-Fixpoint mkLamTp (inVars : list (prod string term)) (fnBody : term) :=
-match inVars with
-| [] => fnBody
 
-| h :: t => tLam (fst h) (snd h) (mkLamTp t fnBody)
-end.
-
-Fixpoint mkAnimatedFnNm (l : list (string * term)) : list (string * term) :=
-match l with
-| [] => []
-| (s,tp) :: t => ((String.append s "AnimatedTopFn"), tp) :: mkAnimatedFnNm t
-end.  
-
-
-Definition splitOutcomePolyFst (A : Type) (B : Type) (x : outcomePoly (A * B)) : outcomePoly A :=
-match x with
- | successPoly (a,b) => successPoly A a
- | noMatchPoly => noMatchPoly A
- | fuelErrorPoly => fuelErrorPoly A
-end. 
-
-Definition splitOutcomePolySnd (A : Type) (B : Type) (x : outcomePoly (A * B)) : outcomePoly B :=
-match x with
- | successPoly (a,b) => successPoly B b
- | noMatchPoly => noMatchPoly B
- | fuelErrorPoly => fuelErrorPoly B
-end.
 Fixpoint splitInputs (inVars : list (string * term)) (inTerm : term) (fnBody : term) : term :=
 match inVars with
 | [] => fnBody

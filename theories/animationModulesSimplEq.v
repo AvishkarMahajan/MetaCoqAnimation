@@ -1,4 +1,3 @@
-Require Import Animation.animationModulesPathNotation.
 Require Import Animation.utils2.
 Require Import Animation.animationModulesPatMat.
 
