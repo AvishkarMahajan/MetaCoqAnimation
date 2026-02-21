@@ -1,5 +1,9 @@
 Require Import List.
 Require Import MetaRocq.Template.All.
+From Stdlib Require Import List PeanoNat.
+
+
+
 
 Module MetaRocqNotations.
   (* Recursive quoting *)
@@ -31,6 +35,11 @@ Module MetaRocqNotations.
     (only parsing).
   (* Compute <? option ?>. *)
 End MetaRocqNotations.
+
+Local Open Scope nat_scope.
+
+
+
 
 (* Warning: MetaRocq doesn't use the Monad notation from ExtLib,
   therefore don't expect ExtLib functions to work with TemplateMonad. *)
@@ -333,26 +342,6 @@ Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
 Print name.
 Print ident.
     
-Definition testTerm :=
-(tPro "a"%bs <%nat%>
-                (tApp (tRel 2)
-                   [tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs); inductive_ind := 0 |} 0 [])
-                      [<%nat%>; <%nat%>;
-                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                         [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []];
-                       tRel 0];
-                    tApp (tConstruct {| inductive_mind := (MPfile ["Datatypes"%bs; "Init"%bs; "Corelib"%bs], "prod"%bs); inductive_ind := 0 |} 0 [])
-                      [<%nat%>; <%nat%>;
-                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                         [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                            [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 [])
-                               [tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 0 []]]];
-                       tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tRel 0]]])).
-
-Print name.
-Print ident.  
-
-MetaRocq Run (t <- DB.undeBruijn' [nNamed "rel8"%bs] testTerm ;; t' <- tmEval all t ;; tmPrint t').                        
 
   (* Example usage for deBruijn:
 
@@ -569,6 +558,246 @@ Definition animate (kn : kername) : TemplateMonad unit :=
   end. (*;;
   ret tt.*)  *) 
 End general. 
+
+Inductive outcomePoly (A : Type) : Type :=
+| fuelErrorPoly : outcomePoly A
+| successPoly : A -> outcomePoly A
+| noMatchPoly : outcomePoly A.
+
+
+
+(** Build a product type from a list of output variable specs.
+    Returns bool for empty list, single type for singleton, nested products otherwise. *)
+Fixpoint mkProdTypeVars (outputData : list (string * term)) :  term :=
+ match outputData with
+  | [] => <%bool%>
+  | [h] =>  (snd h)
+  | h :: t => let res := mkProdTypeVars t in  (tApp
+                                            (tInd
+                                             {|
+                                             inductive_mind := <?prod?>; inductive_ind := 0
+                                              |} []) [(snd h) ; res])
+ end.
+
+(** Build a product term from a list of output variables.
+    Constructs nested pairs of variables. *)
+Fixpoint mkProdTmVars  (outputData : list (string * term )) : term :=
+ match outputData with
+  | [] => <%true%>
+  | [h] => (tVar (fst h))
+  | h :: t => let res := mkProdTmVars t in
+                                        let resT := mkProdTypeVars t in (tApp (tConstruct
+                                                  {|
+                                                   inductive_mind := <?prod?>; inductive_ind := 0
+                                                   |} 0 []) [(snd h); resT ; (tVar (fst h)) ; res])
+ end.
+
+
+
+
+
+
+Definition composeOutcomePoly (A : Type) (B : Type) (C : Type) (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C)
+                                   : (nat -> outcomePoly A -> outcomePoly C) :=
+ fun fuel input => match f fuel input with
+                    | successPoly res => f' fuel  (successPoly B res)
+                    | fuelErrorPoly => (fuelErrorPoly C)
+                    | _ =>  (noMatchPoly C)
+                   end.
+ 
+ 
+
+
+Definition composeOutcomePolyImpl {A : Type} {B : Type} {C : Type} (f : nat -> outcomePoly A -> outcomePoly B) (f' : nat -> outcomePoly B -> outcomePoly C)
+                                   : (nat -> outcomePoly A -> outcomePoly C) :=
+ fun fuel input => match f fuel input with
+                    | successPoly res => f' fuel  (successPoly B res)
+                    | fuelErrorPoly => (fuelErrorPoly C)
+                    | _ =>  (noMatchPoly C)
+                   end. 
+     
+
+
+
+
+
+
+Open Scope bs.
+
+
+(* Construct a product type from a list of type pairs (for multiple LHS predicates). *)
+Fixpoint mklhsProdType (lhsIndPre : list (term * term)) : TemplateMonad term :=
+  match lhsIndPre with
+  | [] => tmFail "no predicates on LHS0"
+  | [h] => tmReturn (snd h)
+  | h :: t =>
+      res <- mklhsProdType t ;;
+      tmReturn (tApp (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} [])
+                     [snd h; res])
+  end.
+
+(* Construct a product term from a list of term-type pairs. *)
+Fixpoint mklhsProdTm (lhsIndPre : list (term * term)) : TemplateMonad term :=
+  match lhsIndPre with
+  | [] => tmFail "no predicates on LHS1"
+  | [h] => tmReturn (fst h)
+  | h :: t =>
+      res <- mklhsProdTm t ;;
+      resT <- mklhsProdType t ;;
+      tmReturn (tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
+                     [snd h; resT; fst h; res])
+  end.
+
+(** Create product type for precondition predicates from LHS inductives. *)
+Definition mkPreConProdType  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
+ mklhsProdType (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd).
+
+(** Create product term for precondition predicates from LHS inductives. *)
+Definition mkPreConProdTm  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
+ mklhsProdTm (map (fun tuple => ((snd (fst (fst (fst tuple)))), (snd (fst (fst tuple))))) lhsInd).
+
+(** Create product type for postcondition predicates from LHS inductives. *)
+Definition mkPostConProdType  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
+ mklhsProdType (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd).
+
+(** Create product term for postcondition predicates from LHS inductives. *)
+Definition mkPostConProdTm  (lhsInd : list ((((string * term) * term) * term) * term)) : TemplateMonad term :=
+ mklhsProdTm (map (fun tuple => ((((snd (fst tuple)))), (((snd tuple))))) lhsInd).
+
+(** Wrap pre/post conditions in outcomePoly success constructors. *)
+Definition mkOutcome (lhsInd : ((((string * term) * term) * term) * term)) : ((((string * term) * term) * term) * term) :=
+ match lhsInd with
+  | ((((nm, preCon), preConT), postCon), postConT) => ((((nm, (tApp <%successPoly%> [preConT; preCon])), (tApp <%outcomePoly%> [preConT])), (tApp <%successPoly%> [postConT; postCon])), (tApp <%outcomePoly%> [postConT]))
+ end.
+
+(** Map mkOutcome over a list of LHS inductives. *)
+Definition mkOutcomeProd (lhsInd : list ((((string * term) * term) * term) * term)) : list ((((string * term) * term) * term) * term) :=
+ map (mkOutcome) lhsInd.
+ 
+ 
+
+(** Constant function that always returns fuel error.
+    Used as a fallback when fuel is exhausted. *)
+Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (outcomePoly outputType') ) :=
+ fun x : inputType => fuelErrorPoly outputType'.
+ 
+ 
+ 
+Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
+ match l with
+  | nil => false
+  | (h :: t) => if (Nat.eqb h a) then true else (inNatLst a t)
+ end.
+
+
+
+
+Fixpoint isListSub (l1 l2 : list nat) : bool :=
+  match l1 with
+  | [] => true
+  | h :: t => inNatLst h l2 && isListSub t l2
+  end.
+
+Fixpoint inStrLst (s : string) (l1 : list string) : bool :=
+  match l1 with
+  | [] => false
+  | h :: t => if String.eqb s h then true else inStrLst s t
+  end.
+
+Fixpoint isListSubStr (l1 l2 : list string) : bool :=
+  match l1 with
+  | [] => true
+  | h :: t => inStrLst h l2 && isListSubStr t l2
+  end.
+
+Fixpoint checkBool (lst : list bool) : bool :=
+ match lst with
+ | [] => true
+ | h :: t => andb h (checkBool t)
+end.
+
+
+Fixpoint eqLstNat (l1 : list nat) (l2 : list nat) : bool :=
+ match l1 with
+  | [] => match l2 with
+          | [] => true
+          | _ => false
+          end
+  | (h :: t) => match l2 with
+                 | [] => false
+                 | (h' :: t') => if (Nat.eqb h h') then eqLstNat t t' else false
+                end
+  end.
+  
+Definition optionToOutcome (A : Type) (B : Type) (f : nat -> outcomePoly A -> outcomePoly (option B)) : (nat -> outcomePoly A -> outcomePoly B) :=
+fun k k' => match f k k' with
+             | successPoly (Some res) => successPoly B res
+             | successPoly None => noMatchPoly B
+             | fuelErrorPoly => fuelErrorPoly B
+             | _ => noMatchPoly B
+            end.
+
+
+Definition isEmptyLst {A : Type} (lst : list A) : bool :=
+match lst with
+ | [] => true
+ | _ => false
+end.
+   
+Fixpoint mkLstTm' (lst : list term) (typeofTm : term) : term :=
+ match lst with
+  | [] => tApp
+           (tConstruct
+              {|
+                inductive_mind := <?list?>; inductive_ind := 0
+              |} 0 []) [typeofTm]
+  | h :: t =>  tApp
+               (tConstruct
+               {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
+               [typeofTm; h; (mkLstTm' t typeofTm)]
+ end.
+ 
+ 
+(** Dispatch mechanism: try each function in the list until one returns Some.
+    Returns None if all functions return None. *)
+
+Fixpoint dispatchInternal (inT : Type) (outT : Type)
+                            (listFn : list (inT -> option (outT))) : (inT -> (option outT)) :=
+ fun x => match listFn with
+           | [] => None
+           | h :: t => let r := h x in
+                       match r with
+                       | None => (dispatchInternal inT outT t) x
+                       | _ => r
+                       end
+          end .
+
+
+
+(** Provide a default value for an option-returning function. *)
+Definition defaultVal (inputType : Type) (outputType : Type) (default : outputType) (f : inputType -> option (outputType)) : (inputType -> outputType) :=
+ fun x => match f x with
+           | Some y => y
+           | None => default
+          end.
+
+(* Quote a list of values into a list of terms. *)
+Fixpoint quoteList {A : Type} (l : list A) : TemplateMonad (list term) :=
+  match l with
+  | [] => ret []
+  | h :: rest =>
+      t <- tmQuote h ;;
+      l' <- quoteList rest ;;
+      tmReturn (t :: l')
+  end. 
+  
+  
+Fixpoint extractOrderedVarsHelper (ls : list term) : list string :=
+ match ls with
+ | [] => []
+ | (tVar str) :: t => str :: (extractOrderedVarsHelper t)
+ | _ :: t => (extractOrderedVarsHelper t)
+ end.
 
 
 
