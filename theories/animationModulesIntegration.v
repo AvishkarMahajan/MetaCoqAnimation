@@ -323,7 +323,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
       (tInd
          {|
            inductive_mind :=
-             (MPfile ["animationModules"; "Animation"], "outcomePoly");
+             (MPfile ["utils2"; "Animation"], "outcomePoly");
            inductive_ind := 0
          |} [])
       [<%bool%>])
@@ -332,7 +332,7 @@ Definition branchOutcomeBoolfn (retType : term) (succTrueRetTm : term) (succFals
         ci_ind :=
           {|
             inductive_mind :=
-              (MPfile ["animationModules"; "Animation"], "outcomePoly");
+              (MPfile ["utils2"; "Animation"], "outcomePoly");
             inductive_ind := 0
           |};
         ci_npar := 1;
