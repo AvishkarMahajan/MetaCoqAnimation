@@ -50,20 +50,7 @@ Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat))
  
 Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (0, [0])).
  
-(*WRONG RESULT when PREDICATE should be animated partially as guard and partially as let)
-Inductive genRel15 : nat -> list nat -> nat -> Prop :=
- | genRelcstr15 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ e = c /\ (*c = f  /\*) genRel14 a (S e) d f  -> genRel15 a l f .
 
-MetaRocq Run (animateListLetAndPredGuard' genRel15 <? genRel15 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel15",([0;1],[2]))] 
-              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel15",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
-              [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
-
-Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
-
-Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
-
-Print genRel15Animated.
-*)               
 Inductive genRel15 : nat -> list nat -> nat -> Prop :=
  | genRelcstr15 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ e = c /\ c = f  /\ genRel14 a (S e) d f  -> genRel15 a l f .
 
@@ -75,5 +62,16 @@ Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat))
 
 Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
           
-                         
+Inductive genRel16 : nat -> list nat -> nat -> Prop :=
+ | genRelcstr16 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ e = c /\ (*c = f  /\*) genRel14 a (S e) d f  -> genRel16 a l f .
+
+MetaRocq Run (animateListLetAndPredGuard' genRel16 <? genRel16 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel16",([0;1],[2]))] 
+              [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel16",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
+              [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
+
+Compute genRel16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
+
+Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
+          
+                                         
               
