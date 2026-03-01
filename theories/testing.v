@@ -72,6 +72,15 @@ MetaRocq Run (animateListLetAndPredGuard' genRel16 <? genRel16 ?>  [("a", <%nat%
 Compute genRel16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
 
 Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
+
+
+Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([0;1], [2] *)
+ | appNil : forall (l1 l2 l3 : list nat), l1 = [] /\ l2 = l3 -> append l1 l2 l3
+ | appCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append l2 l3 l4 /\ l5 = w :: l4 -> append l1 l3 l5.
           
-                                         
+Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
+ | even0 : forall (w : nat), w = 0 -> even w true 
+ | evenSucc : forall (w w1 : nat), odd w true /\ w1 = (S w) -> even w1 true
+with odd : nat -> bool -> Prop :=
+ | oddSucc : forall (w w1 : nat), even w true /\ w1 = (S w) -> odd w1 true.                                           
               
