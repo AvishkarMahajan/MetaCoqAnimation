@@ -606,7 +606,7 @@ end.
 Unset Universe Checking.
 
                       
-Definition animateListLetAndPredGuard' {A : Type} (ind : A) (kn : kername) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+Definition animateListLetAndPredGuard' {A : Type} (ind : A) (kn : kername) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
 let gConjsEq := filterConjsEq listAllConjs in
@@ -633,7 +633,7 @@ tmPrint t'';;
 *)
 f <- tmUnquote t'' ;;
 tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append (snd kn) "Animated") (Some hnf) ;;
+    tmDefinitionRed_ false (String.append cstrNm "Animated") (Some hnf) ;;
 
 tmReturn t''.
 

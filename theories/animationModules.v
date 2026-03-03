@@ -2555,6 +2555,13 @@ clData' <- tmEval all clData ;;
 indData <- mkIndData' kn modelst ;;
 indData' <- tmEval all indData ;;
 animateInductivePredicate induct nm clData' indData' kn fuel.
+
+(** Example: rel28 with explicit modes.
+    Mode: rel28 : [0 ; 2] input, [1; 3] output
+          rel29 : [0;1] input, [2;3] output *)
+          
+MetaRocq Run (animateInductivePredicate' rel28 "rel28" <?rel28?> ([([0;2],[1;3]);([0;1],[2;3])]) 50).          
+
 (*
 MetaRocq Run (clData <- mkClData' <? rel8 ?> [0;0] ;; tmDefinition "clInf" clData).
 

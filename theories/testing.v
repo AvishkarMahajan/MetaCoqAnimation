@@ -21,11 +21,11 @@ Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
 
 Inductive genRel13 : nat -> list nat -> nat -> Prop :=
  | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ genRel14 (S a) e d (S f)  -> genRel13 a l f .
-MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
+MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?> "genRelcstr13" [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
 
-Print genRel13Animated.
+
 
 
 
@@ -40,42 +40,46 @@ Definition genRel14AnimatedTopFn (fuel: nat) (i: outcomePoly (nat × nat)) : out
            end
  end.
  
-Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (1, [1])). 
+Compute genRelcstr13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (1, [1])). 
+(* Should return successPoly 0 *)
 
-Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [3])). 
+Compute genRelcstr13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [3])). 
+(*Should return successPoly 2*)
 
-Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [3;4])). 
+Compute genRelcstr13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [3;4])). 
 
-Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [4])).
+Compute genRelcstr13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (3, [4])).
  
-Compute genRel13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (0, [0])).
+Compute genRelcstr13Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (0, [0])).
+
+(*All should return noMatch *)
  
 
 Inductive genRel15 : nat -> list nat -> nat -> Prop :=
  | genRelcstr15 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ e = c /\ c = f  /\ genRel14 a (S e) d f  -> genRel15 a l f .
 
-MetaRocq Run (animateListLetAndPredGuard' genRel15 <? genRel15 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel15",([0;1],[2]))] 
+MetaRocq Run (animateListLetAndPredGuard' genRel15 <? genRel15 ?> "genRelcstr15"  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel15",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel15",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
 
-Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
-
-Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
-          
+Compute genRelcstr15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
+(*Should return successPoly 3*)
+Compute genRelcstr15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
+(*should return noMatch *)          
 Inductive genRel16 : nat -> list nat -> nat -> Prop :=
  | genRelcstr16 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ e = c /\ (*c = f  /\*) genRel14 a (S e) d f  -> genRel16 a l f .
 
-MetaRocq Run (animateListLetAndPredGuard' genRel16 <? genRel16 ?>  [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel16",([0;1],[2]))] 
+MetaRocq Run (animateListLetAndPredGuard' genRel16 <? genRel16 ?> "genRelcstr16" [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel16",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel16",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
 
-Compute genRel16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
-
-Compute genRel15Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
-
+Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [3])).
+(*Should return successPoly 3*)
+Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
+(*should return noMatch *)
 
 Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([0;1], [2] *)
- | appNil : forall (l1 l2 l3 : list nat), l1 = [] /\ l2 = l3 -> append l1 l2 l3
+ | appNil : forall (l1 l2  : list nat), l1 = [] -> append l1 l2 l2
  | appCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append l2 l3 l4 /\ l5 = w :: l4 -> append l1 l3 l5.
           
 Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
