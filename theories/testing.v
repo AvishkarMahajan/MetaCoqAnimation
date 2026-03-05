@@ -21,6 +21,11 @@ Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
 
 Inductive genRel13 : nat -> list nat -> nat -> Prop :=
  | genRelcstr13 : forall (a d b c e f : nat) (l : list nat), d = c /\ a::l = [b;c] /\ b = c /\ genRel14 (S a) e d (S f)  -> genRel13 a l f .
+
+
+
+
+
 MetaRocq Run (animateListLetAndPredGuard' genRel13 <? genRel13 ?> "genRelcstr13" [("a", <%nat%>); ("l", <%list nat%>)]  [("f", <%nat%>)] [("genRel14", ([0;2],[1;3])); ("genRel13",([0;1],[2]))] 
               [("genRel14", [<%nat%>;<%nat%>;<%nat%>;<%nat%>]); ("genRel13",[<%nat%>;<%list nat%>; <%nat%>])] [("d", <%nat%>); ("e", <%nat%>); ("f", <%nat%>); ("a", <%nat%>); ("b", <%nat%>); ("c", <%nat%>); ("l", <%list nat%>)] 
               [("genRel14",<% nat -> outcomePoly (nat * nat) -> outcomePoly (nat * nat)%>)] 50).
@@ -86,5 +91,54 @@ Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
  | even0 : forall (w : nat), w = 0 -> even w true 
  | evenSucc : forall (w w1 : nat), odd w true /\ w1 = (S w) -> even w1 true
 with odd : nat -> bool -> Prop :=
- | oddSucc : forall (w w1 : nat), even w true /\ w1 = (S w) -> odd w1 true.                                           
-              
+ | oddSucc : forall (w w1 : nat), even w true /\ w1 = (S w) -> odd w1 true. 
+ 
+ 
+ 
+ 
+ 
+ 
+Inductive type : Type :=
+| N : type
+| Arr : type -> type -> type.
+Inductive term : Type :=
+| Con : nat -> term
+| Add : term -> term -> term
+| Var : nat -> term
+| App : term -> term -> term
+| Abs : type -> term -> term.
+
+
+
+Inductive typing Γ : term -> type -> Prop := (* Mode [0], [1]  = type inference, Mode [0;1] [] = type checking *) 
+| TCon : forall n, typing Γ (Con n) N
+| TAdd : forall e1 e2,
+typing Γ e1 N -> typing Γ e2 N ->
+typing Γ (Add e1 e2) N
+| TAbs : forall e t1 t2,
+typing (t1 :: Γ) e t2 ->
+typing Γ (Abs t1 e) (Arr t1 t2)
+| TVar : forall x t,
+lookup Γ x t -> typing Γ (Var x) t
+| TApp : forall e1 e2 t1 t2,
+typing Γ e2 t1 -> typing Γ e1 (Arr t1 t2) ->
+typing Γ (App e1 e2) t2
+with lookup Γ : nat -> type -> Prop :=
+ | lookupFn0 : forall (n : nat), n = 0 -> lookup Γ n N
+ | lookUpFnRec : forall (n m : nat) (t : type) , n = S m /\ lookup Γ m t -> lookup Γ n (Arr N t).  
+ 
+Inductive append' : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
+ | appNil' : forall (l1 l2  : list nat), l1 = [] -> append' l1 l2 l2
+ | appCons' : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append' l2 l3 l4 /\ l5 = w :: l4 -> append' l1 l3 l5.
+                                                     
+Inductive rtc : (nat -> nat -> bool) -> nat -> nat -> Prop :=
+ | rtcRef : forall (n m : nat) (rel : nat -> nat -> bool), n = m -> rtc rel n n
+ | rtcTrans : forall (a b c : nat) (rel : nat -> nat -> bool), (rel a b = true) /\ (rel b c = true) -> rtc rel a c.               
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
