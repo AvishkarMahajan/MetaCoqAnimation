@@ -78,10 +78,15 @@ Fixpoint getListConjLetBind (bigConj : term) : list term :=
 Fixpoint getListConjGuardCon (bigConj : term) : list term :=
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
+  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]]
+
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
 
   | tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs => [tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs]
+  
+  | tApp (tVar indNm) lstArgs => [tApp (tVar indNm) lstArgs]
+
   
   | _ => []
  end.
@@ -89,9 +94,13 @@ Fixpoint getListConjGuardCon (bigConj : term) : list term :=
 Definition getListConjAll (bigConj : term) : list term :=
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
+  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]]
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
   | tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs => [tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs]
+  
+  | tApp (tVar indNm) lstArgs => [tApp (tVar indNm) lstArgs]
+  
   | _ => []
  end.
 
@@ -492,6 +501,49 @@ Definition animatePredicate {A : Type} (induct : A) (kn : kername) (conjunct : n
 
 match conjunct with
  | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm predOutArgs ;;
+                      predInProdTp <- mklhsProdType predInArgs ;;
+                      predInProdTm <- mklhsProdTm predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tVar (String.append indNm "AnimatedTopFn"))])   in 
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                      u' <- DB.deBruijn u ;;
+                      tmReturn u'
+                     
+
+ | tApp (tVar indNm) lstArgs => 
                      (*let outputTm := tVar outputVar in 
                      let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
                      let mode := getModeFmLst indNm modes in

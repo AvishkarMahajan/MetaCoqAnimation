@@ -971,7 +971,7 @@ Definition joinOutcome (A : Type) (B : Type) (x : outcomePoly A) (y : outcomePol
 
 Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
 match lstTypes with
- | [] => tApp <%joinOutcomeUnit%> [<%bool%>; tVar "o0"]
+ | [] => <%successPoly bool true%>
  | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
  | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
  | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]
@@ -980,7 +980,7 @@ end.
 
 Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
 match lstTypes with
-| [] => tLam "o0" (tApp <%outcomePoly%> [<%bool%>]) fnBody
+| [] => fnBody
 | [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) fnBody
 | h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%outcomePoly%> [h]) (mkJoinOutcomeLam t (S n) fnBody)
 end.
