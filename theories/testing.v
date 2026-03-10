@@ -19,7 +19,7 @@ Open Scope bs.
 
 
 Inductive append2 : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
- | appNil2 : forall (l1 l2 l3 : list nat), l1 = (fun x : bool => []) true   -> append2 l1 l2 l3.
+ | appNil2 : forall (l1 l2 l3 : list nat),  [] = l1   -> append2 l1 l2 l3.
 
 MetaRocq Run (animateListLetAndPredGuard' append2 <? append2 ?> "appNil2" [("l2", <%list nat%>); ("l3", <%list nat%>)] [("l1", <%list nat%>)] [("append2",([1;2],[0]))] [("append2",[<%list nat%>;<%list nat%>;<%list nat%>])] 
                [("l1", <%list nat%>); ("l2", <%list nat%>); ("l3", <%list nat%>)] [] 100). 
@@ -96,7 +96,7 @@ Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list n
 
 
 Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
- | appNil : forall (l1 l2 l3 : list nat), (fun x : bool => []) true = l1  /\ l2 = l3 -> append l1 l2 l3
+ | appNil : forall (l1 l2 l3 : list nat),  l1 = []  /\ l2 = l3 -> append l1 l2 l3
  | appCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append l2 l3 l4 /\ l5 = w :: l4 -> append l1 l3 l5.
           
 MetaRocq Run (g <- getData' <? append ?> [("append", ([1;2], [0]))] ;; tmDefinition "dataApp" g).
@@ -106,13 +106,9 @@ Compute dataApp.
 Definition appNilLHS :=
 (tApp <%and%>
                 [tApp <%eq%>
-                   [tApp <%list%> [<%nat%>];
-                    tApp
-                      (tLam "x" <%bool%>
-                         (tApp (tConstruct {| inductive_mind := <?list?>; inductive_ind := 0 |} 0 [])
-                            [<%nat%>]))
-                      [tConstruct {| inductive_mind := <?bool?>; inductive_ind := 0 |} 0 []];
-                    tVar "l1"];
+                   [tApp <%list%> [<%nat%>]; tVar "l1";
+                    tApp (tConstruct {| inductive_mind := <?list?>; inductive_ind := 0 |} 0 [])
+                      [<%nat%>]];
                  tApp <%eq%> [tApp <%list%> [<%nat%>]; tVar "l2"; tVar "l3"]]).
                  
 Definition appConsLHS :=

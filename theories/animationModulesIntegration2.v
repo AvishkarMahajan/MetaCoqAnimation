@@ -120,7 +120,7 @@ match conjunct with
  | _ => tmFail "incorrect inductive shape"
  end.
  
-
+Check extractOrderedVars.
 (** Animate any conjunction, handling both variable equalities and pattern matches.
     Dispatches to appropriate animation strategy based on conjunction structure. *)
 Definition animateAnyLet {A : Type} (ind : A) (kn : kername) (conjunct' : (term * (string * term))) (inputTm : term) (inputTp : term)
@@ -132,7 +132,10 @@ let conjunct := fst conjunct' in
 
 match conjunct with
  | tApp <%eq%> [typeVar; t1; t2] => match t1 with
-                                    | tVar str =>  genFunAnimateEqPartialLetClause' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tVar str =>  match inputVars with 
+                                                    | [] => tmReturn (tApp <%successPoly%> [typeVar;t2])
+                                                    | h :: rest => genFunAnimateEqPartialLetClause' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
+                                                   end 
                                     | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
                                     | _ => tmFail "incorrect Conj shape"
                                     end
@@ -168,7 +171,7 @@ Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (in
 Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (inputVarsLst : list (prod term term)) (animationFn : term) (partialLetfn : term -> term) : (term -> term) :=
  match inputVarsLst with
   | [] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
-                                 (tApp animationFn [tVar "fuel"; <%successPoly bool true%>]) (tApp <%outcomePoly%> [outputVarTp]))  t) )
+                                 (animationFn) (tApp <%outcomePoly%> [outputVarTp]))  t) )
   | [h] => (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
                                  (tApp animationFn [(tVar "fuel"); fst h]) (tApp <%outcomePoly%> [outputVarTp])) t ))
   | _ =>  (fun t => partialLetfn ((tLetIn {| binder_name := nNamed outputVarNm; binder_relevance := Relevant |}
