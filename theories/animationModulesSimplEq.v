@@ -27,6 +27,8 @@ Definition typeToBoolEq (t : term) : term :=
               inductive_mind := <?list?>; inductive_ind := 0
             |} [])
          [<%nat%>]) => <%eqLstNat%>
+  | tInd {| inductive_mind := (defLoc, str); inductive_ind := _j |} [] => tConst (defLoc, (String.append "eqFn" str)) []
+
   | _ => <% (false) %>
  end.
 
@@ -40,6 +42,8 @@ Definition chkEqType (t : term) : bool :=
               inductive_mind := <?list?>; inductive_ind := 0
             |} [])
          [<%nat%>]) => true
+  | tInd {| inductive_mind := (_defLoc, _str); inductive_ind := _j |} [] => true
+  
   | _ => false
  end.
 

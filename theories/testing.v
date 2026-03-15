@@ -217,7 +217,7 @@ with odd : nat -> bool -> Prop :=
  
  
  
- 
+
  
 Inductive type : Type :=
 | N : type
@@ -228,8 +228,49 @@ Inductive term : Type :=
 | Var : nat -> term
 | App : term -> term -> term
 | Abs : type -> term -> term.
+Check andb.
 
+Fixpoint eqFntype (t1 : type) (t2 : type) : bool :=
+match t1 with
+| N => match t2 with
+        | N => true
+        | _ => false
+       end
+| Arr t1' t1'' => match t2 with
+                   | Arr t2' t2'' => if andb (eqFntype t1' t2') (eqFntype t1'' t2'') then true else false 
+                   | _ => false
+                  end
+end.
 
+Fixpoint eqFnterm (e1 : term) (e2 : term) : bool := 
+match e1 with
+| Con n => match e2 with
+           | Con m => if Nat.eqb n m then true else false
+           | _ => false
+           end
+                                      
+| Add e1' e1'' => match e2 with
+                  | Add e2' e2'' => if andb (eqFnterm e1' e2') (eqFnterm e1'' e2'') then true else false
+                  | _ => false
+                  end
+
+| Var j => match e2 with
+           | Var k => if Nat.eqb j k then true else false
+           | _ => false
+           end
+
+| App e1' e1''  => match e2 with
+                        | App e2' e2''  => if (andb (eqFnterm e1' e2') (eqFnterm e1'' e2''))  then true else false
+                        | _ => false
+                        end
+
+| Abs t1 e1'  =>  match e2 with
+                        | Abs t2 e2'  => if andb (eqFnterm e1' e2') (eqFntype t1 t2) then true else false
+                        | _ => false
+                        end
+end.                                                
+                                                     
+(* Original paper 
 
 Inductive typing Γ : term -> type -> Prop := (* Mode [0], [1]  = type inference, Mode [0;1] [] = type checking *) 
 | TCon : forall n, typing Γ (Con n) N
@@ -243,11 +284,34 @@ typing Γ (Abs t1 e) (Arr t1 t2)
 lookup Γ x t -> typing Γ (Var x) t
 | TApp : forall e1 e2 t1 t2,
 typing Γ e2 t1 -> typing Γ e1 (Arr t1 t2) ->
-typing Γ (App e1 e2) t2
-with lookup Γ : nat -> type -> Prop :=
- | lookupFn0 : forall (n : nat), n = 0 -> lookup Γ n N
- | lookUpFnRec : forall (n m : nat) (t : type) , n = S m /\ lookup Γ m t -> lookup Γ n (Arr N t).  
+typing Γ (App e1 e2) t2.
+*)
+
+
  
+
+
+Inductive typing : list type -> term -> type -> Prop := (* Mode [0], [1]  = type inference, Mode [0;1] [] = type checking *) 
+| TCon : forall (n : nat) (cxt : list type) (ttm : term) (tp : type), ttm = Con n /\ tp = N -> typing cxt ttm tp
+| TAdd : forall (e1 e2 e3 : term) (cxt : list type) (tp : type), tp = N /\  
+typing cxt e1 tp /\ typing cxt e2 tp /\ e3 = Add e1 e2 ->
+typing cxt e3 tp
+| TAbs : forall (e e2 : term) (t1 t2 t3 : type) (cxt cxt' : list type), cxt' = t1 :: cxt /\ e2 = Abs t1 e /\ t3 = Arr t1 t2 /\
+typing cxt' e t2 ->
+typing cxt e2 t3
+| TVar : forall (x : nat) (e : term) (t : type) (cxt : list type),
+lookup cxt x t /\ e = Var x -> typing cxt e t
+| TApp : forall (e1 e2 e3 : term) (t1 t2 t3 : type) (cxt : list type), e3 = App e1 e2 /\ t3 = Arr t1 t2 /\
+typing cxt e2 t1 /\ typing cxt e1 t3 ->
+typing cxt e3 t2
+with lookup : list type -> nat -> type -> Prop :=
+ | lookupFn0 : forall (n : nat) (cxt : list type) (t : type) , n = 0 /\ N = t -> lookup cxt n t
+ | lookUpFnRec : forall (n m : nat) (t t' : type) (cxt : list type) , n = S m /\ lookup cxt m t /\ t' = Arr N t -> lookup cxt n t'.  
+
+
+
+
+Compute <%eqFntype%>.
 Inductive append' : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
  | appNil' : forall (l1 l2  : list nat), l1 = [] -> append' l1 l2 l2
  | appCons' : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append' l2 l3 l4 /\ l5 = w :: l4 -> append' l1 l3 l5.
