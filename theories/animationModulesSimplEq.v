@@ -17,33 +17,34 @@ Open Scope bs.
 
 
 
-Definition typeToBoolEq (t : term) : term :=
+Fixpoint typeToBoolEq (t : term) : term :=
  match t with
-  | (tInd {| inductive_mind := <?nat?>; inductive_ind := 0 |} []) => <%Nat.eqb%>
+  | <%nat%> => <%Nat.eqb%>
   | <%bool%> => <%Bool.eqb%>
-  | (tApp
+ (* | (tApp
          (tInd
             {|
               inductive_mind := <?list?>; inductive_ind := 0
             |} [])
-         [<%nat%>]) => <%eqLstNat%>
+         [<%nat%>]) => <%eqLstNat%> *)
   | tInd {| inductive_mind := (defLoc, str); inductive_ind := _j |} [] => tConst (defLoc, (String.append "eqFn" str)) []
 
+  | tApp <%list%> [tp] => tApp <%@eqb_list%> [tp; (typeToBoolEq tp)]
   | _ => <% (false) %>
  end.
 
-Definition chkEqType (t : term) : bool :=
+Fixpoint chkEqType (t : term) : bool :=
   match t with
-  | (tInd {| inductive_mind := <?nat?>; inductive_ind := 0 |} []) => true
+  | <%nat%> => true
   | <%bool%> => true
-  | (tApp
+ (* | (tApp
          (tInd
             {|
               inductive_mind := <?list?>; inductive_ind := 0
             |} [])
-         [<%nat%>]) => true
+         [<%nat%>]) => true *)
   | tInd {| inductive_mind := (_defLoc, _str); inductive_ind := _j |} [] => true
-  
+  | tApp <%list%> [tp] => chkEqType tp
   | _ => false
  end.
 
@@ -82,7 +83,7 @@ Fixpoint getListConjLetBind (bigConj : term) : list term :=
 Fixpoint getListConjGuardCon (bigConj : term) : list term :=
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
-  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]]
+(*  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]] *)
 
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
@@ -98,7 +99,7 @@ Fixpoint getListConjGuardCon (bigConj : term) : list term :=
 Definition getListConjAll (bigConj : term) : list term :=
   match bigConj with
   | tApp <%and%> ls => concat (map getListConjGuardCon ls)
-  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]]
+(*  | tApp <%eq%> [typeT; tVar str; tApp fn lstArgs] => [tApp <%eq%> [typeT;  tApp fn lstArgs; tVar str]] *)
   | tApp <%eq%> [typeT; t1; t2] =>
       [tApp <%eq%> [typeT; t1; t2]]
   | tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs => [tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs]

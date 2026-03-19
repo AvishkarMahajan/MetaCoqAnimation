@@ -1,6 +1,7 @@
+Require Import Animation.animationModulesIntegration2.
 Require Import Animation.animationModulesFixPt.
 
-Require Import Animation.animationModulesIntegration2.
+
 Require Import Animation.animationModulesSimplEq.
 
 Require Import Animation.utils2.
@@ -17,14 +18,20 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+Print isListSubStr.
 
-Inductive append2 : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
- | appNil2 : forall (l1 l2 l3 : list nat),  [] = l1   -> append2 l1 l2 l3.
+Inductive append2 : list nat  -> Prop := (* mode = ([1;2], [0] *)
+ | appNil2 : forall (l1 : list nat),            l1 = []   -> append2 l1. (*STILL DOESN'T WORK WITH CONSTANT ON RHS OF EQUALITY *)
 
-MetaRocq Run (animateListLetAndPredGuard' append2 <? append2 ?> "appNil2" [("l2", <%list nat%>); ("l3", <%list nat%>)] [("l1", <%list nat%>)] [("append2",([1;2],[0]))] [("append2",[<%list nat%>;<%list nat%>;<%list nat%>])] 
-               [("l1", <%list nat%>); ("l2", <%list nat%>); ("l3", <%list nat%>)] [] 100). 
 
-Compute appNil2Animated 5 (successPoly ((list nat) * (list nat)) ([0;7],[0])). 
+
+MetaRocq Run (animateListLetAndPredGuard' append2 <? append2 ?> "appNil2" [] [("l1", <%list nat%>)] [("append2",([],[0]))] [("append2",[<%list nat%>])] 
+               [("l1", <%list nat%>)] [] 100).
+               
+Print appNil2Animated.
+
+Compute appNil2Animated 0.               
+               
 
 Inductive genRel14 : nat -> nat -> nat -> nat -> Prop :=
  | genRelcstr14 : forall (a b c d : nat), a = b /\ c = d -> genRel14 a b c d. (* a c input k d output *)
@@ -96,7 +103,7 @@ Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list n
 
 
 Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
- | appNil : forall (l1 l2 l3 : list nat),  l1 = []  /\ l2 = l3 -> append l1 l2 l3
+ | appNil : forall (l1 l2 l3 : list nat), ([]) = l1 /\ l2 = l3 -> append l1 l2 l3
  | appCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append l2 l3 l4 /\ l5 = w :: l4 -> append l1 l3 l5.
           
 MetaRocq Run (g <- getData' <? append ?> [("append", ([1;2], [0]))] ;; tmDefinition "dataApp" g).
@@ -104,13 +111,13 @@ MetaRocq Run (g <- getData' <? append ?> [("append", ([1;2], [0]))] ;; tmDefinit
 Compute dataApp.
 
 Definition appNilLHS :=
-(tApp <%and%>
+ (tApp <%and%>
                 [tApp <%eq%>
-                   [tApp <%list%> [<%nat%>]; tVar "l1";
+                   [tApp <%list%> [<%nat%>];
                     tApp (tConstruct {| inductive_mind := <?list?>; inductive_ind := 0 |} 0 [])
-                      [<%nat%>]];
+                      [<%nat%>];
+                    tVar "l1"];
                  tApp <%eq%> [tApp <%list%> [<%nat%>]; tVar "l2"; tVar "l3"]]).
-                 
 Definition appConsLHS :=
 (tApp <%and%>
                 [tApp <%eq%>
@@ -228,7 +235,7 @@ Inductive term : Type :=
 | Var : nat -> term
 | App : term -> term -> term
 | Abs : type -> term -> term.
-Check andb.
+
 
 Fixpoint eqFntype (t1 : type) (t2 : type) : bool :=
 match t1 with
@@ -288,30 +295,145 @@ typing Γ (App e1 e2) t2.
 *)
 
 
- 
 
 
-Inductive typing : list type -> term -> type -> Prop := (* Mode [0], [1]  = type inference, Mode [0;1] [] = type checking *) 
-| TCon : forall (n : nat) (cxt : list type) (ttm : term) (tp : type), ttm = Con n /\ tp = N -> typing cxt ttm tp
-| TAdd : forall (e1 e2 e3 : term) (cxt : list type) (tp : type), tp = N /\  
+
+
+Inductive typing : list type -> term -> type -> Prop := (* Mode [0;1], [2]  = type inference, Mode [0;1;2] [] = type checking *) 
+| TCon : forall (n : nat) (cxt : list type) (ttm : term) (tp : type), ttm = Con n /\ (N) = tp -> typing cxt ttm tp
+
+
+| TAdd : forall (e1 e2 e3 : term) (cxt : list type) (tp : type),  tp = N  /\  
 typing cxt e1 tp /\ typing cxt e2 tp /\ e3 = Add e1 e2 ->
 typing cxt e3 tp
+
+
 | TAbs : forall (e e2 : term) (t1 t2 t3 : type) (cxt cxt' : list type), cxt' = t1 :: cxt /\ e2 = Abs t1 e /\ t3 = Arr t1 t2 /\
 typing cxt' e t2 ->
 typing cxt e2 t3
-| TVar : forall (x : nat) (e : term) (t : type) (cxt : list type),
-lookup cxt x t /\ e = Var x -> typing cxt e t
+
+
+| TVar : forall (j : nat) (e : term) (t : type) (cxt : list type),
+lookup cxt j t /\ e = Var j -> typing cxt e t
+
 | TApp : forall (e1 e2 e3 : term) (t1 t2 t3 : type) (cxt : list type), e3 = App e1 e2 /\ t3 = Arr t1 t2 /\
 typing cxt e2 t1 /\ typing cxt e1 t3 ->
-typing cxt e3 t2
+typing cxt e3 t2 
+
 with lookup : list type -> nat -> type -> Prop :=
- | lookupFn0 : forall (n : nat) (cxt : list type) (t : type) , n = 0 /\ N = t -> lookup cxt n t
- | lookUpFnRec : forall (n m : nat) (t t' : type) (cxt : list type) , n = S m /\ lookup cxt m t /\ t' = Arr N t -> lookup cxt n t'.  
+ | lookupFn0 : forall (n : nat) (cxt : list type) (t : type) , 0 = n /\ N = t -> lookup cxt n t
+ | lookupFnRec : forall (n m : nat) (t t' : type) (cxt : list type) , n = S m /\ lookup cxt m t /\ t' = Arr N t -> lookup cxt n t'.  
+ 
 
 
 
 
-Compute <%eqFntype%>.
+
+MetaRocq Run (g <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "dataTyping" g).
+
+Compute dataTyping.
+Parameter dataLHSErr : list (string × Ast.term).
+Parameter dataLHSErr2 : Ast.term.
+
+Fixpoint getLHS (data :list (((string × list Ast.term) × list Ast.term) × list (string × Ast.term))) 
+                  (indNm : string)  : list (string × Ast.term) :=
+match data with
+| [] => dataLHSErr
+| h :: t =>  if String.eqb (fst ( fst (fst h))) indNm then snd h else getLHS t indNm
+end.
+                  
+Fixpoint getLHS2 (data' : list (string × Ast.term)) (clauseNm : string) : Ast.term :=
+match data' with
+| [] => dataLHSErr2
+| h :: rest => if String.eqb (fst h) clauseNm then 
+                                          match (snd h) with
+                                           | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 => t1
+                                           | _ => dataLHSErr2
+                                          end
+                                          else getLHS2 rest clauseNm
+end.                                           
+                 
+Definition getDataLHS' (data :list (((string × list Ast.term) × list Ast.term) × list (string × Ast.term))) 
+                        (indNm : string) (clauseNm : string) :=
+                        getLHS2 (getLHS data indNm) clauseNm.
+                        
+Definition TConLHS := getDataLHS' (dataTyping) "typing" "TCon". 
+Definition TAddLHS := getDataLHS' (dataTyping) "typing" "TAdd". 
+Definition TAbsLHS := getDataLHS' (dataTyping) "typing" "TAbs". 
+Definition TVarLHS := getDataLHS' (dataTyping) "typing" "TVar". 
+Definition TAppLHS := getDataLHS' (dataTyping) "typing" "TApp". 
+Definition lookupFn0LHS := getDataLHS' (dataTyping) "lookup" "lookupFn0". 
+Definition lookupFnRecLHS := getDataLHS' (dataTyping) "lookup" "lookupFnRec".                        
+
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TConLHS "TCon" [("cxt", <%list type%>);("ttm", <%term%>)] 
+                                         [("tp", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>);("ttm", <%term%>); ("tp", <%type%>); ("n", <%nat%>)] [] 50). 
+
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TAddLHS "TAdd" [("cxt", <%list type%>);("e3", <%term%>)] 
+                                         [("tp", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>);("e1", <%term%>); ("e2", <%term%>); ("e3", <%term%>); ("tp", <%type%>)] [("typing", <% nat -> outcomePoly ((list type) * term) -> outcomePoly type%>)] 50). 
+
+          
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TAbsLHS "TAbs" [("cxt", <%list type%>);("e2", <%term%>)] 
+                                         [("t3", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>);("cxt'", <%list type%>); ("e", <%term%>); ("e2", <%term%>); ("t1", <%type%>);("t2", <%type%>); ("t3", <%type%>)] [("typing", <% nat -> outcomePoly ((list type) * term) -> outcomePoly type%>)] 50). 
+
+ 
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TVarLHS "TVar" [("cxt", <%list type%>);("e", <%term%>)] 
+                                         [("t", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("e", <%term%>); ("t", <%type%>); ("j", <%nat%>)] [("lookup", <% nat -> outcomePoly ((list type) * nat) -> outcomePoly type%>)] 100). 
+
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TAppLHS "TApp" [("cxt", <%list type%>);("e3", <%term%>)] 
+                                         [("t2", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("e1", <%term%>); ("e2", <%term%>);("e3", <%term%>); ("t1", <%type%>);("t2", <%type%>); ("t3", <%type%>)] [("typing", <% nat -> outcomePoly ((list type) * term) -> outcomePoly type%>)] 50). 
+ 
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> lookupFn0LHS "lookupFn0" [("cxt", <%list type%>);("n", <%nat%>)] 
+                                         [("t", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("t", <%type%>); ("n", <%nat%>)] [] 50). 
+               
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> lookupFnRecLHS "lookupFnRec" [("cxt", <%list type%>);("n", <%nat%>)] 
+                                         [("t'", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("n", <%nat%>); ("m", <%nat%>); ("t", <%type%>);("t'", <%type%>)] [("lookup", <% nat -> outcomePoly ((list type) * nat) -> outcomePoly type%>)] 50). 
+
+Definition typingIndData :=
+[((("typing", <%prod (list type) (term) %>), <%type%>), [("TCon", []); ("TAdd", ["typing"]); ("TAbs", ["typing"]); ("TVar", ["lookup"]); ("TApp", ["typing"])]); 
+((("lookup", <%prod (list type) (nat) %>), <%type%>), [("lookupFn0", []); ("lookupFnRec", ["lookup"])])].
+
+
+
+
+MetaRocq Run (mkBigFixpt "typing" typingIndData <?typing?> 50).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Con 5))))). 
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],((Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Inductive append' : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
  | appNil' : forall (l1 l2  : list nat), l1 = [] -> append' l1 l2 l2
  | appCons' : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append' l2 l3 l4 /\ l5 = w :: l4 -> append' l1 l3 l5.
