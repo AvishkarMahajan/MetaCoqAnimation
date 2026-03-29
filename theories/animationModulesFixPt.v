@@ -17,11 +17,6 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-
-       
-
-
-
 (** Error term for partial type functions. *)
 Parameter errTpTm : term.
 
@@ -372,10 +367,178 @@ let inOutTps := getInOutTps modes lib in
 getData lib modes nmCxt inOutTps.
 
 
-
-
  
 
+Definition getCstrData (lo : list one_inductive_body) : list (string × term × list constructor_body) :=
+map (fun (o : one_inductive_body) => ((ind_name o), ((ind_type o), (ind_ctors o)))) lo.
+
+
+
+Fixpoint procCxtDclLst (c : list context_decl) : list (string * term) := 
+match c with
+| [] => []
+| h :: t => match decl_name h with
+             | {| binder_name := nNamed str; binder_relevance := Relevant |} => (str, decl_type h) :: procCxtDclLst t
+             | _ =>  procCxtDclLst t
+            end
+end.  
+
+Fixpoint getCstrData' (inDat : list (string × term × list constructor_body)) :=
+match inDat with
+| [] => []
+| h :: t => match h with
+            | (str, (tp, lst)) => (str, tp, (map (fun x => (cstr_name x, procCxtDclLst (cstr_args x))) lst)) :: getCstrData' t
+            end
+end.  
+
+Definition getClauseTpInfo (lo : list one_inductive_body) :=
+getCstrData' (getCstrData lo).
+
+
+Inductive type : Type :=
+| N : type
+| Arr : type -> type -> type.
+Inductive term : Type :=
+| Con : nat -> term
+| Add : term -> term -> term
+| Var : nat -> term
+| App : term -> term -> term
+| Abs : type -> term -> term.
+
+
+Fixpoint eqFntype (t1 : type) (t2 : type) : bool :=
+match t1 with
+| N => match t2 with
+        | N => true
+        | _ => false
+       end
+| Arr t1' t1'' => match t2 with
+                   | Arr t2' t2'' => if andb (eqFntype t1' t2') (eqFntype t1'' t2'') then true else false 
+                   | _ => false
+                  end
+end.
+
+Fixpoint eqFnterm (e1 : term) (e2 : term) : bool := 
+match e1 with
+| Con n => match e2 with
+           | Con m => if Nat.eqb n m then true else false
+           | _ => false
+           end
+                                      
+| Add e1' e1'' => match e2 with
+                  | Add e2' e2'' => if andb (eqFnterm e1' e2') (eqFnterm e1'' e2'') then true else false
+                  | _ => false
+                  end
+
+| Var j => match e2 with
+           | Var k => if Nat.eqb j k then true else false
+           | _ => false
+           end
+
+| App e1' e1''  => match e2 with
+                        | App e2' e2''  => if (andb (eqFnterm e1' e2') (eqFnterm e1'' e2''))  then true else false
+                        | _ => false
+                        end
+
+| Abs t1 e1'  =>  match e2 with
+                        | Abs t2 e2'  => if andb (eqFnterm e1' e2') (eqFntype t1 t2) then true else false
+                        | _ => false
+                        end
+end.                                                
+
+       
+Inductive typing : list type -> term -> type -> Prop := (* Mode [0;1], [2]  = type inference, Mode [0;1;2] [] = type checking *) 
+| TCon : forall (n : nat) (cxt : list type) (ttm : term) (tp : type), ttm = Con n /\ (N) = tp -> typing cxt ttm tp
+
+
+| TAdd : forall (e1 e2 e3 : term) (cxt : list type) (tp : type),  tp = N  /\  
+typing cxt e1 tp /\ typing cxt e2 tp /\ e3 = Add e1 e2 ->
+typing cxt e3 tp
+
+
+| TAbs : forall (e e2 : term) (t1 t2 t3 : type) (cxt cxt' : list type), cxt' = t1 :: cxt /\ e2 = Abs t1 e /\ t3 = Arr t1 t2 /\
+typing cxt' e t2 ->
+typing cxt e2 t3
+
+
+| TVar : forall (j : nat) (e : term) (t : type) (cxt : list type),
+lookup cxt j t /\ e = Var j -> typing cxt e t
+
+| TApp : forall (e1 e2 e3 : term) (t1 t2 t3 : type) (cxt : list type), e3 = App e1 e2 /\ t3 = Arr t1 t2 /\
+typing cxt e2 t1 /\ typing cxt e1 t3 ->
+typing cxt e3 t2 
+
+with lookup : list type -> nat -> type -> Prop :=
+ | lookupFn0 : forall (n : nat) (cxt : list type) (t : type) , 0 = n /\ N = t -> lookup cxt n t
+ | lookupFnRec : forall (n m : nat) (t t' : type) (cxt : list type) , n = S m /\ lookup cxt m t /\ t' = Arr N t -> lookup cxt n t'.  
+ 
+
+
+
+
+MetaRocq Run (g <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "clauseDataTyping" g).
+
+Compute clauseDataTyping.
+
+
+MetaRocq Run (mut <- tmQuoteInductive <? typing ?> ;; tmDefinition "typingDatatyping" (getClauseTpInfo (ind_bodies mut))).
+
+Compute typingDatatyping.
+
+
+
+(* GOAL :
+
+
+Definition typingFixptData :=
+
+
+[((("typing", <%prod (list type) (term) %>), <%type%>), [("TCon", []); ("TAdd", ["typing"]); ("TAbs", ["typing"]); ("TVar", ["lookup"]); ("TApp", ["typing"])]); 
+((("lookup", <%prod (list type) (nat) %>), <%type%>), [("lookupFn0", []); ("lookupFnRec", ["lookup"])])].
+
+
+
+
+
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TVarLHS "TVar" [("cxt", <%list type%>);("e", <%term%>)] 
+                                         [("t", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("e", <%term%>); ("t", <%type%>); ("j", <%nat%>)] [("lookup", <% nat -> outcomePoly ((list type) * nat) -> outcomePoly type%>)] 100). 
+
+
+
+
+*)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(*
 
 Definition mkIndData' (kn : kername) (modes : (list (string × (list nat × list nat)))) :=
 data <- getData' kn modes;;
@@ -386,6 +549,24 @@ let inOutTps := getInOutTps modes lib in
 data <- getData lib modes nmCxt inOutTps ;;
 let indNames := map (fun d => (fst (fst (fst d)))) data in
 tmReturn (mkIndData data indNames).
+
+*)
+
+
+
+
+
+
+(*
+
+MetaRocq Run (animateListLetAndPredGuard3 typing <? typing ?> TVarLHS "TVar" [("cxt", <%list type%>);("e", <%term%>)] 
+                                         [("t", <%type%>)] [("typing",([0;1],[2]));("lookup",([0;1],[2])) ] [("typing",[<%list type%>;<%term%>;<%type%>]); ("lookup",[<%list type%>;<%nat%>;<%type%>])] 
+               [("cxt", <%list type%>); ("e", <%term%>); ("t", <%type%>); ("j", <%nat%>)] [("lookup", <% nat -> outcomePoly ((list type) * nat) -> outcomePoly type%>)] 100). 
+
+
+*)
+
+
 
 
 (*
