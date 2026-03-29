@@ -112,7 +112,14 @@ Fixpoint getIndApp (l : list term) (indNames : list string) : list string :=
               end
  end.
  
-Search (string -> string -> bool).
+Fixpoint getIndApp' (l : list (string * term)) (indNames : list string) : list (string * (list string)) :=
+ match l with
+  | [] => []
+  | h :: t => (fst h, getIndApp (getClBody' (snd h)) indNames) :: getIndApp' t indNames
+ end.
+
+
+
 
 (** Get input/output types for all inductives according to mode specifications. *)
 Fixpoint getInOutTpsOne (mode : (string * ((list nat) * (list nat)))) (b : list one_inductive_body) : list ((string * list term) * list term) :=
@@ -126,6 +133,7 @@ match modes with
  | [] => []
  | h :: t => app (getInOutTpsOne h b) (getInOutTps t b)
 end.    
+
 
  
 (** Change the next 2 functions to not always return the full clause data but only bits of it **)
@@ -146,58 +154,21 @@ Fixpoint getData (lib : list one_inductive_body) (ln : list (string * ((list nat
                  end
 
  end.
-(* Change above 2 functions *)
-Definition getData' (kn : kername) (modes : list (string * ((list nat) * (list nat)))) : TemplateMonad (list (((string * list term) * list term) * (list (string * term))))  :=
-mut <- tmQuoteInductive kn ;;
 
-let lib := ind_bodies mut in
-let nmCxt := genCxt lib in
-let inOutTps := getInOutTps modes lib in
-getData lib modes nmCxt inOutTps.
+
+
+
 
 
 
 
  
-Unset Universe Checking.
-
-                      
-Definition animateListLetAndPredGuard3 {A : Type} (ind : A) (kn : kername) (bigConj : term) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
-
-let listAllConjs := getListConjAll bigConj in
-let gConjsEq := filterConjsEq listAllConjs in
-(*
-lAC' <- tmEval all listAllConjs ;;
-*)
-(*tmPrint lAC';;*)
-
-lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
-
-let lConjs := removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) in
-(*
-gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
-gConjs <- tmEval (all) gConjs' ;;
-*)
-
-let gConjsPred := filterConjsPred' (attachOutputVarToSortedConjs listAllConjs allVarTpInf modes predTypeInf)  in
-(*tmPrint lConjs;;
-tmPrint gConjsEq;;*)
-t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
-t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
-(*
-tmPrint t'';;
-*)
-
-f <- tmUnquote t'' ;;
-tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append cstrNm "Animated") (Some hnf) ;;
+(* Change above 2 functions *)
 
 
-tmReturn t''.
-
-Set Universe Checking. 
 
 
+ 
 
 
 
@@ -213,20 +184,6 @@ Definition inspectFix (t : term) : list (def term) :=
  match t with
   | tFix l k => l
   | _ => []
- end.
-
-(** Construct a list term from a list of variable names. *)
-Fixpoint mkLstTm (eltType : term) (lst : list string) : term :=
- match lst with
-  | [] => tApp
-           (tConstruct
-              {|
-                inductive_mind := <?list?>; inductive_ind := 0
-              |} 0 []) [eltType]
-  | h :: t =>  tApp
-               (tConstruct
-               {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
-               [eltType; tVar h; mkLstTm eltType t]
  end.
 
 Definition quoteConst' (kn : kername) (nm : string) :=
@@ -337,6 +294,56 @@ Definition dispatchExtTm := hd default (inspectFix dispatchExtTm').
 Definition mkAllIndTop (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
 app (mkAllIndTop' inductData kn) [dispatchExtTm].
 
+Fixpoint mkIndData (data : (list (((string * list term) * list term) * (list (string * term))))) (indNames : list string) :=
+ match data with
+  | [] => []
+  | h :: t => match h with
+               | (nm, linT, loutT, lCons) => (nm, linT, loutT, (getIndApp' lCons indNames)) :: mkIndData t indNames
+              end
+ end.
+
+ 
+
+Unset Universe Checking.
+
+                      
+Definition animateListLetAndPredGuard3 {A : Type} (ind : A) (kn : kername) (bigConj : term) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+let listAllConjs := getListConjAll bigConj in
+let gConjsEq := filterConjsEq listAllConjs in
+(*
+lAC' <- tmEval all listAllConjs ;;
+*)
+(*tmPrint lAC';;*)
+
+lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
+
+let lConjs := removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) in
+(*
+gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
+gConjs <- tmEval (all) gConjs' ;;
+*)
+
+let gConjsPred := filterConjsPred' (attachOutputVarToSortedConjs listAllConjs allVarTpInf modes predTypeInf)  in
+(*tmPrint lConjs;;
+tmPrint gConjsEq;;*)
+t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
+t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
+(*
+tmPrint t'';;
+*)
+
+f <- tmUnquote t'' ;;
+tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (String.append cstrNm "Animated") (Some hnf) ;;
+
+
+tmReturn t''.
+
+Set Universe Checking. 
+
+
+
 
 (** Main entry point: animate an entire inductive predicate.
     Generates animated functions for all constructors and composes them into
@@ -353,3 +360,216 @@ Definition mkBigFixpt (nmTopInduct : string) (inductData : (list ((((string) * (
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
 
+
+
+
+Definition getData' (kn : kername) (modes : list (string * ((list nat) * (list nat)))) : TemplateMonad (list (((string * list term) * list term) * (list (string * term))))  :=
+mut <- tmQuoteInductive kn ;;
+
+let lib := ind_bodies mut in
+let nmCxt := genCxt lib in
+let inOutTps := getInOutTps modes lib in
+getData lib modes nmCxt inOutTps.
+
+
+
+
+ 
+
+
+Definition mkIndData' (kn : kername) (modes : (list (string × (list nat × list nat)))) :=
+data <- getData' kn modes;;
+mut <- tmQuoteInductive kn ;;
+let lib := ind_bodies mut in
+let nmCxt := genCxt lib in
+let inOutTps := getInOutTps modes lib in
+data <- getData lib modes nmCxt inOutTps ;;
+let indNames := map (fun d => (fst (fst (fst d)))) data in
+tmReturn (mkIndData data indNames).
+
+
+(*
+
+(*
+(** Construct a list term from a list of variable names. *)
+Fixpoint mkLstTm (eltType : term) (lst : list string) : term :=
+ match lst with
+  | [] => tApp
+           (tConstruct
+              {|
+                inductive_mind := <?list?>; inductive_ind := 0
+              |} 0 []) [eltType]
+  | h :: t =>  tApp
+               (tConstruct
+               {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
+               [eltType; tVar h; mkLstTm eltType t]
+ end.
+*)
+
+(*
+
+Fixpoint findInType (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option term :=
+match ls with
+  | [] => None
+  | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd (fst (fst h))) else findInType s t
+end.
+(* ls is (nameOfInductive, inputType, outputType, modeInfo) *)
+Fixpoint findOutType (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option term :=
+match ls with
+  | [] => None
+  | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some ((snd (fst h))) else findOutType s t
+end.
+*)
+(*
+Definition mkProdTm3Helper (mode : list nat) (lsArgs : list term) : (list term) :=
+map (fun n => nth n lsArgs errTpTm) mode. 
+*) 
+
+
+
+
+
+
+
+(*
+Fixpoint findIndex (s : string) (ls : list (((string * term) * term) * (list nat * list nat))) : option (list nat * list nat) :=
+ match ls with
+  | [] => None
+  | (h :: t) => if (String.eqb s (fst (fst (fst h)))) then Some (snd h) else findIndex s t
+ end.
+*) 
+
+
+
+
+(*
+Fixpoint mkProdTm3' (lsArgs : list term) (tpTm : term) : term :=
+match lsArgs with
+ | [] => <%true%>
+ | [h] => h
+ | h' :: t => match tpTm with
+               | (tApp <%prod%> [(tp1) ; res]) => tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0
+                                                                                  |} 0 []) [tp1 ; res; h' ; (mkProdTm3' t res)]
+
+               | _ => errTpTm
+              end
+ end.
+
+*)
+
+
+
+(*
+Definition mkProdTm3 (mode : list nat) (lsArgs : list term) (tpTm : term) : term :=
+mkProdTm3' (mkProdTm3Helper mode lsArgs) tpTm.
+*)
+Fixpoint extractClinfo (ts : list term) (ls : list (((string * term) * term) * (string * (list nat * list nat))))
+                              : list ((((string * term) * term) * term) * term)  :=
+(* output is list of (inductiveNm, inputTerm, inputType, outputTerm, outputType) one tuple per conjunct in precondition *)
+match ts with
+| [] => []
+| h :: rest => match h with
+                | tApp (tVar str) lstArgs => match findIndex str ls with
+                                                | Some mode => match findInType str ls with
+                                                             | Some tp => match findOutType str ls with
+                                                                           | Some tp' => (str, (mkProdTm3 (fst mode) lstArgs tp), tp, (mkProdTm3 (snd mode) lstArgs tp'), tp') :: extractClinfo rest ls
+                                                                           | _ => extractClinfo rest ls
+                                                                           end
+                                                             | _ => extractClinfo rest ls
+                                                             end
+
+
+
+
+
+                                                | _ => extractClinfo rest ls
+                                               end
+
+                | _ => extractClinfo rest ls
+               end
+
+end.
+
+Parameter noClHdError :((((term) * term) * term) * term).
+
+Definition extractClinfoHd (h : term) (ls : list (((string * term) * term) * (list nat * list nat)))
+                              : ((((term) * term) * term) * term) :=
+                match h with
+                | tApp (tVar str) lstArgs => match findIndex str ls with
+                                                | Some mode => match findInType str ls with
+                                                             | Some tp => match findOutType str ls with
+                                                                           | Some tp' => ((mkProdTm3 (fst mode) lstArgs tp), tp, (mkProdTm3 (snd mode) lstArgs tp'), tp')
+                                                                           | _ => noClHdError
+                                                                           end
+                                                             | _ => noClHdError
+                                                             end
+
+
+
+
+
+                                                | _ => noClHdError
+                                               end
+
+                | _ => noClHdError
+               end.
+
+Definition mkClauseInfo  (ls : list (((string * list term) * list term) * (list nat * list nat))) (cl : (string * term)) :=
+ match extractClinfoHd (getClHead' (snd cl)) ls with
+  | (t1, t2, t3, t4) => ((extractClinfo (getClBody' (snd cl)) ls), t1, t2, t3, t4, (fst cl))
+ end.
+
+Fixpoint mkClauseInfoLst  (ls : list (((string * list term) * list term) * (string * (list nat * list nat)))) (clist : list (string * term)) :=
+ match clist with
+  | [] => []
+  | h :: t => (mkClauseInfo ls h) :: mkClauseInfoLst ls t
+ end.
+
+Fixpoint appendIndex (modes : list (string * (list nat * list nat))) (ls : list (((string * list term) * list term))) :=
+match modes with
+ | [] => []
+ | h :: t => match ls with
+             | [] => []
+             | h' :: t' => match h' with
+                            | (p1,p2,p3) => (p1,p2,p3,h) :: appendIndex t t'
+             end            end
+end.
+(*
+Check mkClauseInfo.
+
+Search (forall A : Type, list (list A) -> list A).
+*)
+Search (string -> string -> string).
+
+(*
+Fixpoint mkProdTypeVars3 (outputData : list (term)) :  term :=
+ match outputData with
+  | [] => <%bool%>
+  | [h] =>  (h)
+  | h :: t => let res := mkProdTypeVars3 t in  (tApp
+                                            (tInd
+                                             {|
+                                             inductive_mind := <?prod?>; inductive_ind := 0
+                                              |} []) [(h) ; res])
+ end.
+*)
+Definition mkClData' (kn : kername) (modes : list (string * (list nat * list nat))) :=
+mut <- tmQuoteInductive kn ;;
+let lib := ind_bodies mut in
+let nmCxt := genCxt lib in
+let inOutTps := getInOutTps modes lib in
+myData <- getData lib modes nmCxt inOutTps ;;
+myData' <- tmEval all myData;;
+tmDefinition (String.append (snd kn) "myData'") myData' ;;
+let ls' := getInOutTps modes lib in
+let ls'' := appendIndex modes ls' in
+ls <- tmEval all ls'' ;;
+(*tmPrint ls ;; *)
+let lislisCons := map (fun p => snd p) myData in
+let lisCons' := concat lislisCons in
+lisCons <- tmEval all lisCons' ;;
+(*tmPrint lisCons ;;*)
+
+tmReturn (mkClauseInfoLst ls lisCons).
+*)
+ 

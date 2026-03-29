@@ -143,10 +143,13 @@ MetaRocq Run (animateListLetAndPredGuard3 append <? append ?> appNilLHS "appNil"
 MetaRocq Run (animateListLetAndPredGuard3 append <? append ?> appConsLHS "appCons" [("l3", <%list nat%>); ("l5", <%list nat%>)] [("l1", <%list nat%>)] [("append",([1;2],[0]))] [("append",[<%list nat%>;<%list nat%>;<%list nat%>])] 
                [("l1", <%list nat%>); ("l2", <%list nat%>);("l3", <%list nat%>); ("l4", <%list nat%>);("l5", <%list nat%>); ("w", <%nat%>)] [("append", <% nat -> outcomePoly ((list nat) * (list nat)) -> outcomePoly (list nat) %>)] 50). 
 
+MetaRocq Run (fixD <- mkIndData' <? append ?>  [("append",([1;2],[0]))] ;; tmDefinition "appendIndData'" fixD).
 
+Compute appendIndData'.
 
 
 Definition appendIndData :=
+
 [((("append", <%prod (list nat) (list nat) %>), <%list nat%>), [("appNil", []); ("appCons", ["append"])])].
 
 
