@@ -394,6 +394,214 @@ end.
 Definition getClauseTpInfo (lo : list one_inductive_body) :=
 getCstrData' (getCstrData lo).
 
+Definition getPredOcc (cstr : string * term) : list term :=
+match snd cstr with
+| tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 =>  filterConjsPred (getListConjAll t1)
+| _ => []
+end.
+Fixpoint removeDupStr (l : list string) (l' : list string) : list string :=
+match l with
+| [] => l'
+| h :: t => if inStrLst h l' then removeDupStr t l' else removeDupStr t (h :: l')
+end.   
+
+Fixpoint getPredNms'' (l : list term) : list string :=
+match l with
+| [] => []
+| (tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs) :: rest => indNm :: getPredNms'' rest
+| (tApp (tVar indNm) lstArgs) :: rest => indNm :: getPredNms'' rest
+| _ :: rest => getPredNms'' rest
+end.
+Definition getPredNms (l : list term) : list string :=
+removeDupStr (getPredNms'' l) [].
+
+Definition getCstrPredOcc (cstr : string * term) : string * list string :=
+(fst cstr, getPredNms (getPredOcc cstr)). 
+(*
+list (((string × list Ast.term) × list Ast.term) × list (string × Ast.term))
+*)
+
+Fixpoint getFixptData (data : list (((string × list term) × list term) × list (string × term))) : list (((string × list term) × list term) × list (string × list string)) :=
+match data with
+| [] => []
+| h :: t => (fst h, (map getCstrPredOcc (snd h))) :: getFixptData t
+end.
+
+Fixpoint prodInOut (ls : list (((string × list term) × list term) × list (string × list string))) : ((list (((string × term) × term) × list (string × list string)))) :=
+match ls with
+| [] => []
+| ((((p1,p2),p3), l4) :: rest) => ((((p1, (prodTerm p2)), (prodTerm p3)), l4) :: prodInOut rest)
+end. 
+             
+Definition conjLHS (c : ((string * string) * term)) : term :=
+match snd c with
+| tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 => t1
+| _ => <%true%>
+end. 
+Check nth.
+
+Fixpoint getVNmsOne (n : nat) (vArgs : list term) : list string :=
+match vArgs with
+| [] => []
+| tVar str :: rest => match n with
+                      | 0 => [str]
+                      | S m => getVNmsOne m rest
+                      end
+| _ :: rest =>        match n with
+                      | 0 => []
+                      | S m => getVNmsOne m rest
+                      end 
+end. 
+
+Fixpoint getVNms (l : list nat) (vArgs : list term) : list string :=
+match l with
+| [] => []
+| h :: rest => app (getVNmsOne h vArgs) (getVNms rest vArgs)
+end.                                         
+                       
+
+
+Fixpoint conjInVars (c : ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) : list string :=
+match modes with
+| [] => []
+| h :: rest => if String.eqb (fst h) (fst (fst c)) then match snd c with 
+                                                        | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 (tApp (tVar str) lstVar) => getVNms (fst (snd h)) lstVar                                                                        
+                                                        | _ => []
+                                                        end
+                                                        else conjInVars c rest
+end.                                                          
+
+
+
+Fixpoint conjOutVars (c : ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) : list string :=
+match modes with
+| [] => []
+| h :: rest => if String.eqb (fst h) (fst (fst c)) then match snd c with 
+                                                        | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 (tApp (tVar str) lstVar) => getVNms (snd (snd h)) lstVar                                                                        
+                                                        | _ => []
+                                                        end
+                                                        else conjOutVars c rest
+end. 
+Check concat.
+
+Fixpoint getAllVarsTpInf' (c : ((string * string) * term))  (tpData : list (string × list (string × term))) : list (string * term) :=
+match tpData with
+| [] => []
+| h :: rest => if String.eqb (snd (fst c)) (fst h) then snd h else   getAllVarsTpInf' c rest
+end.
+                                                         
+
+Compute app [1] [2;3].
+Definition getAllVarsTpInf (c : ((string * string) * term)) (tpData : list ((string × term) × list (string × list (string × term)))) :=
+getAllVarsTpInf' c (concat (map snd tpData)).
+
+Definition allIndTpData (data : list (((string × list term) × list term) × list (string × term))) : list (string * list term) :=
+map (fun x => (fst (fst (fst x)), app (snd (fst (fst x))) (snd (fst x )))) data.
+
+
+
+Definition animationTpOne (data :  (((string × list term) × list term) × list (string × term))) :  (string * term) :=
+((fst (fst (fst data))), (tProd {| binder_name := nAnon; binder_relevance := Relevant |} <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%outcomePoly%> [prodTerm (snd (fst (fst data)))]) (tApp <%outcomePoly%> [prodTerm ((snd (fst data)))])))). 
+
+Definition animationTp (data :  list (((string × list term) × list term) × list (string × term))) :  list (string * term) :=
+map animationTpOne data.
+
+
+
+Fixpoint getfmLstOne {A : Type} (l : string) (l' : list (string * A)) : list (string * A) :=
+match l' with
+| [] => []
+| h :: rest => if String.eqb l (fst h) then [h] else getfmLstOne l rest
+end.
+
+Fixpoint getfmLst {A : Type} (l : list string) (l' : list (string * A)) : list (string * A) :=
+match l with
+| [] => []
+| h :: rest => app (getfmLstOne h l') (getfmLst rest l') 
+end.
+
+
+
+Fixpoint getPredOccAn' (c : ((string * string) * term)) (fixptInf' : list (string × list string)) (anTp : list (string * term)) : list (string * term) :=
+match fixptInf' with
+| [] => []
+| h :: rest => if String.eqb (snd (fst c)) (fst h) then (getfmLst (snd h) anTp) else getPredOccAn' c rest anTp
+end.  
+
+Definition getPredOccAn (c : ((string * string) * term)) (fixptInf : list (((string × term) × term) × list (string × list string))) 
+                        (anTp : list (string * term))  : list (string * term) :=
+                        
+getPredOccAn' c (concat (map snd fixptInf)) anTp.
+
+Definition getVarsTp (lstVar : list string) (listallVTp : list (string * term)) : list (string * term) :=
+getfmLst lstVar listallVTp. 
+
+Fixpoint clauseLstOne'  (indNm :   string) (cstrs : list (string * term)) : list ((string * string) * term):=
+match cstrs with
+| [] => []
+| (str, t) :: rest => ((indNm, str), t) :: clauseLstOne' indNm rest  
+end.
+
+Definition clauseLstOne'' (dataOne :   (((string × list term) × list term) × list (string × term))) 
+                         : list ((string * string) * term):=
+clauseLstOne' (fst (fst (fst dataOne))) (snd dataOne).
+
+Definition clauseLst (data :   list (((string × list term) × list term) × list (string × term))) : list ((string * string) * term):=
+concat (map clauseLstOne'' data).  
+  
+Unset Universe Checking.
+ 
+Definition anOneCl {A : Type} (ind : A) (kn : kername)  (oneClause : ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad term :=
+allClauseData <- getData' kn modes ;;
+mut <- tmQuoteInductive kn ;; 
+let allTpData := (getClauseTpInfo (ind_bodies mut)) in
+let cstrNm := snd (fst oneClause) in 
+
+                       
+let fixptData := prodInOut (getFixptData allClauseData) in
+let conjlhs := conjLHS oneClause in
+
+let allVarTp := getAllVarsTpInf oneClause allTpData in
+let inV := getVarsTp (conjInVars oneClause modes) (allVarTp) in
+let outV := getVarsTp (conjOutVars oneClause modes) (allVarTp) in
+let predTps := allIndTpData allClauseData in
+let predTpsAn := animationTp allClauseData in
+let predTpsOccAn := getPredOccAn oneClause fixptData predTpsAn in
+
+(animateListLetAndPredGuard3 ind kn conjlhs cstrNm inV outV modes predTps allVarTp predTpsOccAn fuel). 
+
+
+Fixpoint animAllClLst {A : Type} (ind : A) (kn : kername) (clLst : list ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
+
+
+match clLst with
+| [] => tmReturn []
+| c1 :: cRest => c1An <- anOneCl ind kn c1 modes fuel ;; cRestAn <- animAllClLst ind kn cRest modes fuel ;; tmReturn (c1An :: cRestAn) 
+end.
+
+Definition animAllCl {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
+allClauseData <- getData' kn modes ;;
+
+let clLst := clauseLst allClauseData in
+
+
+tms <- animAllClLst ind kn clLst modes fuel ;;
+
+let inductData := prodInOut (getFixptData allClauseData) in
+
+let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
+          u' <- tmEval all u ;;
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          tmPrint t' ;;
+               f <- tmUnquote t';;
+               tmPrint f ;;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;; tmReturn tms.
+
+
+Set Universe Checking.
+
+(*
 
 Inductive type : Type :=
 | N : type
@@ -446,7 +654,7 @@ match e1 with
                         end
 end.                                                
 
-       
+      
 Inductive typing : list type -> term -> type -> Prop := (* Mode [0;1], [2]  = type inference, Mode [0;1;2] [] = type checking *) 
 | TCon : forall (n : nat) (cxt : list type) (ttm : term) (tp : type), ttm = Con n /\ (N) = tp -> typing cxt ttm tp
 
@@ -474,16 +682,40 @@ with lookup : list type -> nat -> type -> Prop :=
  
 
 
+MetaRocq Run (animAllCl typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Con 5))))).
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],((Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+ 
 
 MetaRocq Run (g <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "clauseDataTyping" g).
 
 Compute clauseDataTyping.
+Compute prodInOut (getFixptData clauseDataTyping).
 
 
 MetaRocq Run (mut <- tmQuoteInductive <? typing ?> ;; tmDefinition "typingDatatyping" (getClauseTpInfo (ind_bodies mut))).
 
 Compute typingDatatyping.
+
+*)
+
+
+
+ 
 
 
 

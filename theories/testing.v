@@ -100,7 +100,7 @@ Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list n
 Compute genRelcstr16Animated genRel14AnimatedTopFn 5 (successPoly (nat * (list nat)) (4, [4])).
 (*should return noMatch *)
 
-
+(*
 
 Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([1;2], [0] *)
  | appNil : forall (l1 l2 l3 : list nat), ([]) = l1 /\ l2 = l3 -> append l1 l2 l3
@@ -217,13 +217,8 @@ Compute append'AnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;6], [
 Compute append''AnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7], [8;7;9;7;8])).
 Compute append''AnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([], [8;7;9;7;8])).
 
+*)
 
-Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
- | even0 : forall (w : nat), w = 0 -> even w true 
- | evenSucc : forall (w w1 : nat), odd w true /\ w1 = (S w) -> even w1 true
-with odd : nat -> bool -> Prop :=
- | oddSucc : forall (w w1 : nat), even w true /\ w1 = (S w) -> odd w1 true. 
- 
  
  
  
@@ -327,10 +322,73 @@ with lookup : list type -> nat -> type -> Prop :=
  | lookupFn0 : forall (n : nat) (cxt : list type) (t : type) , 0 = n /\ N = t -> lookup cxt n t
  | lookupFnRec : forall (n m : nat) (t t' : type) (cxt : list type) , n = S m /\ lookup cxt m t /\ t' = Arr N t -> lookup cxt n t'.  
  
+MetaRocq Run (animAllCl typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
+
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Con 5))))). 
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],((Add (Con 5) (Var 1)))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
+ 
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
+
+
+
+Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
+ | even0 : forall (w : nat) (b : bool) , w = 0 /\ b = true -> even w b 
+ | evenSucc : forall (w w1 : nat) (b : bool) , odd w b /\ w1 = (S w) /\ b = true -> even w1 b
+with odd : nat -> bool -> Prop :=
+ | oddSucc : forall (w w1 : nat) (b : bool) , even w b /\ w1 = (S w) /\ b = true -> odd w1 b. 
+ 
+
+MetaRocq Run (animAllCl even <? even ?> [("even", ([0], [1]));("odd", ([0], [1]))] 100).
+
+Compute evenAnimatedTopFn 30 (successPoly nat 5).
+Compute evenAnimatedTopFn 30 (successPoly nat 4).
+Compute evenAnimatedTopFn 30 (successPoly nat 3).
+Compute evenAnimatedTopFn 30 (successPoly nat 0).
+
+
+
+Inductive suffix : list nat -> list nat -> list nat -> Prop := (* mode = ([0;2], [1] *)
+ | suffixNil : forall (l1 l2  : list nat), l1 = [] -> suffix l1 l2 l2
+ | suffixCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ suffix l2 l3 l4 /\ l5 = w :: l4 -> suffix l1 l3 l5.
+
+MetaRocq Run (animAllCl suffix <? suffix ?> [("suffix", ([0;2], [1]))] 100).
+
+Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7;9;7;8], [8;7;9;7;8])).
+
+Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7;9;7;5], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;6], [8;7;9;7;8])).
+
+
+Inductive prefix : list nat -> list nat -> list nat -> Prop := (* mode = ([0;2], [1] *)
+ | prefixNil : forall (l1 l2  : list nat), l1 = [] -> prefix l1 l2 l2
+ | prefixCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ prefix l2 l3 l4 /\ l5 = w :: l4 -> prefix l1 l3 l5.
+
+MetaRocq Run (animAllCl prefix <? prefix ?> [("prefix", ([1;2], [0]))] 100).
+
+Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([0;1], [2] *)
+ | appendNil : forall (l1 l2  : list nat), l1 = [] -> append l1 l2 l2
+ | appendCons : forall (w : nat) (l1 l2 l3 l4 l5 : list nat), l1 = w :: l2 /\ append l2 l3 l4 /\ l5 = w :: l4 -> append l1 l3 l5.
+
+MetaRocq Run (animAllCl append <? append ?> [("append", ([0;1], [2]))] 100).
 
 
 
 
+   
+(*
 
 MetaRocq Run (g <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "dataTyping" g).
 
@@ -406,31 +464,20 @@ Definition typingIndData :=
 
 
 MetaRocq Run (mkBigFixpt "typing" typingIndData <?typing?> 50).
+*)
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Con 5))))). 
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+
+
+(*
+
+
+Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
+ | even0 : forall (w : nat), w = 0 -> even w true 
+ | evenSucc : forall (w w1 : nat), odd w true /\ w1 = (S w) -> even w1 true
+with odd : nat -> bool -> Prop :=
+ | oddSucc : forall (w w1 : nat), even w true /\ w1 = (S w) -> odd w1 true. 
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
-
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],((Add (Con 5) (Var 1)))))).
-
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
- 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
- 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
-
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
-
-
-
-
-
-
-
-
-
 
 
 
@@ -447,7 +494,7 @@ Inductive rtc : (nat -> nat -> bool) -> nat -> nat -> Prop :=
  
  
  
- 
+*) 
  
  
  

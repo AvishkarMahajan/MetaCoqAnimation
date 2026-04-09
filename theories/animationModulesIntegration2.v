@@ -632,6 +632,8 @@ end.
 Fixpoint filterConjsPred (lst : list term) : list term :=
 match lst with
 | [] => []
+| (tApp <%eq%> [typeVar; t1; t2]) :: rest =>  filterConjsPred rest
+   
 | (tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs) :: rest => (tApp (tInd {| inductive_mind := (path, indNm); inductive_ind := 0 |} []) lstArgs) :: filterConjsPred rest
 
 | (tApp (tVar indNm) lstArgs) :: rest => (tApp (tVar indNm) lstArgs) :: filterConjsPred rest

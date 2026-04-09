@@ -15,12 +15,28 @@ Open Scope bs.
 
 
 
+Compute <%string%>.
 
+Definition eqb_prod (A : Type) (B : Type) (eqFnA : A -> A -> bool) (eqFnB : B -> B -> bool) (p1 : prod A B) (p2 : prod A B) : bool :=
+if andb (eqFnA (fst p1) (fst p2)) (eqFnB (snd p1) (snd p2)) then true else false.
+
+Definition eqb_indTp (A : Type) (eqFnA : A -> A -> bool) (a1 : indTp A) (a2 : indTp A) : bool :=
+match a1 with
+| indWrap a1' => match a2 with
+                 | indWrap a2' => eqFnA a1' a2'
+                 end
+end.                 
+Compute <%indTp nat%>.
 
 Fixpoint typeToBoolEq (t : term) : term :=
  match t with
   | <%nat%> => <%Nat.eqb%>
   | <%bool%> => <%Bool.eqb%>
+  | tInd
+         {|
+           inductive_mind := (MPdot (MPfile ["bytestring"; "Utils"; "MetaRocq"]) "String", "t");
+           inductive_ind := 0
+         |} [] => <%String.eqb%> 
  (* | (tApp
          (tInd
             {|
@@ -30,6 +46,10 @@ Fixpoint typeToBoolEq (t : term) : term :=
   | tInd {| inductive_mind := (defLoc, str); inductive_ind := _j |} [] => tConst (defLoc, (String.append "eqFn" str)) []
 
   | tApp <%list%> [tp] => tApp <%@eqb_list%> [tp; (typeToBoolEq tp)]
+  | tApp <%prod%> [tp1 ; tp2] => tApp <%eqb_prod%> [tp1; tp2; (typeToBoolEq tp1); (typeToBoolEq tp2)]
+  | tApp
+         (tInd {| inductive_mind := (MPfile ["utils2"; "Animation"], "indTp"); inductive_ind := 0 |} [])
+         [tp] => tApp <%eqb_indTp%> [tp; typeToBoolEq tp]
   | _ => <% (false) %>
  end.
 
@@ -37,6 +57,11 @@ Fixpoint chkEqType (t : term) : bool :=
   match t with
   | <%nat%> => true
   | <%bool%> => true
+  | tInd
+         {|
+           inductive_mind := (MPdot (MPfile ["bytestring"; "Utils"; "MetaRocq"]) "String", "t");
+           inductive_ind := 0
+         |} [] => true
  (* | (tApp
          (tInd
             {|
@@ -45,9 +70,18 @@ Fixpoint chkEqType (t : term) : bool :=
          [<%nat%>]) => true *)
   | tInd {| inductive_mind := (_defLoc, _str); inductive_ind := _j |} [] => true
   | tApp <%list%> [tp] => chkEqType tp
+  | tApp <%prod%> [tp1 ; tp2] => andb (chkEqType tp1) (chkEqType tp2)
+  | tApp
+         (tInd {| inductive_mind := (MPfile ["utils2"; "Animation"], "indTp"); inductive_ind := 0 |} [])
+         [tp] => chkEqType tp
   | _ => false
  end.
+Print eqb_list. 
 
+(*
+Definition chkEqType (t : term) : bool :=
+  true.
+*)
 Parameter inValidConj : term.
 
 Fixpoint getListConjLetBind (bigConj : term) : list term :=
@@ -392,7 +426,7 @@ Definition genFunAnimateEqPartialLetClause' {A : Type} (induct : A) (kn : kernam
      let t1 := (tApp <%optionToOutcome%> [postInType'; outputTp; t0]) in
      t' <- tmEval all (removeopTm (DB.deBruijnOption t1)) ;;
      tmReturn t')
-     else tmFail "cannot process conj".
+     else tmFail "no boolean equality over some type".
 
 Definition animateOneConjEqGuard (conj : term) (partialGuard : term)  :  term :=
   match conj with

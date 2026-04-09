@@ -566,6 +566,8 @@ Inductive outcomePoly (A : Type) : Type :=
 | successPoly : A -> outcomePoly A
 | noMatchPoly : outcomePoly A.
 
+Inductive indTp (A : Type) : Type :=
+| indWrap : A -> indTp A.
 
 
 (** Build a product type from a list of output variable specs.
