@@ -22,21 +22,28 @@ Print option.
 
 CoInductive Stream : Set := Seq { hd : nat; tl : Stream }.
 Print Seq.
+(*
 
 CoInductive polyStream (A : Type) := 
 | Scons : A -> polyStream A -> polyStream A.
 
 Compute Scons nat 4.
 
-CoFixpoint makeStm (A : Type) (f : nat -> A) (n0 : nat) : polyStream A :=
-Scons A (f n0) (makeStm A f (S n0)). 
-    
+CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : polyStream B :=
+Scons B (f n0 inp) (makeStm A B f (S n0) inp). 
+
+Definition makeStm0 (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : polyStream B :=
+makeStm A B f 0 inp.
+ 
+
+  
 Print hd.
+*)
 
 CoInductive Counter : Type :=
 | incr : Counter -> Counter.
 
-CoInductive coBool : Type :=
+Inductive coBool : Type :=
 | coT : coBool
 | coF : coBool.
 
@@ -59,54 +66,38 @@ match s with
 | Scons h0 t0 => t0
 end.
 
+
+Fixpoint StmN {A : Type} (n : nat) (s : polyStream A) :  A :=
+match n with
+| 0 => hdPoly s
+| S n => StmN n (tlPoly s)
+end.
+
+
+
+
+
+
+Parameter zipStRest : Stream.
+
+
+
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
  | zip: forall n m s1 s2 s3 s4 s5 s6, s1 = Seq n s2  /\ s3 = Seq m s4 /\ zipSt s2 s4 s5 /\ s6 = Seq n ((Seq m) s5)
                       -> zipSt s1 s3 s6. 
 
 
-MetaRocq Run (animAllCl zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
-
-Print zipStAnimatedTopFn.
-Parameter s : Stream.
-Definition zsatf :=
-fix zipStAnimatedTopFn (fuel : nat) (input : outcomePoly (Stream × Stream)) {struct fuel} :
-    outcomePoly Stream :=
-  match fuel with
-  | 0 => successPoly Stream s
-  | 1 => successPoly Stream s
-  | 2 => successPoly Stream s
-  | S remFuel =>
-      dispatchOutcomePolyExt (Stream × Stream) Stream [zipAnimated zipStAnimatedTopFn] remFuel input
-  end
-with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
-  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
-  match fuel' with
-  | 0 => fuelErrorPoly B
-  | S remFuel' =>
-      match lst with
-      | [] => noMatchPoly B
-      | h :: t =>
-          match h remFuel' input' with
-          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
-          | _ => h remFuel' input'
-          end
-      end
-  end
-for
-zipStAnimatedTopFn.
+MetaRocq Run (animAllClCoInd zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
 
 
-Compute hdPoly (tlPoly (tlPoly (makeStm (outcomePoly Stream) (fun fuel => (zsatf fuel (successPoly (Stream * Stream) ((from 7), (from 9))))) 5))).
+    
 
 
 
 
 
 
-
-
-
+Compute (StmN 9 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
 
 
 
@@ -148,8 +139,46 @@ with dispatchOutcomePolyExt
 for
 eqStAnimatedTopFn.
 
+MetaRocq Run (t <- tmQuote (fix eqStAnimatedTopFn (fuel : nat) (input : outcomePoly (Stream × Stream)) {struct fuel} :
+    outcomePoly coBool :=
+  match fuel with
+  | 0 => successPoly coBool b
+  | 1 => successPoly coBool b
+  | 2 => successPoly coBool b
+  | S remFuel =>
+      dispatchOutcomePolyExt (Stream × Stream) coBool [eqCAnimated eqStAnimatedTopFn] remFuel input
+  end
+with dispatchOutcomePolyExt
+  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
+  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  match fuel' with
+  | 0 => fuelErrorPoly B
+  | S remFuel' =>
+      match lst with
+      | [] => noMatchPoly B
+      | h :: t =>
+          match h remFuel' input' with
+          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
+          | _ => h remFuel' input'
+          end
+      end
+  end
+for
+eqStAnimatedTopFn) ;; tmPrint t).
+
+
 
 Compute hdPoly (makeStm (outcomePoly coBool) (fun fuel => (topFn fuel (successPoly (Stream * Stream) ((from 4), (from 4))))) 5). 
+
+
+
+
+
+
+
+
+
+
 
 
 (*

@@ -237,6 +237,97 @@ Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (
 
                               |}]
                      ))  ; rarg := 0 |}.
+                     
+                     
+Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
+
+{|
+     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
+     dtype :=
+       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType])
+
+
+            (tApp (<%outcomePoly%>) [outputType]));
+     dbody :=
+
+
+          tLam "fuel" <%nat%>
+
+           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [outputType])
+
+               |} (tVar "fuel")
+               
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp <%successPoly%> [outputType; quoteConst' kn (String.append indNm "Rest")]
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel1"; binder_relevance := Relevant |}];
+                  bbody := (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "remFuel1"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [outputType])
+
+               |} (tVar "remFuel1")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp <%successPoly%> [outputType; quoteConst' kn (String.append indNm "Rest")]
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel2"; binder_relevance := Relevant |}];
+                  bbody := 
+                  
+                  (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "remFuel2"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [outputType])
+
+               |} (tVar "remFuel2")
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp <%successPoly%> [outputType; quoteConst' kn (String.append indNm "Rest")]
+                |};
+                {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := 
+                  
+                  
+                  
+                  tApp (tVar "dispatchOutcomePolyExt") [inputType ; outputType; (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) ); tVar "remFuel1"; tVar "input"]
+
+                              |}])|}])|}]))
+
+                ; rarg := 0 |}.                     
 
 
 
@@ -251,6 +342,12 @@ Fixpoint mkAllIndTop' (inductData : (list ((((string) * (term)) * (term)) * (lis
   | [] => []
   | h :: t => (mkOneIndTop (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h) kn) :: mkAllIndTop' t kn
  end.
+ 
+Fixpoint mkAllIndTopCoInd' (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
+ match inductData with
+  | [] => []
+  | h :: t => (mkOneIndTopCoInd (fst (fst (fst h))) (snd (fst (fst h))) (snd (fst h)) (snd h) kn) :: mkAllIndTopCoInd' t kn
+ end. 
 
 (** Add a definition to a recursive fixpoint block. *)
 Definition addToRecBlk (recBlock : term) (t : def term) :=
@@ -288,6 +385,10 @@ Definition dispatchExtTm := hd default (inspectFix dispatchExtTm').
 (** Create all top-level animated inductive definitions with dispatch. *)
 Definition mkAllIndTop (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
 app (mkAllIndTop' inductData kn) [dispatchExtTm].
+
+Definition mkAllIndTopCoInd (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
+app (mkAllIndTopCoInd' inductData kn) [dispatchExtTm].
+
 
 Fixpoint mkIndData (data : (list (((string * list term) * list term) * (list (string * term))))) (indNames : list string) :=
  match data with
@@ -347,6 +448,20 @@ Definition mkBigFixpt (nmTopInduct : string) (inductData : (list ((((string) * (
                         (kn : kername) (fuel : nat) : TemplateMonad unit :=
           
           let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
+          u' <- tmEval all u ;;
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          tmPrint t' ;;
+               f <- tmUnquote t';;
+               tmPrint f ;;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append nmTopInduct "AnimatedTopFn") (Some hnf) ;; tmMsg "done".
+
+
+
+Definition mkBigFixptCoInd (nmTopInduct : string) (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string))))))
+                        (kn : kername) (fuel : nat) : TemplateMonad unit :=
+          
+          let u := (mkrecFn (mkAllIndTopCoInd (inductData) kn) 0)  in
           u' <- tmEval all u ;;
           t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
           tmPrint t' ;;
@@ -548,7 +663,33 @@ clauseLstOne' (fst (fst (fst dataOne))) (snd dataOne).
 
 Definition clauseLst (data :   list (((string × list term) × list term) × list (string × term))) : list ((string * string) * term):=
 concat (map clauseLstOne'' data).  
-  
+
+CoInductive polyStream (A : Type) := 
+| Scons : A -> polyStream A -> polyStream A.
+
+
+
+CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : polyStream B :=
+Scons B (f n0 inp) (makeStm A B f (S n0) inp). 
+
+Definition makeStm0 (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : polyStream B :=
+makeStm A B f 0 inp.
+
+
+
+Fixpoint searchInTp (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (nm : string) : TemplateMonad term :=
+match inductData with
+ | [] => tmFail "cannot find input type"
+ | h :: t => if String.eqb (fst (fst (fst h))) nm then tmReturn (snd (fst (fst h))) else searchInTp t nm
+end. 
+
+Fixpoint searchOutTp (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (nm : string) : TemplateMonad term :=
+match inductData with
+ | [] => tmFail "cannot find input type"
+ | h :: t => if String.eqb (fst (fst (fst h))) nm then tmReturn ((snd (fst h))) else searchOutTp t nm
+end. 
+
+
 Unset Universe Checking.
  
 Definition anOneCl {A : Type} (ind : A) (kn : kername)  (oneClause : ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad term :=
@@ -597,6 +738,42 @@ let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
                tmPrint f ;;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;; tmReturn tms.
+
+
+
+
+Definition animAllClCoInd {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
+allClauseData <- getData' kn modes ;;
+
+let clLst := clauseLst allClauseData in
+
+(*
+(inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string))))))
+*)
+
+tms <- animAllClLst ind kn clLst modes fuel ;;
+
+let inductData := prodInOut (getFixptData allClauseData) in
+
+let u := (mkrecFn (mkAllIndTopCoInd (inductData) kn) 0)  in
+          u' <- tmEval all u ;;
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          tmPrint t' ;;
+               f <- tmUnquote t';;
+               tmPrint f ;;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;;
+              fnInTp <- searchInTp inductData (snd kn) ;;
+              fnOutTp <- searchOutTp inductData (snd kn);;
+              let tCoInd := tApp <%makeStm0%> [(tApp <%outcomePoly%> [fnInTp]) ; (tApp <%outcomePoly%> [fnOutTp]); t'] in
+              tCoInd'' <- tmEval all tCoInd ;;
+              fStm <- tmUnquote tCoInd'' ;;
+             
+              tmEval hnf (my_projT2 fStm) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFnStream") (Some hnf) ;; 
+              
+              
+              tmReturn tms.
 
 
 Set Universe Checking.
