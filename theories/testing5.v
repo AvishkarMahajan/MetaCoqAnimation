@@ -97,7 +97,7 @@ MetaRocq Run (animAllClCoInd zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
 
 
 
-Compute (StmN 9 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
+Compute (StmN 3 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
 
 
 
@@ -106,72 +106,12 @@ Compute (StmN 9 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 
 CoInductive eqSt : Stream -> Stream -> coBool -> Prop :=
  | eqC: forall n m s1 s2 s3 s4 b1, s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 b1  -> eqSt s1 s3 b1. 
 
+Parameter eqStRest : coBool.
+MetaRocq Run (animAllClCoInd eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
-MetaRocq Run (animAllCl eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
+Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 9), (from 9))))).
 
-Print eqStAnimatedTopFn.
-Parameter b : coBool.
-Definition topFn :=
-fix eqStAnimatedTopFn (fuel : nat) (input : outcomePoly (Stream × Stream)) {struct fuel} :
-    outcomePoly coBool :=
-  match fuel with
-  | 0 => successPoly coBool b
-  | 1 => successPoly coBool b
-  | 2 => successPoly coBool b
-  | S remFuel =>
-      dispatchOutcomePolyExt (Stream × Stream) coBool [eqCAnimated eqStAnimatedTopFn] remFuel input
-  end
-with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
-  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
-  match fuel' with
-  | 0 => fuelErrorPoly B
-  | S remFuel' =>
-      match lst with
-      | [] => noMatchPoly B
-      | h :: t =>
-          match h remFuel' input' with
-          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
-          | _ => h remFuel' input'
-          end
-      end
-  end
-for
-eqStAnimatedTopFn.
-
-MetaRocq Run (t <- tmQuote (fix eqStAnimatedTopFn (fuel : nat) (input : outcomePoly (Stream × Stream)) {struct fuel} :
-    outcomePoly coBool :=
-  match fuel with
-  | 0 => successPoly coBool b
-  | 1 => successPoly coBool b
-  | 2 => successPoly coBool b
-  | S remFuel =>
-      dispatchOutcomePolyExt (Stream × Stream) coBool [eqCAnimated eqStAnimatedTopFn] remFuel input
-  end
-with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
-  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
-  match fuel' with
-  | 0 => fuelErrorPoly B
-  | S remFuel' =>
-      match lst with
-      | [] => noMatchPoly B
-      | h :: t =>
-          match h remFuel' input' with
-          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
-          | _ => h remFuel' input'
-          end
-      end
-  end
-for
-eqStAnimatedTopFn) ;; tmPrint t).
-
-
-
-Compute hdPoly (makeStm (outcomePoly coBool) (fun fuel => (topFn fuel (successPoly (Stream * Stream) ((from 4), (from 4))))) 5). 
-
-
-
+Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
 
 
 
@@ -223,51 +163,12 @@ CoInductive length : Stream -> Counter -> Prop :=
 | plus1 : forall s c n s1 c1, s = Seq n s1 /\ length s1 c1 /\ c = incr c1 -> length s c. 
 
 
+Parameter lengthRest : Counter.
 
+MetaRocq Run (animAllClCoInd length <? length ?> [("length", ([0], [1]))] 500).
 
-MetaRocq Run (animAllCl length <? length ?> [("length", ([0], [1]))] 500).
+Compute (StmN 20 (lengthAnimatedTopFnStream (successPoly (Stream) (from 5)))).
 
-Print lengthAnimatedTopFn.
-(*
-Definition Artificial (A : Type)  (B : Type) :outcomePoly A -> outcomePoly B. Admitted.
-*)
-Parameter c : Counter.
-
-Check (successPoly Counter).
-
-
-CoFixpoint from (n : nat) : Stream :=
-Seq n (from (S n)).
-Print plus1Animated.
-Definition latf :=
-fix lengthAnimatedTopFn (fuel : nat) (input : outcomePoly Stream) {struct fuel} : outcomePoly Counter :=
-  match fuel with
-  | 0 => successPoly Counter c
-  | 1 => successPoly Counter c
-  | 2 => successPoly Counter c 
-  | S remFuel => dispatchOutcomePolyExt Stream Counter [plus1Animated lengthAnimatedTopFn] remFuel input
-  end
-with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
-  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
-  match fuel' with
-  | 0 => fuelErrorPoly B
-  | S remFuel' =>
-      match lst with
-      | [] => noMatchPoly B
-      | h :: t =>
-          match h remFuel' input' with
-          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
-          | _ => h remFuel' input'
-          end
-      end
-  end
-for
-lengthAnimatedTopFn.
-(*
-Print plus1Animated.
-*)
-Compute latf 20 (successPoly Stream (from 4)). 
 (*
 Check rest
                    (successPoly Stream

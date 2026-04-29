@@ -321,7 +321,7 @@ Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : te
                   
                   
                   
-                  tApp (tVar "dispatchOutcomePolyExt") [inputType ; outputType; (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                  tApp (tVar "dispatchOutcomePolyExtCoInd") [inputType ; outputType; (quoteConst' kn (String.append indNm "Rest")); (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
          <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
         (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) ); tVar "remFuel1"; tVar "input"]
 
@@ -375,19 +375,42 @@ Fixpoint dispatchOutcomePolyExt
       end
   end.
 
+Fixpoint dispatchOutcomePolyExtCoInd
+  (A B : Type) (e : B) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
+  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  match fuel' with
+  | 0 => successPoly B e
+  | S remFuel' =>
+      match lst with
+      | [] => noMatchPoly B
+      | h :: t =>
+          let res := h remFuel' input' in
+          match res with
+          | @noMatchPoly _ => dispatchOutcomePolyExtCoInd A B e t remFuel' input'
+          | _ => res
+          end
+      end
+  end.  
+
 (** Quote the dispatch function for embedding in generated code. *)
 MetaRocq Quote Definition dt := Eval compute in dispatchOutcomePolyExt.
 MetaRocq Run (dt' <- DB.undeBruijn dt ;; tmDefinition "dispatchExtTm'" dt').
 
+MetaRocq Quote Definition dtCo := Eval compute in dispatchOutcomePolyExtCoInd.
+MetaRocq Run (dtCo' <- DB.undeBruijn dtCo ;; tmDefinition "dispatchExtTmCoInd'" dtCo').
+
+
 (** Extract the dispatch term for use in fixpoint generation. *)
 Definition dispatchExtTm := hd default (inspectFix dispatchExtTm').
+Definition dispatchExtTmCoInd := hd default (inspectFix dispatchExtTmCoInd').
+
 
 (** Create all top-level animated inductive definitions with dispatch. *)
 Definition mkAllIndTop (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
 app (mkAllIndTop' inductData kn) [dispatchExtTm].
 
 Definition mkAllIndTopCoInd (inductData : (list ((((string) * (term)) * (term)) * (list (string * (list string)))))) (kn : kername) : list (def term) :=
-app (mkAllIndTopCoInd' inductData kn) [dispatchExtTm].
+app (mkAllIndTopCoInd' inductData kn) [dispatchExtTmCoInd].
 
 
 Fixpoint mkIndData (data : (list (((string * list term) * list term) * (list (string * term))))) (indNames : list string) :=

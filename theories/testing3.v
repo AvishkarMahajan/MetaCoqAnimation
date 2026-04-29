@@ -233,10 +233,40 @@ with value : tm -> bool -> Prop :=
       w = <{false}> /\ b = true -> value w b      
 
 where "t '-->' t'" := (step t t').
+(*
+Definition hdPoly {A : Type} (s : polyStream A) : A :=
+match s with 
+| Scons h0 t0 => h0
+end.
+
+Definition tlPoly {A : Type} (s : polyStream A) : polyStream A :=
+match s with 
+| Scons h0 t0 => t0
+end.
+
+
+Fixpoint StmN {A : Type} (n : nat) (s : polyStream A) :  A :=
+match n with
+| 0 => hdPoly s
+| S n => StmN n (tlPoly s)
+end.
 
 
 
 
+
+
+Parameter stepRest : tm.
+Parameter valueRest : bool.
+MetaRocq Run (animAllClCoInd step <? step ?> [("step", ([0], [1]));("value", ([0], [1]))] 100).
+
+Axiom vEqL : forall v : bool, Bool.eqb valueRest v = true.
+Axiom vEqR : forall v : bool, Bool.eqb v valueRest = true. 
+
+Compute Bool.eqb valueRest true.
+
+Compute (StmN 4 (stepAnimatedTopFnStream (successPoly tm testTm))).
+*)
 MetaRocq Run (animAllCl step <? step ?> [("step", ([0], [1]));("value", ([0], [1]))] 100).
 
 Compute (stepAnimatedTopFn 20 (stepAnimatedTopFn 20 (stepAnimatedTopFn 20 (successPoly tm testTm)))).
