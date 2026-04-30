@@ -28,52 +28,35 @@ Inductive indTp (A : Type) : Type :=
 Compute <%indWrap (nat -> nat)%>.
 *)
 
+Print indTp.
 
 
 
 
 
-Inductive trivialRel : (*sinstr*) (indTp (nat -> nat)) ->  bool ->  bool -> Prop :=
- | trivCl : forall f n m, m = n ->  trivialRel f m n.
- 
- 
-MetaRocq Run (animAllCl trivialRel <? trivialRel ?> [("trivialRel", ([0;1], [2]))] 200).
-   
 Unset Universe Checking.
 
-Definition animateListLetAndPredGuard10 {A : Type} (ind : A) (kn : kername) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
-bigConj <- general.animate2 kn ;;
-let listAllConjs := getListConjAll bigConj in
-let gConjsEq := filterConjsEq listAllConjs in
-(*
-lAC' <- tmEval all listAllConjs ;;
-*)
-(*tmPrint lAC';;*)
+Definition animAllClTerm {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (term) :=
+allClauseData <- getData' kn modes ;;
 
-lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
-lc'' <- tmEval all lConjs' ;;
-tmPrint lc'';;
-let lConjs := removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) in
-(*
-gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
-gConjs <- tmEval (all) gConjs' ;;
-*)
+let clLst := clauseLst allClauseData in
 
-let gConjsPred := filterConjsPred' (attachOutputVarToSortedConjs listAllConjs allVarTpInf modes predTypeInf)  in
 
-(*tmPrint lConjs;;
-tmPrint gConjsEq;;*)
-t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
-t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
-(*
-tmPrint t'';;
-*)
+tms <- animAllClLst ind kn clLst modes fuel ;;
 
-(* f <- tmUnquote t'' ;;
-tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append cstrNm "Animated") (Some hnf) ;;
-*)
-tmReturn t''.
+let inductData := prodInOut (getFixptData allClauseData) in
+
+let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
+          u' <- tmEval all u ;;
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          tmReturn t' (*;;
+               f <- tmUnquote t';;
+               tmPrint f ;;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;; tmReturn tms*).
+
+
+
 Set Universe Checking.
 (*
 
@@ -83,16 +66,25 @@ MetaRocq Run (myT <-animateListLetAndPredGuard10 trivialRel <? trivialRel ?> "tr
 MetaRocq Run (f <- tmUnquote wrongT ;; tmPrint f).
 *)
 
+Definition total_map (A : Type) := string -> A.
+Definition state := total_map nat.
 
+Definition eqFnstate (s1 s2 : state) : bool := true.
 
+Inductive trivialRel : (*sinstr*) (state) ->  bool ->  bool -> Prop :=
+ | trivCl : forall f n m, m = n ->  trivialRel f m n.
 
+MetaRocq Run (animAllCl trivialRel <? trivialRel ?> [("trivialRel", ([0;1], [2]))] 200).
+   
+ 
+ 
+MetaRocq Run (animAllCl trivialRel <? trivialRel ?> [("trivialRel", ([0;1], [2]))] 200).
+   
 
 
 
 
    
-Definition total_map (A : Type) := string -> A.
-Definition state := total_map nat.
 
 Inductive sinstr : Type :=
 | SPush (n : nat)
@@ -134,17 +126,17 @@ Definition unwrap (A: Type) (x : indTp A) : A :=
 match x with
 | indWrap x' => x'
 end.
-
+Print indTp.
  
 Inductive stack_step : (indTp state) -> list sinstr × list nat -> list sinstr × list nat -> Prop :=
    | SS_Push : forall  st stk n p ps0 ps1, ps0 = (SPush n :: p, stk) /\ ps1 = (p, n :: stk)  -> 
     stack_step st ps0 ps1 
-    
+   
     
    | SS_Load : forall  st stk i p ps0 ps1, ps0 = (SLoad i :: p, stk) /\ ps1 = (p, ((unwrap state st) i) :: stk) ->
     stack_step st ps0 ps1 
     
-  | SS_P : forall st stk n m p ps0 ps1, ps0 = (SPlus :: p, n::m::stk) /\ ps1 = (p, (m+n)::stk) ->
+ | SS_P : forall st stk n m p ps0 ps1, ps0 = (SPlus :: p, n::m::stk) /\ ps1 = (p, (m+n)::stk) ->
     stack_step st ps0 ps1 
   | SS_Minus : forall st stk n m p ps0 ps1, ps0 = (SMinus :: p, n::m::stk) /\ ps1 = (p, (m-n)::stk) ->
     stack_step st ps0 ps1 

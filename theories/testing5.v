@@ -19,6 +19,7 @@ Local Open Scope nat_scope.
 Open Scope bs.
 Print option.
 
+Print indTp.
 
 CoInductive Stream : Set := Seq { hd : nat; tl : Stream }.
 Print Seq.
@@ -43,14 +44,11 @@ Print hd.
 CoInductive Counter : Type :=
 | incr : Counter -> Counter.
 
-Inductive coBool : Type :=
-| coT : coBool
-| coF : coBool.
 
 
 Definition eqFnStream : Stream -> Stream -> bool := (fun s1 s2 => true).
 Definition eqFnCounter : Counter -> Counter -> bool := (fun s1 s2 => true).
-Definition eqFncoBool : coBool -> coBool -> bool := (fun s1 s2 => true). 
+          
 
 
 CoFixpoint from (n : nat) : Stream :=
@@ -89,27 +87,42 @@ CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
 
 MetaRocq Run (animAllClCoInd zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
 
-
+Print zipStAnimatedTopFn.
     
+Print zipStAnimatedTopFnStream.
+
+Check zipStAnimatedTopFnStream.
 
 
 
+Compute (StmN 1 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
 
 
-
-Compute (StmN 3 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
-
-
+Inductive coBool : Type :=
+| coWrap : bool -> coBool
+| symb : coBool.
 
 
 
 CoInductive eqSt : Stream -> Stream -> coBool -> Prop :=
  | eqC: forall n m s1 s2 s3 s4 b1, s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 b1  -> eqSt s1 s3 b1. 
 
-Parameter eqStRest : coBool.
+Definition eqStRest := symb.
+
+Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := 
+match c1 with
+| coWrap b1 => match c2 with
+               | coWrap b2 => Bool.eqb b1 b2
+               | _ => true
+               end
+
+| _ => true
+end.     
+
 MetaRocq Run (animAllClCoInd eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
 Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 9), (from 9))))).
+Print eqStAnimatedTopFnStream.
 
 Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
 

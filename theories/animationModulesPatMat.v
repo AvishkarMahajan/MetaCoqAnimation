@@ -1057,8 +1057,8 @@ match conjunct with
                        (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
                       
-
-                      u' <- DB.deBruijn u ;;
+                      u' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+                     
                       tmReturn u'
                      
                      
@@ -1077,7 +1077,7 @@ match conjunct with
                       u'' <- tmEval all u ;;
                       
 
-                      u' <- DB.deBruijn u ;;
+                      u' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
                       tmReturn u'
             
 
