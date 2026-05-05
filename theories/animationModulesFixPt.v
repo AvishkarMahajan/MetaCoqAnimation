@@ -238,7 +238,7 @@ Definition mkOneIndTop (indNm : string) (inputType : term) (outputType : term) (
                               |}]
                      ))  ; rarg := 0 |}.
                      
-                     
+(*                     
 Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
 
 {|
@@ -329,6 +329,56 @@ Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : te
 
                 ; rarg := 0 |}.                     
 
+*)
+
+                   
+Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
+
+{|
+     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
+     dtype :=
+       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType])
+
+
+            (tApp (<%outcomePoly%>) [outputType]));
+     dbody :=
+
+
+          tLam "fuel" <%nat%>
+
+           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [outputType])
+
+               |} (tVar "fuel")
+               
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp <%successPoly%> [outputType; quoteConst' kn (String.append indNm "Rest")]
+                |};
+              {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := 
+                  
+                  
+                  
+                  tApp (tVar "dispatchOutcomePolyExtCoInd") [inputType ; outputType; (quoteConst' kn (String.append indNm "Rest")); (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) ); tVar "remFuel"; tVar "input"]
+
+                              |}]))
+
+                ; rarg := 0 |}.                     
 
 
 
@@ -387,6 +437,7 @@ Fixpoint dispatchOutcomePolyExtCoInd
           let res := h remFuel' input' in
           match res with
           | @noMatchPoly _ => dispatchOutcomePolyExtCoInd A B e t remFuel' input'
+          | @fuelErrorPoly _ => successPoly B e
           | _ => res
           end
       end

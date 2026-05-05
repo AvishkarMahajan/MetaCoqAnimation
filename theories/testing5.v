@@ -73,13 +73,26 @@ end.
 
 
 
-
-
-
+CoInductive Integrate : Stream -> Stream -> Prop :=
+| integ : forall s1 s2 s3 n s4 s5 , s1 = Seq n s2 /\ Integrate s2 s3 /\ addStm n s3 s5 /\ s4 = (Seq n s5) -> Integrate s1 s4
+with
+addStm : nat -> Stream -> Stream -> Prop :=
+| add0 : forall s m, m = 0 -> addStm m s s
+| addS : forall s m n s1 s2, m = S n /\ addStm n s s1 /\ add1 s1 s2 -> addStm m s s2
+with
+add1 : Stream -> Stream -> Prop :=
+| plus1 : forall s s1 n s2 s3, s = Seq n s1 /\ add1 s1 s2 /\ s3 = Seq (S n) s2 -> add1 s s3.
+Parameter IntegrateRest : Stream.
+Parameter addStmRest : Stream.
+Parameter add1Rest : Stream.
 Parameter zipStRest : Stream.
 
+MetaRocq Run (animAllClCoInd Integrate <? Integrate ?> [("Integrate", ([0], [1])); ("addStm", ([0;1], [2])); ("add1", ([0], [1]))] 500).
 
-
+Print IntegrateAnimatedTopFn.
+(*
+Compute (StmN 20 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))).
+*)
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
  | zip: forall n m s1 s2 s3 s4 s5 s6, s1 = Seq n s2  /\ s3 = Seq m s4 /\ zipSt s2 s4 s5 /\ s6 = Seq n ((Seq m) s5)
                       -> zipSt s1 s3 s6. 
@@ -95,37 +108,31 @@ Check zipStAnimatedTopFnStream.
 
 
 
-Compute (StmN 1 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
+Compute (StmN 6 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
 
 
 Inductive coBool : Type :=
-| coWrap : bool -> coBool
-| symb : coBool.
+| coT : coBool
+| coF : coBool.
 
 
 
 CoInductive eqSt : Stream -> Stream -> coBool -> Prop :=
- | eqC: forall n m s1 s2 s3 s4 b1, s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 b1  -> eqSt s1 s3 b1. 
+ | eqC: forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 u   -> eqSt s1 s3 u
+ | neqC : forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ Nat.eqb n m = false /\  u = coF   -> eqSt s1 s3 u. 
 
-Definition eqStRest := symb.
+Parameter eqStRest : coBool.
 
-Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := 
-match c1 with
-| coWrap b1 => match c2 with
-               | coWrap b2 => Bool.eqb b1 b2
-               | _ => true
-               end
+Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := true.
 
-| _ => true
-end.     
 
 MetaRocq Run (animAllClCoInd eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
 Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 9), (from 9))))).
-Print eqStAnimatedTopFnStream.
 
-Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
+Compute (StmN 0 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
 
+Compute (StmN 7 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
 
 
 
@@ -181,6 +188,64 @@ Parameter lengthRest : Counter.
 MetaRocq Run (animAllClCoInd length <? length ?> [("length", ([0], [1]))] 500).
 
 Compute (StmN 20 (lengthAnimatedTopFnStream (successPoly (Stream) (from 5)))).
+
+
+
+
+
+
+
+
+(* Correctness criteria :
+
+(One successPoly element in stream)
+
+Co-Inductive or Inductive interpretation of R
+
+given an input i to relation R, say (i,R) is 'order independent with result' if the following holds : there exists j (j might not be fixed) st. R(i,j) holds, where at each stage of the computation when solving for 
+for some relation instance R'(i',j') the clauses in R' (where R' may be R itself) maybe applied in aribtrary order. 
+
+Then given such an (i, R) if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = successPoly (F u RRest), then there exists some k st
+R(i, F u k) holds. (i.e. u is guaranteed to be the prefix of j where R(i,j) holds.)
+
+if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = successPoly (j) where j does not use the symbol RRest, then it must be the case that 
+R (i,j) holds.
+
+(one noMatch element in result stream)
+
+Co-Inductive or Inductive interpretation of R 
+
+Given R say R is 'order independent' if for any any input i there exists j (possibly not fixed) st. R (i,j) under arbitrary clause order of  the involved relations at each stage of the computation or 
+it is always the case that there is no j st. R (i, j) regardless of the clause order used at each stage of the computation. 
+
+Then given such an R and on some aribitrary input i, if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = noMatchPoly then there exists no j st. R(i,j).
+
+
+(Constant successPoly stream)
+
+Co-Inductive interpretation of R or Inductive interpretation of R with all inductive types : 
+
+Given R is order independent if there exists m st. for all n>= m, stmN n RTopFnAnimatedStream successPoly (i) = successPoly j, for some fixed j where j does  not use the parameter RRest, then it must be the case that R(i,j).
+(but not for inductive interpretation of a relation over co-inductive types, for eg. the inductive interpretation of zipSt is empty, but zipStAnimatedTopFnStream is not a stream of noMatchPoly)
+
+
+
+
+(given an inductive interpretation of a relation involving only inductive types the output stream is guaranteed to become a constant stream without 
+the symbol RRest after a finite n. Not the case for co-induction.) 
+
+
+
+The statements can be simplified in case the clauses in R and all sub-relations are non-overlapping. Then R is guaranteed to be 
+order independent. If in addition R is total then for every input i (i, R) is order independent with result
+
+Note that the key difference between an inductive interpretation and co-inductive interpretion is wheter or not an input has a result at all, the statements are saying that if 
+both interpretations produce a result for a given input, the result must have the same 'shape' 
+
+*)
+
+
+
 
 (*
 Check rest

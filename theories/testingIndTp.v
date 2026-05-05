@@ -80,13 +80,17 @@ Inductive state' : Type :=
 Definition state := state'.
 
 
-Inductive trivialRel : (state) ->  bool ->  bool -> Prop :=
- | trivCl2 : forall f n m, m = n ->  trivialRel f m n.
+Inductive trivialRel : (state) -> Prop :=
+ | trivCl2 : forall f, trivialRel f.
 
-MetaRocq Run (myT <-animateListLetAndPredGuard10 trivialRel <? trivialRel ?> "trivCl2" [("f",<%state%>); ("m", <%bool%>)] [("n", <%bool%>)] [("trivialRel",([0;1],[2]))] [("trivialRel",[<%state%>; <%bool%>;<%bool%>])] 
-               [("f",<%state%>); ("m", <%bool%>);("n", <%bool%>)] [] 100 ;; tmDefinition "wrongT" myT).
+MetaRocq Run (myT <-animateListLetAndPredGuard10 trivialRel <? trivialRel ?> "trivCl2" [("f",<%state%>)] [] [("trivialRel",([0],[]))] [("trivialRel",[<%state%>])] 
+               [("f",<%state%>)] [] 100 ;; tmDefinition "wrongT" myT).
 
 Compute wrongT.
+
+MetaRocq Run (f <- tmUnquote wrongT ;; tmPrint f).
+
+
 
 
 Inductive trivialRel' : (state') ->  bool ->  bool -> Prop :=
@@ -99,6 +103,64 @@ Compute rightT.
 
 MetaRocq Run (f <- tmUnquote rightT ;; tmPrint f).
 
-MetaRocq Run (f <- tmUnquote wrongT ;; tmPrint f).
+MetaRocq Run (t <- tmQuote (fun (fuel : nat) (input : outcomePoly (state × bool)) =>
+    let f := splitOutcomePolyFst state bool input in
+    let m := splitOutcomePolySnd state bool input in
+    let n :=
+      optionToOutcome bool bool
+        (fun fuel0 : nat =>
+         match fuel0 with
+         | 0 => fuelErrorPolyCstFn (outcomePoly bool) (option bool)
+         | S _ =>
+             defaultVal (outcomePoly bool) (outcomePoly (option bool)) (noMatchPoly (option bool))
+               (dispatchInternal (outcomePoly bool) (outcomePoly (option bool))
+                  [fun v2 : outcomePoly bool =>
+                   match v2 with
+                   | @successPoly _ m0 =>
+                       Some (successPoly (option bool) (let n := m0 in if true then Some n else None))
+                   | _ => None
+                   end;
+                   fun v2 : outcomePoly bool =>
+                   match v2 with
+                   | @fuelErrorPoly _ => Some (fuelErrorPoly (option bool))
+                   | _ => None
+                   end])
+         end)
+        fuel m
+      in
+    (fun gcPred : outcomePoly bool =>
+     match gcPred with
+     | @fuelErrorPoly _ => fuelErrorPoly bool
+     | @successPoly _ true =>
+         optionToOutcome (state × bool × bool) bool
+           (fun fuel0 : nat =>
+            match fuel0 with
+            | 0 => fuelErrorPolyCstFn (outcomePoly (state × bool × bool)) (option bool)
+            | S _ =>
+                defaultVal (outcomePoly (state × bool × bool)) (outcomePoly (option bool))
+                  (noMatchPoly (option bool))
+                  (dispatchInternal (outcomePoly (state × bool × bool)) (outcomePoly (option bool))
+                     [fun v2 : outcomePoly (state × bool × bool) =>
+                      match v2 with
+                      | @successPoly _ (_, (m0, n0)) =>
+                          Some
+                            (successPoly (option bool)
+                               (if (true && Bool.eqb m0 n0)%bool then Some n0 else None))
+                      | _ => None
+                      end;
+                      fun v2 : outcomePoly (state × bool × bool) =>
+                      match v2 with
+                      | @fuelErrorPoly _ => Some (fuelErrorPoly (option bool))
+                      | _ => None
+                      end])
+            end)
+           fuel
+           ((fun (o0 : outcomePoly state) (o1 o2 : outcomePoly bool) =>
+             joinOutcome state' (bool × bool) o0 (joinOutcome bool bool o1 o2)) f m n)
+     | _ => noMatchPoly bool
+     end) (successPoly bool true)) ;; tmPrint t ;; f' <- tmUnquote t;; tmPrint f').
+Print rightT.
+
+MetaRocq Run (f <- tmUnquoteTyped (nat -> outcomePoly (state × bool) -> outcomePoly bool) wrongT ;; tmPrint f).
 
 
