@@ -769,19 +769,26 @@ Unset Universe Checking.
 Definition anOneCl {A : Type} (ind : A) (kn : kername)  (oneClause : ((string * string) * term)) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad term :=
 allClauseData <- getData' kn modes ;;
 mut <- tmQuoteInductive kn ;; 
-let allTpData := (getClauseTpInfo (ind_bodies mut)) in
-let cstrNm := snd (fst oneClause) in 
+allTpData <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;;
+cstrNm  <- tmEval all (snd (fst oneClause)) ;; 
 
                        
-let fixptData := prodInOut (getFixptData allClauseData) in
-let conjlhs := conjLHS oneClause in
+fixptData <- tmEval all (prodInOut (getFixptData allClauseData)) ;;
+conjlhs <- tmEval all (conjLHS oneClause) ;;
 
-let allVarTp := getAllVarsTpInf oneClause allTpData in
-let inV := getVarsTp (conjInVars oneClause modes) (allVarTp) in
-let outV := getVarsTp (conjOutVars oneClause modes) (allVarTp) in
-let predTps := allIndTpData allClauseData in
-let predTpsAn := animationTp allClauseData in
-let predTpsOccAn := getPredOccAn oneClause fixptData predTpsAn in
+allVarTp <- tmEval all (getAllVarsTpInf oneClause allTpData) ;; 
+inV <- tmEval all (getVarsTp (conjInVars oneClause modes) (allVarTp)) ;;
+outV <- tmEval all (getVarsTp (conjOutVars oneClause modes) (allVarTp));; 
+predTps <- tmEval all (allIndTpData allClauseData) ;;
+predTpsAn <- tmEval all (animationTp allClauseData) ;;
+predTpsOccAn <- tmEval all (getPredOccAn oneClause fixptData predTpsAn) ;;
+
+
+
+
+
+
+
 
 (animateListLetAndPredGuard3 ind kn conjlhs cstrNm inV outV modes predTps allVarTp predTpsOccAn fuel). 
 
@@ -797,12 +804,12 @@ end.
 Definition animAllCl {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
 allClauseData <- getData' kn modes ;;
 
-let clLst := clauseLst allClauseData in
+clLst <- tmEval all (clauseLst allClauseData) ;;
 
 
 tms <- animAllClLst ind kn clLst modes fuel ;;
 
-let inductData := prodInOut (getFixptData allClauseData) in
+inductData <- tmEval all (prodInOut (getFixptData allClauseData)) ;; 
 
 let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
           u' <- tmEval all u ;;

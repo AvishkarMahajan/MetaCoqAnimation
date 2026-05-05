@@ -601,8 +601,10 @@ end.
 
 
 
-Definition animateListLetAndPredGuard {A : Type} (ind : A) (kn : kername) (lConjs'' : list (term × (string × term))) (gConjsEq : list term) (gConjsPred : list (term × (string × term))) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+Definition animateListLetAndPredGuard {A : Type} (ind : A) (kn : kername) (lConjs'' : list (term × (string × term))) (gConjsEq'' : list term) (gConjsPred'' : list (term × (string × term))) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 lConjs <- tmEval all lConjs'';;
+gConjsEq <- tmEval all gConjsEq'';;
+gConjsPred <- tmEval all gConjsPred'';;
 letBind <- animateListConjLetCl  (ind) kn  lConjs  (fun t : term => t) (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
 gFun <- animateListConjGuardEq ind kn gConjsEq allVarTpInf outVars fuel ;;
 let guardConEqAn := (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)]) in 

@@ -93,7 +93,7 @@ Inductive stack_step : (indTp state) -> list sinstr × list nat -> list sinstr �
     stack_step st ps0 ps1 .
     
     
-(* 
+(*
 Unset Universe Checking.
 Definition animAllCl'' {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
 allClauseData <- getData' kn modes ;;
@@ -130,16 +130,18 @@ match conjs with
  | [] => tmReturn partialLetfn
  | h :: t => lFn' <- animateOneConjLetCl'' ind kn h partialLetfn (modes) (predTypeInf) (allVarTpInf) fuel ;; animateListConjLetCl'' ind kn t lFn' (modes) (predTypeInf) (allVarTpInf) fuel
 end.
-Definition animateListLetAndPredGuard'' {A : Type} (ind : A) (kn : kername) (lConjs : list (term × (string × term))) (gConjsEq : list term) (gConjsPred : list (term × (string × term))) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
-tmDefinition "ss_pushLC" lConjs ;;
+Definition animateListLetAndPredGuard'' {A : Type} (ind : A) (kn : kername) (lConjs'' : list (term × (string × term))) (gConjsEq : list term) (gConjsPred'' : list (term × (string × term))) (inVars : list (prod string term)) (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+lConjs <- tmEval all lConjs'';; 
+gConjsPred <- tmEval all gConjsPred'';;
+tmDefinition "ss_pushLC" lConjs ;; 
 tmDefinition "ss_pushPTInf" predTypeInf;;
 tmDefinition "ss_pushAllTInf" allVarTpInf ;;
 tmDefinition "ss_pushModes" modes ;;
- 
-(*
+
+
 letBind <- animateListConjLetCl''  (ind) kn  lConjs  (fun t : term => t) (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
 tmPrint letBind ;;
-*)
+
 
 gFun <- animateListConjGuardEq ind kn gConjsEq allVarTpInf outVars fuel ;;
 let guardConEqAn := (tApp gFun [tVar "fuel"; mkOutPolyProdTm (allVarTpInf)]) in 
@@ -214,18 +216,18 @@ let outV := getVarsTp (conjOutVars oneClause modes) (allVarTp) in
 let predTps := allIndTpData allClauseData in
 let predTpsAn := animationTp allClauseData in
 let predTpsOccAn := getPredOccAn oneClause fixptData predTpsAn in
-tmEval all conjlhs ;;
-tmEval all inV ;;
-tmEval all outV ;;
-tmEval all predTps ;;
-tmEval all allVarTp ;;
-tmEval all predTpsOccAn ;;
+c <- tmEval all conjlhs ;;
+c1 <- tmEval all inV ;;
+c2 <- tmEval all outV ;;
+c3 <- tmEval all predTps ;;
+c4 <-tmEval all allVarTp ;;
+c5 <- tmEval all predTpsOccAn ;;
 
 
 
 
 
-(animateListLetAndPredGuard3'' ind kn conjlhs cstrNm inV outV modes predTps allVarTp predTpsOccAn fuel). 
+(animateListLetAndPredGuard3'' ind kn c cstrNm c1 c2 modes c3 c4 c5 fuel). 
 
 
 
