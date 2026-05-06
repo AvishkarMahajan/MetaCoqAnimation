@@ -42,15 +42,15 @@ Proof.
   decide equality. decide equality. decide equality. decide equality.
 Defined.
 
-Definition eqFntype (t1 t2 : type) : bool. Admitted.
-(*
+Definition eqFntype (t1 t2 : type) : bool
+
  :=
   if decEqType t1 t2 then true else false.
-*)  
-Definition eqFnterm (t1 t2 : term) : bool. Admitted.
-(* :=
+ 
+Definition eqFnterm (t1 t2 : term) : bool
+:=
   if decEqTerm t1 t2 then true else false.
-*)  
+  
 Print sumbool.  
 
 
