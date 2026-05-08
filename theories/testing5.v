@@ -23,6 +23,16 @@ Print indTp.
 
 CoInductive Stream : Set := Seq { hd : nat; tl : Stream }.
 Print Seq.
+Print outcomePoly.
+(*
+Definition mapToOutCoInd (A : Type) (B : Type) (f : A -> B) (a : outcomePoly A) : outcomePoly B :=
+match a with
+| fuelErrorPoly  => fuelErrorPoly B 
+| successPoly a' => successPoly B (f a')
+| noMatchPoly => noMatchPoly B
+end.
+*)
+
 (*
 
 CoInductive polyStream (A : Type) := 
@@ -78,15 +88,15 @@ CoInductive Integrate : Stream -> Stream -> Prop :=
 with
 addStm : nat -> Stream -> Stream -> Prop :=
 | plusm : forall s m s1 n s2 s3, s = Seq n s1 /\ addStm m s1 s2 /\ s3 = Seq (m + n) s2 -> addStm m s s3.
-Parameter IntegrateRest : Stream.
-Parameter addStmRest : Stream.
-Parameter zipStRest : Stream.
+Parameter IntegrateRest : Stream -> Stream.
+Parameter addStmRest : (nat * Stream) -> Stream.
+Parameter zipStRest : (Stream * Stream) -> Stream.
 
 MetaRocq Run (animAllClCoInd Integrate <? Integrate ?> [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 500).
 
 Print IntegrateAnimatedTopFn.
 
-MetaRocq Run (r <- tmEval all (StmN 15 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (StmN 5 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))) ;; tmPrint r).
 
 
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
@@ -117,7 +127,7 @@ CoInductive eqSt : Stream -> Stream -> coBool -> Prop :=
  | eqC: forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 u   -> eqSt s1 s3 u
  | neqC : forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ Nat.eqb n m = false /\  u = coF   -> eqSt s1 s3 u. 
 
-Parameter eqStRest : coBool.
+Parameter eqStRest : (Stream * Stream) -> coBool.
 
 Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := true.
 
@@ -179,16 +189,30 @@ CoInductive length : Stream -> Counter -> Prop :=
 | plus1 : forall s c n s1 c1, s = Seq n s1 /\ length s1 c1 /\ c = incr c1 -> length s c. 
 
 
-Parameter lengthRest : Counter.
+Parameter lengthRest : Stream -> Counter.
 
 MetaRocq Run (animAllClCoInd length <? length ?> [("length", ([0], [1]))] 500).
 
 Compute (StmN 20 (lengthAnimatedTopFnStream (successPoly (Stream) (from 5)))).
 
 
+Fixpoint isEven (n : nat) : bool :=
+match n with
+| 0 => true
+| 1 => false
+| S (S m) => isEven m
+end.
+
+CoInductive filterEven : Stream -> Stream -> Prop :=
+| filtE : forall s n s1 s2 s3 , s = Seq n s1 /\ (true = isEven n) /\ filterEven s1 s2 /\ s3 = Seq n s2 -> filterEven s s3
+| filtOdd : forall s n s1 s2 , s = Seq n s1 /\ (false = isEven n) /\ filterEven s1 s2  -> filterEven s s2.
+
+Parameter filterEvenRest : Stream -> Stream.
+
+MetaRocq Run (animAllClCoInd filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
 
 
-
+Compute (StmN 20 (filterEvenAnimatedTopFnStream (successPoly (Stream) (from 0)))).
 
 
 

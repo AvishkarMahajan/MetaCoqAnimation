@@ -17,6 +17,13 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+Definition mapToOutCoInd (A : Type) (B : Type) (f : A -> B) (a : outcomePoly A) : outcomePoly B :=
+match a with
+| fuelErrorPoly  => fuelErrorPoly B 
+| successPoly a' => successPoly B (f a')
+| noMatchPoly => noMatchPoly B
+end.
+
 (** Error term for partial type functions. *)
 Parameter errTpTm : term.
 
@@ -331,7 +338,7 @@ Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : te
 
 *)
 
-                   
+(*                   
 Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
 
 {|
@@ -381,6 +388,59 @@ Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : te
                 ; rarg := 0 |}.                     
 
 
+*)
+
+                  
+Definition mkOneIndTopCoInd (indNm : string) (inputType : term) (outputType : term) (clauseData : list (string * (list string))) (kn : kername) : def term :=
+
+{|
+     dname := {| binder_name := nNamed (String.append indNm "AnimatedTopFn") ; binder_relevance := Relevant |};
+     dtype :=
+       tPro "fuel" <%nat%> (tPro "input" (tApp (<%outcomePoly%>) [inputType])
+
+
+            (tApp (<%outcomePoly%>) [outputType]));
+     dbody :=
+
+
+          tLam "fuel" <%nat%>
+
+           (tLam "input" (tApp (<%outcomePoly%>) [inputType])
+            (tCase
+               {|
+                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
+                 ci_npar := 0;
+                 ci_relevance := Relevant
+               |}
+               {|
+                 puinst := [];
+                 pparams := [];
+                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
+                 preturn := (tApp (<%outcomePoly%>) [outputType])
+
+               |} (tVar "fuel")
+               
+               [{|
+                  bcontext := [];
+                  bbody :=
+                    tApp <%mapToOutCoInd%> [inputType; outputType; quoteConst' kn (String.append indNm "Rest"); tVar "input"]
+                |};
+              {|
+                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
+                  bbody := 
+                  
+                  
+                  
+                  tApp (tVar "dispatchOutcomePolyExtCoInd") [inputType ; outputType; (quoteConst' kn (String.append indNm "Rest")); (mkLstTm' (applyTopFn kn clauseData) (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+         <%nat%> (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+        (tApp <%outcomePoly%> [inputType]) (tApp <%outcomePoly%> [outputType])) ) ); tVar "remFuel"; tVar "input"]
+
+                              |}]))
+
+                ; rarg := 0 |}.                     
+
+
+
 
 (** Construct a fixpoint term from a list of definitions. *)
 Definition mkrecFn (ls : list (def term)) (j : nat) : term :=
@@ -424,7 +484,7 @@ Fixpoint dispatchOutcomePolyExt
           end
       end
   end.
-
+(*
 Fixpoint dispatchOutcomePolyExtCoInd
   (A B : Type) (e : B) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
   (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
@@ -442,6 +502,27 @@ Fixpoint dispatchOutcomePolyExtCoInd
           end
       end
   end.  
+*)
+
+
+Fixpoint dispatchOutcomePolyExtCoInd
+  (A B : Type) (f : A -> B) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
+  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  match fuel' with
+  | 0 => mapToOutCoInd (A) (B) (f) (input')
+  | S remFuel' =>
+      match lst with
+      | [] => noMatchPoly B
+      | h :: t =>
+          let res := h remFuel' input' in
+          match res with
+          | @noMatchPoly _ => dispatchOutcomePolyExtCoInd A B f t remFuel' input'
+          | @fuelErrorPoly _ => mapToOutCoInd (A) (B) (f) (input')
+          | _ => res
+          end
+      end
+  end.  
+
 
 (** Quote the dispatch function for embedding in generated code. *)
 MetaRocq Quote Definition dt := Eval compute in dispatchOutcomePolyExt.
