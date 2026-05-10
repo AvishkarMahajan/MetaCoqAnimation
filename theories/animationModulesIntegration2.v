@@ -251,8 +251,24 @@ inputTp' <- tmEval all inputTp;;
 outputVarNm <- tmEval all ((fst (snd conjunct'))) ;;
 outputVarTp <- tmEval all ((snd (snd conjunct'))) ;;  
 
+animationFn <- animateAnyLet (ind) (kn) (conjunct') (inputTm) (inputTp)
+                                 (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
+                                 
+                                 tmReturn (tApp <%compOutcomeBool%> [partialGuard ; tApp (typeToBoolEqOutcome outputVarTp (typeToBoolEq outputVarTp)) [tVar outputVarNm ; 
+                                 (
+                                 (tApp animationFn [(tVar "fuel"); (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLstTm))])) ]]).
+(*
+
 match (fst conjunct') with
- 
+(*  | tApp <%eq%> [typeVar; t1; t2] => 
+                                  animationFn <- animateAnyLet (ind) (kn) (conjunct') (inputTm) (inputTp)
+                                 (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
+                                 
+                                 tmReturn (tApp <%compOutcomeBool%> [partialGuard ; tApp (typeToBoolEqOutcome outputVarTp (typeToBoolEq outputVarTp)) [tVar outputVarNm ; 
+                                 (
+                                 (tApp animationFn [(tVar "fuel"); (tApp (mkJoinOutcomeTm (map snd inputVarsLst)) (map fst inputVarsLstTm))])) ]])
+
+*) 
   | tApp (tInd {| inductive_mind := (_path, _indNm); inductive_ind := 0 |} []) _lstArgs => 
                                   animationFn <- animateAnyLet (ind) (kn) (conjunct') (inputTm) (inputTp)
                                  (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
@@ -273,7 +289,7 @@ match (fst conjunct') with
   | _ => tmReturn partialGuard
   end.
 
-
+*)
 
 
 
@@ -350,7 +366,7 @@ Fixpoint animateListConjEqGuard (conj : list term) : term :=
   end.
 
 
-
+Print animateOneConjEqGuard.
 
 
 Definition genFunAnimateEqPartialGuardCon' {A : Type} (induct : A) (kn : kername) (gConjsEq : list term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
@@ -624,7 +640,6 @@ end.
 
 
 
-
 Fixpoint filterConjsEq (lst : list term) : list term :=
 match lst with
 | [] => []
@@ -731,12 +746,20 @@ Definition attachOutputVarToSortedConjs (lconjs : list term) (allVarTpInf : list
 attachOutputVar (attachOutputVarLst lconjs allVarTpInf modes predTypeInf). 
 
 Search (string -> list string -> bool).
-Fixpoint removeDuplicateDefs (lconjs : list (term * (string * term))) (kv : list string) : list (term * (string * term)) :=
+
+
+Fixpoint removeDuplicateDefs (lconjs : list (term * (string * term))) (kv : list string) : list (term * (string * term))  :=
 match lconjs with
 | [] => []
-| h :: rest => if (inStrLst (fst (snd h)) kv) then removeDuplicateDefs rest kv else (h :: (removeDuplicateDefs rest ((fst (snd h)) :: kv)))
+| h :: rest => if (inStrLst (fst (snd h)) kv) then removeDuplicateDefs rest kv  else h :: (removeDuplicateDefs rest ((fst (snd h)) :: kv)) 
 end.
- 
+
+Fixpoint keepDuplicateDefs (lconjs : list (term * (string * term))) (kv : list string) : list (term * (string * term))  :=
+match lconjs with
+| [] => []
+| h :: rest => if (inStrLst (fst (snd h)) kv) then h :: (keepDuplicateDefs rest kv)  else (keepDuplicateDefs rest ((fst (snd h)) :: kv)) 
+end.
+
 Fixpoint filterConjsPred' (lst : list (term * (string * term))) : list (term * (string * term)) :=
 match lst with
 | [] => []
@@ -748,13 +771,17 @@ match lst with
 
 | _h :: rest => filterConjsPred' rest
 end.
+(*
 Unset Universe Checking.
 
                       
 Definition animateListLetAndPredGuard' {A : Type} (ind : A) (kn : kername) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 bigConj <- general.animate2 kn ;;
 let listAllConjs := getListConjAll bigConj in
-let gConjsEq := filterConjsEq listAllConjs in
+(* let gConjsEq := filterConjsEq listAllConjs *)
+gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
+
+gConjsEq <- tmEval all (filterConjsEq gConjs') ;;
 (*
 lAC' <- tmEval all listAllConjs ;;
 *)
@@ -762,15 +789,16 @@ lAC' <- tmEval all listAllConjs ;;
 
 lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 lc'' <- tmEval all lConjs' ;;
-tmPrint lc'';;
-let lConjs := removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) in
+(*tmPrint lc'';;*)
+lConjs <- tmEval all (fst (removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) [] [])) ;;
 (*
 gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 gConjs <- tmEval (all) gConjs' ;;
 *)
 
-let gConjsPred := filterConjsPred' (attachOutputVarToSortedConjs listAllConjs allVarTpInf modes predTypeInf)  in
-
+gConjsPred1 <- tmEval all (filterConjsPred' (attachOutputVarToSortedConjs gConjs' allVarTpInf modes predTypeInf));;  
+gConjsPred2 <- tmEval all (snd (removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars) [] [])) ;;
+gConjsPred <- tmEval all (app gConjsPred1 gConjsPred2) ;;
 (*tmPrint lConjs;;
 tmPrint gConjsEq;;*)
 t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
@@ -785,4 +813,4 @@ tmEval hnf (my_projT2 f) >>=
 tmReturn t''.
 
 Set Universe Checking.
-
+*)

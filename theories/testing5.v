@@ -55,10 +55,10 @@ CoInductive Counter : Type :=
 | incr : Counter -> Counter.
 
 
-
+(*
 Definition eqFnStream : Stream -> Stream -> bool := (fun s1 s2 => true).
 Definition eqFnCounter : Counter -> Counter -> bool := (fun s1 s2 => true).
-          
+*)          
 
 
 CoFixpoint from (n : nat) : Stream :=
@@ -123,14 +123,14 @@ Inductive coBool : Type :=
 
 
 
-CoInductive eqSt : Stream -> Stream -> coBool -> Prop :=
+CoInductive eqSt : Stream -> Stream -> bool -> Prop :=
  | eqC: forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 u   -> eqSt s1 s3 u
- | neqC : forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ Nat.eqb n m = false /\  u = coF   -> eqSt s1 s3 u. 
+ | neqC : forall n m s1 s2 s3 s4 u , s1 = Seq n s2  /\ s3 = Seq m s4 /\ Nat.eqb n m = false /\  u = false   -> eqSt s1 s3 u. 
 
-Parameter eqStRest : (Stream * Stream) -> coBool.
-
+Parameter eqStRest : (Stream * Stream) -> bool.
+(*
 Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := true.
-
+*)
 
 MetaRocq Run (animAllClCoInd eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 

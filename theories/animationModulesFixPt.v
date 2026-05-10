@@ -557,9 +557,34 @@ Fixpoint mkIndData (data : (list (((string * list term) * list term) * (list (st
 
 Unset Universe Checking.
 
-                      
+                     
 Definition animateListLetAndPredGuard3 {A : Type} (ind : A) (kn : kername) (bigConj : term) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+let listAllConjs := getListConjAll bigConj in
+(* let gConjsEq := filterConjsEq listAllConjs *)
+gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 
+gConjsEq <- tmEval all (filterConjsEq gConjs') ;;
+(*
+lAC' <- tmEval all listAllConjs ;;
+*)
+(*tmPrint lAC';;*)
+
+lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
+lc'' <- tmEval all lConjs' ;;
+(*tmPrint lc'';;*)
+lConjs <- tmEval all (removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars)) ;;
+(*tmDefinition "myLC" lConjs ;;*)
+(*
+gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
+gConjs <- tmEval (all) gConjs' ;;
+*)
+
+gConjsPred1 <- tmEval all (filterConjsPred' (attachOutputVarToSortedConjs gConjs' allVarTpInf modes predTypeInf));;  
+gConjsPred2 <- tmEval all ( (keepDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars))) ;;
+gConjsPred <- tmEval all (app gConjsPred1 gConjsPred2) ;;
+
+
+(*
 let listAllConjs := getListConjAll bigConj in
 let gConjsEq := filterConjsEq listAllConjs in
 (*
@@ -578,6 +603,7 @@ gConjs <- tmEval (all) gConjs' ;;
 let gConjsPred := filterConjsPred' (attachOutputVarToSortedConjs listAllConjs allVarTpInf modes predTypeInf)  in
 (*tmPrint lConjs;;
 tmPrint gConjsEq;;*)
+*)
 t <- animateListLetAndPredGuard ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
 t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
 (*
@@ -590,6 +616,7 @@ tmEval hnf (my_projT2 f) >>=
 
 
 tmReturn t''.
+
 
 Set Universe Checking. 
 

@@ -27,8 +27,6 @@ Print option.
 Definition total_map (A : Type) := string -> A.
 Definition state := total_map nat.
 
-Definition eqFnstate (s1 s2 : state) : bool := true.
-
 
 
 
