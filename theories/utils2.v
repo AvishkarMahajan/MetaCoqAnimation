@@ -841,6 +841,7 @@ Fixpoint extractOrderedVars (t : term) : list string :=
 
   | tVar str  => [str]
   | tApp _ lst => concat (map extractOrderedVars lst)
+(*  | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 => app (extractOrderedVars t1) (extractOrderedVars t2) *)
   | _ => []
   end.  
 

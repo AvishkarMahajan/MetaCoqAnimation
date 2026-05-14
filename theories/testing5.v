@@ -84,10 +84,10 @@ end.
 
 
 CoInductive Integrate : Stream -> Stream -> Prop :=
-| integ : forall s1 s2 s3 n s4 s5 , s1 = Seq n s2 /\ Integrate s2 s3 /\ addStm n s3 s5 /\ s4 = (Seq n s5) -> Integrate s1 s4
+| integ : forall s2 s3 n s5 ,Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
 with
 addStm : nat -> Stream -> Stream -> Prop :=
-| plusm : forall s m s1 n s2 s3, s = Seq n s1 /\ addStm m s1 s2 /\ s3 = Seq (m + n) s2 -> addStm m s s3.
+| plusm : forall s m s1 n s2, s = Seq n s1 /\ addStm m s1 s2 -> addStm m s (Seq (m + n) s2).
 Parameter IntegrateRest : Stream -> Stream.
 Parameter addStmRest : (nat * Stream) -> Stream.
 Parameter zipStRest : (Stream * Stream) -> Stream.
@@ -96,7 +96,7 @@ MetaRocq Run (animAllClCoInd Integrate <? Integrate ?> [("Integrate", ([0], [1])
 
 Print IntegrateAnimatedTopFn.
 
-MetaRocq Run (r <- tmEval all (StmN 5 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (StmN 15 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))) ;; tmPrint r).
 
 
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
