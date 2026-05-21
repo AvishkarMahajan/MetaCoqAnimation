@@ -662,7 +662,12 @@ end.
 (** Sort and orient conjunctions for animation.
     Separates guard conditions from let-binding equalities and orients equations
     so that known variables appear on the right. *)
-    
+Definition hasRightShape (t : term) : bool :=
+match t with
+| tVar str => true
+| tApp (tConstruct ind_type k lst) lstArgs => true
+| _ => false
+end.   
 
 Fixpoint getSortedOrientedConjs (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
 match fuel with
@@ -673,8 +678,10 @@ match fuel with
             | conj' :: t => match conj' with
                         | tApp <%eq%> [typeVar; t1; t2] => if andb (isListSubStr (extractOrderedVars t1) kv) (isListSubStr (extractOrderedVars t2) kv) then
                                                             getSortedOrientedConjs modes t remConjs sortedConjs (conj' :: guardConjs) kv n else
-                                                            (if (isListSubStr (extractOrderedVars t1) kv) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
-                                                            (if  (isListSubStr (extractOrderedVars t2) kv) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
+                                                            (if (andb (isListSubStr (extractOrderedVars t1) kv) (hasRightShape t2)) then 
+                                                            
+                                                            getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t2; t1] :: sortedConjs) (guardConjs) (app (extractOrderedVars t2) kv) n else
+                                                            (if  (andb (isListSubStr (extractOrderedVars t2) kv) (hasRightShape t1)) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
                                                             (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)))
                         
                         | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => if isListSubStr (extractOrderedVars conj') kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else

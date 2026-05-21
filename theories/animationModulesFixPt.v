@@ -222,19 +222,30 @@ map fst allTpInf.
 
 Definition findPredTps (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * list term) :=
 map (fun y => (fst y , getType (snd y))) (findPredTps' allTpInf).
+Fixpoint flattenAnd (t : term) : list term :=
+match t with
+| tApp <%and%> [h;h1] => h :: (flattenAnd h1)
+| t' => [t']
+end.
 
 Definition flattenClause (t : term) : list term :=
 match t with
-| tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%and%> lst) t' => app lst [t']
+| tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%and%> lst) t' => app ((flattenAnd (tApp <%and%> lst))) [t']
 | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t'' t' =>  [t''; t']
 | t''' => [t''']
+end.
+Fixpoint buildAnd (l : list term) : term :=
+match l with
+| [] => errTpTm
+| [h] => h
+| h :: rest => tApp <%and%> [h; buildAnd rest]
 end.
 Definition buildClause (ts : list term) : term :=
 match rev ts with
 | [] => errTpTm
 | [h] => h
 | [h1; h2] => tProd {| binder_name := nAnon; binder_relevance := Relevant |} h2 h1
-| h :: t => tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%and%> t) h
+| h :: t => tProd {| binder_name := nAnon; binder_relevance := Relevant |} (buildAnd (rev t)) h
 end.
 
 Definition rewriteCl (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : term :=
@@ -666,7 +677,7 @@ Fixpoint dispatchOutcomePolyExtCoInd
       match lst with
       | [] => noMatchPoly B
       | h :: t =>
-          let res := h remFuel' input' in
+          let res := h (S remFuel') input' in
           match res with
           | @noMatchPoly _ => dispatchOutcomePolyExtCoInd A B f t remFuel' input'
           | @fuelErrorPoly _ => mapToOutCoInd (A) (B) (f) (input')

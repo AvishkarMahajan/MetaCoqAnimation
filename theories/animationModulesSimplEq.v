@@ -74,7 +74,7 @@ Fixpoint chkEqType (t : term) : bool :=
   | tApp
          (tInd {| inductive_mind := (MPfile ["utils2"; "Animation"], "indTp"); inductive_ind := 0 |} [])
          [tp] => chkEqType tp
-  | _ => false
+  | _ => true
  end.
 Print eqb_list. 
 
