@@ -664,6 +664,165 @@ MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly 
 
 End ImpSem.
 
+Module ImpSemTr.
+
+
+
+CoInductive coVars : Type :=
+
+| empty : coVars
+| pure : (indTp (nat -> nat)) -> coVars
+| undefinedCoV : coVars.
+CoInductive coVarsTr : Type :=
+| coVNil : coVarsTr
+| covSeq : coVars -> coVarsTr -> coVarsTr
+| undefinedCoVTr : coVarsTr.
+
+
+
+Definition set (vs : indTp (nat -> nat)) (v : nat) (n : nat) : indTp (nat -> nat) :=
+match vs with
+| indWrap vs'' => let f' := (fun v' => if Nat.eqb v v' then n else vs'' v') in indWrap (nat -> nat) f'
+end.
+
+  
+
+Inductive exp : Type :=
+| Const : nat -> exp
+| Var : nat -> exp
+| Plus : exp -> exp -> exp.
+
+Fixpoint evalExp (vs : indTp (nat -> nat)) (e : exp) : nat :=
+  match e with
+    | Const n => n
+    | Var v => (unwrap (nat -> nat) vs) v
+    | Plus e1 e2 => evalExp (vs) e1 + evalExp (vs) e2
+  end.
+  
+Inductive cmd : Type :=
+| Assign : nat -> exp -> cmd
+| Seq : cmd -> cmd -> cmd
+| While : exp -> cmd -> cmd.
+(*
+CoInductive coList : Type := 
+| undefinedLst : coList
+| coNil : coList
+| coCons : coVars -> coList -> coList. 
+Definition eqcoList (s1 : coList) (s2 : coList) : bool := 
+match s1 with
+| undefinedLst => match s2 with
+                   | undefinedLst => false
+                   | _ => false
+                   end
+| coNil =>         match s2 with
+                   | coNil => true
+                   | _ => false
+                   end         
+| _s3 => match s2 with
+        | undefinedLst => false
+        | coNil => false
+        | _ => false
+        end                   
+end.
+*)
+(*
+CoInductive evalCmd : vars -> cmd -> vars -> Prop :=
+| EvalAssign : forall vs v e, evalCmd vs (Assign v e) (set vs v (evalExp vs e))
+| EvalSeq : forall vs1 vs2 vs3 c1 c2, evalCmd vs1 c1 vs2
+  /\ evalCmd vs2 c2 vs3
+  -> evalCmd vs1 (Seq c1 c2) vs3
+| EvalWhileFalse : forall vs e c, evalExp vs e = 0
+  -> evalCmd vs (While e c) vs
+| EvalWhileTrue : forall vs1 vs2 vs3 e c, evalExp vs1 e <> 0
+  /\ evalCmd vs1 c vs2
+  /\ evalCmd vs2 (While e c) vs3
+  -> evalCmd vs1 (While e c) vs3 .  
+
+Parameter evalCmdRest : (vars * cmd) -> vars.
+
+MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+*)
+
+
+CoInductive evalCmd : coVars -> cmd -> coVarsTr -> Prop :=
+| EvalEmpty : forall c', evalCmd empty c' coVNil
+| EvalAssign : forall vs' vs v e, vs' = pure vs -> evalCmd vs' (Assign v e)  (covSeq (pure (set vs v (evalExp vs e))) coVNil)
+| EvalSeq : forall vs1 vs2 vs2' vs3 vs4 c1 c2, evalCmd vs1 c1 vs2 /\ last vs2 vs2' /\ appTr vs2 vs3 vs4
+  /\ evalCmd vs2' c2 vs3 -> evalCmd vs1 (Seq c1 c2) vs4
+
+
+| EvalWhileFalse : forall vs' vs e c, vs' = pure vs /\ evalExp vs e = 0
+  -> evalCmd vs' (While e c) (covSeq vs' coVNil)
+  
+
+  
+| EvalWhileTrue : forall vs1' vs2' vs2'' vs3' vs1 vs4 e c, vs1' = pure vs1 /\
+      evalExp vs1 e <> 0
+  /\ evalCmd vs1' c vs2' /\ last vs2' vs2''
+  /\ evalCmd vs2'' (While e c) vs3' /\ appTr vs2' vs3' vs4
+  -> evalCmd vs1' (While e c) vs4
+
+| EvalUndef : forall c c', evalCmd c c' undefinedCoVTr
+with last : coVarsTr -> coVars -> Prop :=
+| lastEmpty : last coVNil empty
+| lastNil: forall  c c1, c1 = c -> last (covSeq c coVNil) c1 
+| lastSeq : forall c c' ctr, last ctr c -> last (covSeq c' ctr) c
+| lastUndef : forall ctr, last ctr undefinedCoV
+with appTr : coVarsTr -> coVarsTr -> coVarsTr -> Prop :=
+| appNil : forall ctr ctr', ctr' = ctr -> appTr coVNil ctr ctr
+| appSeq : forall c c1 ctr ctr' ctr'', appTr ctr ctr' ctr''/\ c1 = c -> appTr (covSeq c ctr) ctr' (covSeq c1 ctr'') 
+| appUndef : forall ctr ctr1, appTr ctr ctr1 undefinedCoVTr.   
+
+
+   
+Definition eqFncoVars (c : coVars) (c1 : coVars) : bool :=
+match c with
+| empty => match c1 with
+                  | empty => true
+                  | _   => false
+                  end
+| _ => false
+end.                            
+
+Definition eqFncoVarsTr (c : coVarsTr) (c1 : coVarsTr) : bool :=
+match c with
+| coVNil => match c1 with
+                  | coVNil => true
+                  | _   => false
+                  end
+| _ => false
+end.     
+Definition evalCmdRest := fun vc : (coVars * cmd) => undefinedCoVTr.
+Definition lastRest := fun ct : coVarsTr => undefinedCoV.
+Definition appTrRest := fun ctct : (coVarsTr * coVarsTr) => undefinedCoVTr. 
+
+
+MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]));("last", ([0], [1]));("appTr", ([0;1], [2]))] 500).
+
+Definition prog :=
+While (Var 4) (Assign 8 (Const 8)).
+
+Definition add1 := fun m : nat => m + 1.
+Definition initFn :=
+pure (indWrap (nat -> nat) add1).
+
+
+
+MetaRocq Run (r <- tmEval all (StmN 30 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
+
+
+
+Definition prog' :=
+While (Var 0) (Assign 8 (Const 9)).
+
+
+Definition initFn' :=
+pure (indWrap (nat -> nat) (fun m : nat => m)).
+
+MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+
+End ImpSemTr.
+
 
 
    
