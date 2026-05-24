@@ -83,8 +83,8 @@ Definition unfoldConsStep
      (i, t, (str, (tVar varStr ), nil) :: resolvedTs, remTs)
  (*| (str, (tApp (tInd indType ls') args)) :: t =>
      (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs)) *)
- | (str, tConstruct typeInfo k []) :: t =>
-     (i, t, (str, (tConstruct typeInfo k []), nil) :: resolvedTs, remTs)
+ | (str, tConstruct typeInfo k lst) :: t =>
+     (i, t, (str, (tConstruct typeInfo k lst), nil) :: resolvedTs, remTs)
  | (str, tApp <%eq%> args) :: t =>
      (i + length args, t, (str, <%eq%>, map fst (genVarlst i args)) :: resolvedTs, app (genVarlst i args) remTs) 
 
@@ -93,6 +93,11 @@ Definition unfoldConsStep
 
  | (str, tInd indType ls') :: t =>
      (i, t, (str, tInd indType ls', nil) :: resolvedTs, remTs)
+ | (str, tConst indType ls') :: t =>
+     (i, t, (str, tConst indType ls', nil) :: resolvedTs, remTs) 
+ | (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) :: t =>
+     (i, t, (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2, nil) :: resolvedTs, remTs)     
+        
  | (str, _) :: t =>
      (i, t, resolvedTs, remTs)
  end.
@@ -145,9 +150,15 @@ Fixpoint lookUpVarsOne
             match t with
             | tConstruct typeInfo k js => ([str], [])
             | tApp (tInd typeInfo js) args => ([], [tApp (tInd typeInfo js) args])
+            | tApp (tConst typeInfo lst) args => ([], [tApp (tConst typeInfo lst) args])
+            | tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args => ([], [tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args])
+            
+            
             | tRel k => ([str], [])
             | tVar str'' => ([str], [])
             | tInd typeInfo js => ([], [(tInd typeInfo js)])
+            | tConst typeInfo lst => ([], [(tConst typeInfo lst)])
+            | tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2 => ([], [(tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2)])
             | _ => ([], [])
             end)
       else lookUpVarsOne str t
