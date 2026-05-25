@@ -15,7 +15,7 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-
+Definition idFn (A : Type) (x : A) := x.
 (** ** Integration of All Animation Pieces
     This section combines the various animation strategies into a unified framework
     that handles let-bindings, pattern matches, partial application, and complex conjunctions. *)
@@ -179,14 +179,25 @@ Definition animateOneConjAnyLet' (outputVarNm : string) (outputVarTp : term) (in
  end.
 
 Print mkLstTm.
+(*
+Definition removeVarfmFnPos (conjunct' : (term * (string * term))) (allVarTpInf : list (string * term)) :=
+match fst conjunct' with
+| tApp <%eq%> [typeVar; t1; tApp (tVar str) lstArgs] => match lookUpVarsOne str allVarTpInf with
+                                                         | [h] => let newConj := tApp <%eq%> [typeVar; t1; tApp <%idFn%> ((snd h) :: (tVar str) :: lstArgs)] in (newConj, snd conjunct')
+                                                         | _ => conjunct'
+                                                        end
+| _ => conjunct'
+end.                                                         
+
+*)
 
 Definition animateOneConjAnyLet {A : Type} (ind : A) (kn : kername) (conjunct' : (term * (string * term))) (inputVarsLst : list (prod string term)) (partialLetfn : term -> term) 
                                            (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad (term -> term) :=
 
+(*
 
-
-
-
+let conjunct' := removeVarfmFnPos conjunct'' allVarTpInf in
+*)
 let inputTm := mkProdTmVars inputVarsLst in
 let inputTp := mkProdTypeVars inputVarsLst in
 let inputVarsLstTm := mkLstTm inputVarsLst in
