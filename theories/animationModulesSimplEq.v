@@ -188,15 +188,15 @@ Fixpoint extractOrderedVarsHelper (ls : list term) : list string :=
 Fixpoint extractOrderedVars (t : term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
-  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: extractOrderedVarsHelper (lst)
-  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (extractOrderedVarsHelper (lst)) [str1]
+  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: (app (extractOrderedVars fn) (extractOrderedVarsHelper (lst)))
+  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (app (extractOrderedVars fn) (extractOrderedVarsHelper (lst))) [str1]
   | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] => [str1]
   | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>  [str1]
 
   (* Combine the pattern matches to handle fns of arbitrary arity *)
 
   | tVar str  => [str]
-  | tApp _ lst => concat (map extractOrderedVars lst)
+  | tApp fn lst => app (extractOrderedVars fn) (concat (map extractOrderedVars lst))
   | _ => []
   end.
 

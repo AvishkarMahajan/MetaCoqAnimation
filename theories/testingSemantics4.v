@@ -36,11 +36,7 @@ match n with
 | S n => StmN n (tlPoly s)
 end.
 
-Definition unwrap (A: Type) (x : indTp A) : A :=
-match x with
-| indWrap x' => x'
-end.
-Print indTp.
+
 
 Module typingQuickChick.
 
@@ -464,7 +460,7 @@ Definition total_map (A : Type) := string -> A.
 Definition state := total_map nat.
 
 
-
+Compute <%state%>.
 
 
    
@@ -475,23 +471,23 @@ Inductive sinstr : Type :=
 | SPlus
 | SMinus
 | SMult.
-
+(*
 Fixpoint decEqsinstr : forall (t1 t2 : sinstr), {t1 = t2} + {t1 <> t2}.
 Proof.
 
   decide equality. decide equality. decide equality. decide equality. 
 Defined.
 
-
+*)
 Definition stack := list nat.
 Definition prog := list sinstr.
 
 
-
+(*
 Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
 
   if decEqsinstr t1 t2 then true else false.  
-    
+*)    
 (*
 Inductive stack_step (st : state) : prog × stack → prog × stack → Prop :=
   | SS_Push : ∀ stk n p,
@@ -507,20 +503,23 @@ Inductive stack_step (st : state) : prog × stack → prog × stack → Prop :=
 *)
 
  
-Inductive stack_step : (indTp state) -> list sinstr × list nat -> list sinstr × list nat -> Prop :=
-   | SS_Push : forall  st stk n p ps0 ps1, ps0 = (SPush n :: p, stk) /\ ps1 = (p, n :: stk)  -> 
-    stack_step st ps0 ps1 
-   
+Inductive stack_step : (state) -> list sinstr × list nat -> list sinstr × list nat -> Prop :=
+   | SS_Push : forall  st stk n p,
+    stack_step st (SPush n :: p, stk) (p, n :: stk) 
+  
+(* Need to fix *)    
+   | SS_Load : forall  st stk i p,
+    stack_step st (SLoad i :: p, stk) (p, (((  (fun g : state  => g)  st)) i) :: stk) 
     
-   | SS_Load : forall  st stk i p ps0 ps1, ps0 = (SLoad i :: p, stk) /\ ps1 = (p, ((unwrap state st) i) :: stk) ->
-    stack_step st ps0 ps1 
+  | SS_P : forall st stk n m p,
+    stack_step st (SPlus :: p, n::m::stk) (p, (m+n)::stk)  
+   | SS_Minus : forall st stk n m p,
+    stack_step st (SMinus :: p, n::m::stk) (p, (m-n)::stk) 
+   | SS_Mult : forall st stk n m p,
+    stack_step st (SMult :: p, n::m::stk) (p, (m*n)::stk)  .
     
-   | SS_P : forall st stk n m p ps0 ps1, ps0 = (SPlus :: p, n::m::stk) /\ ps1 = (p, (m+n)::stk) ->
-    stack_step st ps0 ps1 
-   | SS_Minus : forall st stk n m p ps0 ps1, ps0 = (SMinus :: p, n::m::stk) /\ ps1 = (p, (m-n)::stk) ->
-    stack_step st ps0 ps1 
-   | SS_Mult : forall st stk n m p ps0 ps1, ps0 = (SMult :: p, n::m::stk) /\ ps1 = (p, (m*n)::stk) ->
-    stack_step st ps0 ps1 .
+    
+    
 MetaRocq Run (animAllCl stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
 
 End StackStep.
@@ -530,18 +529,14 @@ Module ImpSem.
 
 
 CoInductive coVars : Type :=
-| pure : (indTp (nat -> nat)) -> coVars
+| pure : ((nat -> nat)) -> coVars
 | undefinedCoV : coVars.
 Compute <%coVars%>.
-Inductive getPure : coVars -> coVars -> Prop :=
-| get : forall c c1 f,  c = pure f /\ c1 = c -> getPure c c1. 
-MetaRocq Run (animAllCl getPure <? getPure ?> [("getPure", ([0], [1]))] 500).
 
 
-Definition set (vs : indTp (nat -> nat)) (v : nat) (n : nat) : indTp (nat -> nat) :=
-match vs with
-| indWrap vs'' => let f' := (fun v' => if Nat.eqb v v' then n else vs'' v') in indWrap (nat -> nat) f'
-end.
+Definition set (vs : (nat -> nat)) (v : nat) (n : nat) :  (nat -> nat) :=
+ (fun v' => if Nat.eqb v v' then n else vs v'). 
+
 
   
 
@@ -550,10 +545,10 @@ Inductive exp : Type :=
 | Var : nat -> exp
 | Plus : exp -> exp -> exp.
 
-Fixpoint evalExp (vs : indTp (nat -> nat)) (e : exp) : nat :=
+Fixpoint evalExp (vs : (nat -> nat)) (e : exp) : nat :=
   match e with
     | Const n => n
-    | Var v => (unwrap (nat -> nat) vs) v
+    | Var v => (vs) v
     | Plus e1 e2 => evalExp (vs) e1 + evalExp (vs) e2
   end.
   
@@ -645,7 +640,7 @@ While (Var 4) (Assign 8 (Const 8)).
 
 
 Definition initFn :=
-pure (indWrap (nat -> nat) (fun m : nat => m + 1)).
+pure (fun m : nat => m + 1).
 
 
 
@@ -658,7 +653,7 @@ While (Var 0) (Assign 8 (Const 9)).
 
 
 Definition initFn' :=
-pure (indWrap (nat -> nat) (fun m : nat => m)).
+pure  (fun m : nat => m).
 
 MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
@@ -671,7 +666,7 @@ Module ImpSemTr.
 CoInductive coVars : Type :=
 
 | empty : coVars
-| pure : (indTp (nat -> nat)) -> coVars
+| pure : ((nat -> nat)) -> coVars
 | undefinedCoV : coVars.
 CoInductive coVarsTr : Type :=
 | coVNil : coVarsTr
@@ -680,10 +675,9 @@ CoInductive coVarsTr : Type :=
 
 
 
-Definition set (vs : indTp (nat -> nat)) (v : nat) (n : nat) : indTp (nat -> nat) :=
-match vs with
-| indWrap vs'' => let f' := (fun v' => if Nat.eqb v v' then n else vs'' v') in indWrap (nat -> nat) f'
-end.
+Definition set (vs :  (nat -> nat)) (v : nat) (n : nat) : (nat -> nat) :=
+ (fun v' => if Nat.eqb v v' then n else vs v').
+
 
   
 
@@ -692,10 +686,10 @@ Inductive exp : Type :=
 | Var : nat -> exp
 | Plus : exp -> exp -> exp.
 
-Fixpoint evalExp (vs : indTp (nat -> nat)) (e : exp) : nat :=
+Fixpoint evalExp (vs : (nat -> nat)) (e : exp) : nat :=
   match e with
     | Const n => n
-    | Var v => (unwrap (nat -> nat) vs) v
+    | Var v => (vs) v
     | Plus e1 e2 => evalExp (vs) e1 + evalExp (vs) e2
   end.
   
@@ -804,7 +798,7 @@ While (Var 4) (Assign 8 (Const 8)).
 
 Definition add1 := fun m : nat => m + 1.
 Definition initFn :=
-pure (indWrap (nat -> nat) add1).
+pure ( add1).
 
 
 
@@ -813,13 +807,13 @@ MetaRocq Run (r <- tmEval all (StmN 30 (evalCmdAnimatedTopFnStream (successPoly 
 
 
 Definition prog' :=
-While (Var 0) (Assign 8 (Const 9)).
+While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2)) (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
 
 
 Definition initFn' :=
-pure (indWrap (nat -> nat) (fun m : nat => m)).
+pure ( (fun m : nat => m)).
 
-MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (StmN 40 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
 End ImpSemTr.
 
