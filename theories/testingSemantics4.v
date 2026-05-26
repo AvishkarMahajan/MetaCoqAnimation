@@ -509,7 +509,7 @@ Inductive stack_step : (state) -> list sinstr × list nat -> list sinstr × list
   
 (* Need to fix *)    
    | SS_Load : forall  st stk i p,
-    stack_step st (SLoad i :: p, stk) (p, (((  (fun g : state  => g)  st)) i) :: stk) 
+    stack_step st (SLoad i :: p, stk) (p, (((  st)) i) :: stk) 
     
   | SS_P : forall st stk n m p,
     stack_step st (SPlus :: p, n::m::stk) (p, (m+n)::stk)  

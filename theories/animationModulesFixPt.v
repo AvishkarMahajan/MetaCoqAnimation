@@ -17,6 +17,24 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+Fixpoint removeVarfmFnPos' (conjRHS : term)  (allVarTpInf : list (string * term)) :=
+match conjRHS with
+| tApp (tVar str) lstArgs =>                            match lookUpVarsOne str allVarTpInf with
+                                                         | [h] => tApp <%idFn%> ((snd h) :: (tVar str) :: (map (fun arg => removeVarfmFnPos' arg allVarTpInf) lstArgs))
+                                                         | _ => tApp (tVar str) (map (fun arg => removeVarfmFnPos' arg allVarTpInf) lstArgs) 
+                                                        end
+| tApp fn lstArgs => tApp (removeVarfmFnPos' fn allVarTpInf) (map (fun arg => removeVarfmFnPos' arg allVarTpInf) lstArgs)
+| _ => conjRHS
+end.   
+
+Definition removeVarfmFnPos (conjunct' : (term * (string * term))) (allVarTpInf : list (string * term)) :=
+match fst conjunct' with
+| tApp <%eq%> [typeVar; t1; t2] => let newConj := tApp <%eq%> [typeVar; t1; removeVarfmFnPos' t2 allVarTpInf] in (newConj, (snd conjunct'))
+| _ => conjunct'
+end.                                                         
+
+
+
 Definition mapToOutCoInd (A : Type) (B : Type) (f : A -> B) (a : outcomePoly A) : outcomePoly B :=
 match a with
 | fuelErrorPoly  => fuelErrorPoly B 
@@ -735,7 +753,9 @@ lAC' <- tmEval all listAllConjs ;;
 lConjs' <- (getSortedOrientedConjsLet modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
 lc'' <- tmEval all lConjs' ;;
 (*tmPrint lc'';;*)
-lConjs <- tmEval all (removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars)) ;;
+lConjs00 <- tmEval all (removeDuplicateDefs (attachOutputVarToSortedConjs lConjs' allVarTpInf modes predTypeInf) (map fst inVars)) ;;
+lConjs <- tmEval all (map (fun lc => removeVarfmFnPos lc allVarTpInf) lConjs00) ;; 
+
 (*tmDefinition "myLC" lConjs ;;*)
 (*
 gConjs' <- (getSortedOrientedConjsGuard modes listAllConjs [] [] [] (map fst inVars) fuel) ;;
