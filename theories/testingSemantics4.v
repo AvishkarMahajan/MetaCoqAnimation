@@ -17,8 +17,20 @@ Import MetaRocqNotations.
 
 Local Open Scope nat_scope.
 Open Scope bs.
+(* Things to fix 
+- relations with empty input/output modes
+- handle case where auxillary relation defined separately - not able to fix :( 
+- use pattern matchning not boolean equality for equalities with unary constructors
 
+- rewrite to avoid any var name clashes
+- rewrite to separate pattern matching from general function inversion
+Optionally :
+- mechanism for function inversion
 
+CoInduction :
+- Automate generation of augmented types/ (co)inductive relations
+- map result back to original types
+*)
 Definition hdPoly {A : Type} (s : polyStream A) : A :=
 match s with 
 | Scons h0 t0 => h0
@@ -88,9 +100,16 @@ lookup Γ x t -> typing Γ (Var x) t
 typing Γ e2 t1 -> typing Γ e1 (Arr t1 t2) ->
 typing Γ (App e1 e2) t2.
 *)
-
+Print TemplateMonad.
+(*
+Inductive lookup : list type -> nat -> type -> Prop :=
+ | lookupFn0 : forall (cxt : list type), lookup cxt 0 N
+ | lookupFnRec : forall (m : nat) (t  : type) (cxt : list type) , lookup cxt m t  -> lookup cxt (S m) (Arr N t).  
+ 
+*)
 
 Inductive typing : list type -> Term -> type -> Prop := (* Mode [0;1], [2]  = type inference, Mode [0;1;2] [] = type checking *) 
+
 | TCon : forall (n : nat) (cxt : list type), typing cxt (Con n) N
 
 
@@ -105,20 +124,66 @@ typing cxt (Abs t1 e) (Arr t1 t2)
 
 
 | TVar : forall (j : nat)  (t : type) (cxt : list type),
-lookup cxt j t  -> typing cxt (Var j) t
+ lookup cxt j t  -> typing cxt (Var j) t
 
 | TApp : forall (e1 e2  : Term) (t1 t2  : type) (cxt : list type),
 typing cxt e2 t1 /\ typing cxt e1 (Arr t1 t2) ->
-typing cxt (App e1 e2) t2 
+typing cxt (App e1 e2) t2
+
 
 with lookup : list type -> nat -> type -> Prop :=
  | lookupFn0 : forall (cxt : list type), lookup cxt 0 N
  | lookupFnRec : forall (m : nat) (t  : type) (cxt : list type) , lookup cxt m t  -> lookup cxt (S m) (Arr N t).  
+ 
+
+
+ 
 
 
 
-MetaRocq Run (animAllCl typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
+MetaRocq Run (animAllCl typing <?typing?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
 
+
+              
+(*
+
+MetaRocq Run (mut <- tmQuoteInductive <? lookup ?>;; tmPrint mut).
+MetaRocq Run (tDat <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "tDat" tDat).
+
+Compute tDat.
+
+Definition animAllCl30 {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (bool) :=
+allClauseData' <- getData' kn modes ;;
+mut <- tmQuoteInductive kn ;; 
+allTpData' <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;;
+allClauseData <- tmEval all (rewriteClAll allClauseData' allTpData') ;;
+allTpData <- tmEval all (updateTpInfFinal allClauseData' allTpData') ;;
+tmDefinition "rewriteData" allClauseData;;
+tmReturn true.
+(*
+clLst <- tmEval all (clauseLst allClauseData) ;;
+
+
+tms <- animAllClLst ind kn clLst modes fuel ;;
+
+inductData <- tmEval all (prodInOut (getFixptData allClauseData)) ;; 
+
+let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
+          u' <- tmEval all u ;;
+          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          tmPrint t' ;;
+               f <- tmUnquote t';;
+               tmPrint f ;;
+              tmEval hnf (my_projT2 f) >>=
+              tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;; tmReturn tms.
+
+
+*)
+MetaRocq Run (animAllCl30 typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
+
+Compute rewriteData.
+
+*)
 Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Con 5))))). 
 
 Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
@@ -444,7 +509,7 @@ Definition omega : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))) (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))).
 
 MetaRocq Run (r <- tmEval all (StmN 30 (bigStepAnimatedTopFnStream (successPoly (tm) ((omega))))) ;; tmPrint r).
-
+Check bigStepAnimatedTopFnStream.
 Definition testTm' : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_abs "x" (Ty_Bool) (tm_var "x"))).
 

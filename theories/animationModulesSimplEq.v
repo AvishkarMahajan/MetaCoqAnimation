@@ -536,7 +536,17 @@ match lst1 with
 end.
                 
 
-Definition animatePredicate {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (outputTm : term) (outputTp : term) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+                   
+                
+      
+
+
+Definition animatePredicate {A : Type} (induct : A) (kn : kername) (conjunct' : (term * (string * term))) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
+outputTp <- tmEval all ((snd (snd conjunct'))) ;;
+let conjunct := fst conjunct' in
 
 match conjunct with
  | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
@@ -578,7 +588,7 @@ match conjunct with
                        (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
                       
-                       u' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+                       u' <- tmEval all (removeopTm (DB.deBruijnOption u))  ;;
                       tmReturn u'
                      
 
@@ -626,11 +636,6 @@ match conjunct with
                      
 
 
-
-
  | _ => tmFail "incorrect inductive shape"
  end.
  
-
-                   
-      
