@@ -537,8 +537,7 @@ end.
                 
 
 
-                   
-                
+
       
 
 
@@ -638,4 +637,228 @@ match conjunct with
 
  | _ => tmFail "incorrect inductive shape"
  end.
+
+Fixpoint mklhsProdType2 (lhsIndPre : list (term * term)) : TemplateMonad term :=
+  match lhsIndPre with
+  | [] => tmReturn <%bool%>
+  | [h] => tmReturn (snd h)
+  | h :: t =>
+      res <- mklhsProdType2 t ;;
+      tmReturn (tApp (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} [])
+                     [snd h; res])
+  end.
+
+(* Construct a product term from a list of term-type pairs. *)
+Fixpoint mklhsProdTm2 (lhsIndPre : list (term * term)) : TemplateMonad term :=
+  match lhsIndPre with
+  | [] => tmReturn <%true%>
+  | [h] => tmReturn (fst h)
+  | h :: t =>
+      res <- mklhsProdTm2 t ;;
+      resT <- mklhsProdType2 t ;;
+      tmReturn (tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
+                     [snd h; resT; fst h; res])
+  end.                   
+                
+Print tLam.
+
+
+Definition animatePredicateEmptyIn {A : Type} (induct : A) (kn : kername) (conjunct' : (term * (string * term))) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
+outputTp <- tmEval all ((snd (snd conjunct'))) ;;
+let conjunct := fst conjunct' in
+
+match conjunct with
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType2 inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm2 inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType2 predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm2 predOutArgs ;;
+                      predInProdTp <- mklhsProdType2 predInArgs ;;
+                      predInProdTm <- mklhsProdTm2 predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tLam "fuel" <%nat%> (tLam "input" <%outcomePoly bool%> (tApp (tVar (String.append indNm "AnimatedTopFn"))[tVar "fuel"])))])   in 
+                    
+                        tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                       u' <- tmEval all (removeopTm (DB.deBruijnOption u))  ;;
+                      tmReturn u'
+                     
+
+ | tApp (tVar indNm) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType2 inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm2 inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType2 predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm2 predOutArgs ;;
+                      predInProdTp <- mklhsProdType2 predInArgs ;;
+                      predInProdTm <- mklhsProdTm2 predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tLam "fuel" <%nat%> (tLam "input" <%outcomePoly bool%> (tApp (tVar (String.append indNm "AnimatedTopFn"))[tVar "fuel"])))])   in 
+                    
+                        tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                       u' <- tmEval all (removeopTm (DB.deBruijnOption u))  ;;
+                      tmReturn u'
+                     
+
+
+ | _ => tmFail "incorrect inductive shape"
+ end.
+  
+Definition animatePredicateEmptyOut {A : Type} (induct : A) (kn : kername) (conjunct : (term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+
+let outputTm := <%true%> in
+let outputTp := <%bool%> in
+
+
+match conjunct with
+ | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType2 inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm2 inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType2 predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm2 predOutArgs ;;
+                      predInProdTp <- mklhsProdType2 predInArgs ;;
+                      predInProdTm <- mklhsProdTm2 predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tVar (String.append indNm "AnimatedTopFn"))])   in 
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                       u' <- tmEval all (removeopTm (DB.deBruijnOption u))  ;;
+                      tmReturn u'
+                     
+
+ | tApp (tVar indNm) lstArgs => 
+                     (*let outputTm := tVar outputVar in 
+                     let outputTp := lookUpVarsOneDefBool outputVar allVarTpInf in *)
+                     let mode := getModeFmLst indNm modes in
+                     let predTp := getPredTp indNm predTypeInf in
+                     let predInArgsTm := getInArgs' mode lstArgs in
+                     let predInArgsTp := getInArgs' mode predTp in
+                     let predOutArgsTm := getOutArgs' mode lstArgs in
+                     let predOutArgsTp := getOutArgs' mode predTp in
+                     let inputVars := extractOrderedVarsfmLst predInArgsTm in
+                     let inputVarsTmTp := mkLstTm (lookUpVars inputVars allVarTpInf) in
+                     let predInArgs := crossList predInArgsTm predInArgsTp in
+                     let predOutArgs := crossList predOutArgsTm predOutArgsTp in
+                     
+                     inputVarProdTp <- mklhsProdType2 inputVarsTmTp ;;
+                     inputVarProdTm <- mklhsProdTm2 inputVarsTmTp ;;
+                     
+                     
+                     
+                     
+                      
+                      
+                      
+                      predOutProdTp <- mklhsProdType2 predOutArgs ;;
+                      predOutProdTm <- mklhsProdTm2 predOutArgs ;;
+                      predInProdTp <- mklhsProdType2 predInArgs ;;
+                      predInProdTm <- mklhsProdTm2 predInArgs ;; 
+                      tIn' <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
+                                         
+                      let tIn :=  (tApp <%composeOutcomePoly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ;  (tVar (String.append indNm "AnimatedTopFn"))])   in 
+                      tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  predOutProdTm predOutProdTp  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
+                      
+
+
+
+                      let u :=
+                       (tApp <%composeOutcomePoly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
+                      u'' <- tmEval all u ;;
+                      
+                       u' <- tmEval all (removeopTm (DB.deBruijnOption u))  ;;
+                      tmReturn u'
+                     
+                     
+
+
+ | _ => tmFail "incorrect inductive shape"
+ end.
+  
+Print getModeFmLst. 
  

@@ -73,6 +73,17 @@ match n with
 end.
 
 
+Inductive isGood : bool -> list nat -> Prop :=
+|isG : isGood true [].
+
+MetaRocq Run (animAllCl isGood <? isGood ?> [("isGood", ([], [0;1]))] 500).
+
+
+
+
+
+Compute isGoodAnimatedTopFn 15.
+
 
 CoInductive Integrate : Stream -> Stream -> Prop :=
 | integNil : Integrate nil nil
