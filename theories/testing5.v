@@ -8,6 +8,7 @@ Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
 Require Import List.
+From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -33,23 +34,6 @@ match a with
 end.
 *)
 
-(*
-
-CoInductive result_stream (A : Type) := 
-| Scons : A -> result_stream A -> result_stream A.
-
-Compute Scons nat 4.
-
-CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : result_stream B :=
-Scons B (f n0 inp) (makeStm A B f (S n0) inp). 
-
-Definition streamFromFunction (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : result_stream B :=
-makeStm A B f 0 inp.
- 
-
-  
-Print hd.
-*)
 
 CoInductive Counter : Type :=
 | incr : Counter -> Counter.
@@ -64,22 +48,6 @@ Definition eqFnCounter : Counter -> Counter -> bool := (fun s1 s2 => true).
 CoFixpoint from (n : nat) : Stream :=
 Seq n (from (S n)).
 
-Definition hdPoly {A : Type} (s : result_stream A) : A :=
-match s with 
-| Scons h0 t0 => h0
-end.
-
-Definition tlPoly {A : Type} (s : result_stream A) : result_stream A :=
-match s with 
-| Scons h0 t0 => t0
-end.
-
-
-Fixpoint streamNth {A : Type} (n : nat) (s : result_stream A) :  A :=
-match n with
-| 0 => hdPoly s
-| S n => streamNth n (tlPoly s)
-end.
 
 
 
@@ -96,7 +64,7 @@ MetaRocq Run (animateCoinductive Integrate <? Integrate ?> [("Integrate", ([0], 
 
 Print IntegrateAnimatedTopFn.
 
-MetaRocq Run (r <- tmEval all (streamNth 15 (IntegrateAnimatedTopFnStream (Success (Stream) ((from 0))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 15 (IntegrateAnimatedTopFnStream (Success (Stream) ((from 0))))) ;; tmPrint r).
 
 
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
@@ -114,7 +82,7 @@ Check zipStAnimatedTopFnStream.
 
 
 
-Compute (streamNth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from 7), (from 9))))).
+Compute (Str_nth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from 7), (from 9))))).
 
 
 Inductive coBool : Type :=
@@ -134,11 +102,11 @@ Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := true.
 
 MetaRocq Run (animateCoinductive eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
-Compute (streamNth 10 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 9), (from 9))))).
+Compute (Str_nth 10 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 9), (from 9))))).
 
-Compute (streamNth 0 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
+Compute (Str_nth 0 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
-Compute (streamNth 7 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
+Compute (Str_nth 7 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
 
 
@@ -193,7 +161,7 @@ Parameter lengthRest : Stream -> Counter.
 
 MetaRocq Run (animateCoinductive length <? length ?> [("length", ([0], [1]))] 500).
 
-Compute (streamNth 20 (lengthAnimatedTopFnStream (Success (Stream) (from 5)))).
+Compute (Str_nth 20 (lengthAnimatedTopFnStream (Success (Stream) (from 5)))).
 
 
 Fixpoint isEven (n : nat) : bool :=
@@ -212,7 +180,7 @@ Parameter filterEvenRest : Stream -> Stream.
 MetaRocq Run (animateCoinductive filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
 
 
-Compute (streamNth 20 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
+Compute (Str_nth 20 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
 
 
 

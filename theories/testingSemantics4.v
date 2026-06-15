@@ -8,6 +8,7 @@ Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
 Require Import List.
+From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -31,22 +32,6 @@ CoInduction :
 - Automate generation of augmented types/ (co)inductive relations
 - map result back to original types
 *)
-Definition hdPoly {A : Type} (s : result_stream A) : A :=
-match s with 
-| Scons h0 t0 => h0
-end.
-
-Definition tlPoly {A : Type} (s : result_stream A) : result_stream A :=
-match s with 
-| Scons h0 t0 => t0
-end.
-
-
-Fixpoint streamNth {A : Type} (n : nat) (s : result_stream A) :  A :=
-match n with
-| 0 => hdPoly s
-| S n => streamNth n (tlPoly s)
-end.
 
 
 
@@ -503,17 +488,17 @@ MetaRocq Run (animateCoinductive bigStep <? bigStep ?> [("bigStep", ([0], [1]));
 
 
 
-MetaRocq Run (r <- tmEval all (streamNth 25 (bigStepAnimatedTopFnStream (Success (tm) ((testTm))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 25 (bigStepAnimatedTopFnStream (Success (tm) ((testTm))))) ;; tmPrint r).
 
 Definition omega : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))) (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))).
 
-MetaRocq Run (r <- tmEval all (streamNth 30 (bigStepAnimatedTopFnStream (Success (tm) ((omega))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 30 (bigStepAnimatedTopFnStream (Success (tm) ((omega))))) ;; tmPrint r).
 Check bigStepAnimatedTopFnStream.
 Definition testTm' : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_abs "x" (Ty_Bool) (tm_var "x"))).
 
-MetaRocq Run (r <- tmEval all (streamNth 30 (bigStepAnimatedTopFnStream (Success (tm) ((testTm'))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 30 (bigStepAnimatedTopFnStream (Success (tm) ((testTm'))))) ;; tmPrint r).
 
 End STLC.
 
@@ -709,7 +694,7 @@ pure (fun m : nat => m + 1).
 
 
 
-MetaRocq Run (r <- tmEval all (streamNth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
 
 
 
@@ -720,7 +705,7 @@ While (Var 0) (Assign 8 (Const 9)).
 Definition initFn' :=
 pure  (fun m : nat => m).
 
-MetaRocq Run (r <- tmEval all (streamNth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
 End ImpSem.
 
@@ -867,7 +852,7 @@ pure ( add1).
 
 
 
-MetaRocq Run (r <- tmEval all (streamNth 30 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 30 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
 
 
 
@@ -878,7 +863,7 @@ While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2)) (Seq (Assign 2 (Va
 Definition initFn' :=
 pure ( (fun m : nat => m)).
 
-MetaRocq Run (r <- tmEval all (streamNth 40 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 40 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
 End ImpSemTr.
 

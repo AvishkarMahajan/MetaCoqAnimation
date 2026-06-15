@@ -16,6 +16,7 @@ Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
 Require Import List.
+From Stdlib Require Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -790,19 +791,14 @@ clause_lst_one' (fst (fst (fst dataOne))) (snd dataOne).
 Definition clause_lst (data :   list (((string × list term) × list term) × list (string × term))) : list ((string * string) * term):=
 concat (map clause_lst_one'' data).
 
-(** Coinductive stream of animation results, used for lazy enumeration of coinductive outputs. *)
-CoInductive result_stream (A : Type) :=
-| Scons : A -> result_stream A -> result_stream A.
+(** Internal corecursive worker: produces [f n0 inp, f (n0+1) inp, …]. *)
+CoFixpoint make_stream (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : Streams.Stream B :=
+  Streams.Cons (f n0 inp) (make_stream A B f (S n0) inp).
 
-(** Internal corecursive worker for [streamFromFunction]: produces the stream
-    [f n0 inp, f (n0+1) inp, …] using an incrementing fuel counter. *)
-CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : result_stream B :=
-Scons B (f n0 inp) (makeStm A B f (S n0) inp).
-
-(** Build an infinite stream of results by applying [f] to [inp] with
+(** Build an infinite [Streams.Stream] of results by applying [f] to [inp] with
     increasing fuel values starting from 0. *)
-Definition streamFromFunction (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : result_stream B :=
-makeStm A B f 0 inp.
+Definition streamFromFunction (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : Streams.Stream B :=
+  make_stream A B f 0 inp.
 
 (** Find an inductive by name in [inductData] and return [proj h] for its record,
     failing with [errMsg] if not found. *)
@@ -874,7 +870,7 @@ let u := (mk_rec_fn (mk_all_ind_top (inductData) kn modes) 0)  in
               tmDefinitionRed_ false (String.append (snd kn) animatedTopFnSuffix) (Some hnf) ;; tmReturn tms.
 
 (** Main entry point: animate a coinductive relation into an executable corecursive stream.
-    Generates both a fixpoint and a result_stream for lazy enumeration. *)
+    Generates both a fixpoint and a [Stream] for lazy enumeration. *)
 Definition animateCoinductive {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
 allClauseData' <- get_data' kn modes ;;
 mut <- tmQuoteInductive kn ;;

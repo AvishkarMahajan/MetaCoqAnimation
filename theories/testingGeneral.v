@@ -8,6 +8,7 @@ Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
 Require Import List.
+From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -55,23 +56,6 @@ end.
 CoFixpoint from (n : nat) : Stream :=
 Seq n (from (S n)).
 
-Definition hdPoly {A : Type} (s : result_stream A) : A :=
-match s with 
-| Scons h0 t0 => h0
-end.
-
-Definition tlPoly {A : Type} (s : result_stream A) : result_stream A :=
-match s with 
-| Scons h0 t0 => t0
-end.
-
-
-Fixpoint streamNth {A : Type} (n : nat) (s : result_stream A) :  A :=
-match n with
-| 0 => hdPoly s
-| S n => streamNth n (tlPoly s)
-end.
-
 
 Inductive isGood : bool -> list nat -> Prop :=
 |isG : isGood true [].
@@ -103,9 +87,9 @@ MetaRocq Run (animateCoinductive Integrate <? Integrate ?> [("Integrate", ([0], 
 
 
 
-MetaRocq Run (r <- tmEval all (streamNth 15 (IntegrateAnimatedTopFnStream (Success (Stream) (((from 4)))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 15 (IntegrateAnimatedTopFnStream (Success (Stream) (((from 4)))))) ;; tmPrint r).
 
-MetaRocq Run (r <- tmEval all (streamNth 15 (IntegrateAnimatedTopFnStream (Success (Stream) (((Seq 4 (Seq 3 (Seq 2 nil)))))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (Str_nth 15 (IntegrateAnimatedTopFnStream (Success (Stream) (((Seq 4 (Seq 3 (Seq 2 nil)))))))) ;; tmPrint r).
 
 Inductive coBool : Type :=
 | coT : coBool
@@ -126,7 +110,7 @@ MetaRocq Run (animateCoinductive eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
 
 
-Compute (streamNth 12 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 8), (from 9))))).
+Compute (Str_nth 12 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 8), (from 9))))).
 
 Fixpoint isEven (n : nat) : bool :=
 match n with
@@ -146,9 +130,9 @@ Definition filterEvenRest := fun s : Stream => undefinedStm.
 MetaRocq Run (animateCoinductive filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
 
 
-Compute (streamNth 50 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
+Compute (Str_nth 50 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
 
-Compute (streamNth 25 (filterEvenAnimatedTopFnStream (Success (Stream) (Seq 0 (Seq 2 (Seq 3 (Seq 6 (Seq 8 (Seq 10 (Seq 12 nil)))))))))).
+Compute (Str_nth 25 (filterEvenAnimatedTopFnStream (Success (Stream) (Seq 0 (Seq 2 (Seq 3 (Seq 6 (Seq 8 (Seq 10 (Seq 12 nil)))))))))).
 
 
 Inductive even : nat -> bool -> Prop := (* mode = ([0], [1] *)
@@ -212,7 +196,7 @@ Check zipStAnimatedTopFnStream.
 
 
 
-Compute (streamNth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from 7), (from 9))))).
+Compute (Str_nth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from 7), (from 9))))).
 
 
 
@@ -220,11 +204,11 @@ Compute (streamNth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from
 
 
 
-Compute (streamNth 10 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 9), (from 9))))).
+Compute (Str_nth 10 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 9), (from 9))))).
 
-Compute (streamNth 0 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
+Compute (Str_nth 0 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
-Compute (streamNth 7 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
+Compute (Str_nth 7 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
 
 
@@ -279,7 +263,7 @@ Parameter lengthRest : Stream -> Counter.
 
 MetaRocq Run (animateCoinductive length <? length ?> [("length", ([0], [1]))] 500).
 
-Compute (streamNth 20 (lengthAnimatedTopFnStream (Success (Stream) (from 5)))).
+Compute (Str_nth 20 (lengthAnimatedTopFnStream (Success (Stream) (from 5)))).
 
 
 
@@ -293,7 +277,7 @@ Parameter filterEvenRest : Stream -> Stream.
 MetaRocq Run (animateCoinductive filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
 
 
-Compute (streamNth 20 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
+Compute (Str_nth 20 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
 
 *)
 
