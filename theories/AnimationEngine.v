@@ -15,7 +15,7 @@ Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
-Require Import List.
+From Stdlib Require Import List.
 From Stdlib Require Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
@@ -123,19 +123,12 @@ Definition get_cl_body (c : constructor_body) : list term :=
 Definition get_cl_head (c : constructor_body) :  term :=
  get_cl_head' (cstr_type c).
 
-(** Check if a string is in a list of strings. *)
-Fixpoint member_of_string_list (s : string) (l1 : list string) : bool :=
-  match l1 with
-  | [] => false
-  | h :: t => if String.eqb s h then true else member_of_string_list s t
-  end.
-
 (** Extract names of inductive predicates applied in a list of terms. *)
 Fixpoint get_ind_app (l : list term) (indNames : list string) : list string :=
   match l with
   | [] => []
   | h :: t => match h with
-              | tApp (tVar str) args => if (member_of_string_list str indNames) then (str :: (get_ind_app t indNames)) else (get_ind_app t indNames)
+              | tApp (tVar str) args => if (in_str_lst str indNames) then (str :: (get_ind_app t indNames)) else (get_ind_app t indNames)
               | _ => (get_ind_app t indNames)
               end
   end.

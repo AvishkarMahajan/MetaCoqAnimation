@@ -7,7 +7,6 @@
 
     All other animation modules depend on this file. *)
 
-Require Import List.
 Require Import MetaRocq.Template.All.
 From Stdlib Require Import List PeanoNat.
 Import monad_utils.MRMonadNotation.

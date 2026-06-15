@@ -11,7 +11,7 @@
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
-Require Import List.
+From Stdlib Require Import List.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.

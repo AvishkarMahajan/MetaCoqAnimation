@@ -13,7 +13,7 @@ Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
-Require Import List.
+From Stdlib Require Import List.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -309,17 +309,6 @@ Fixpoint mk_lhs_prod_tm2_non_monad (lhsIndPre : list (term * term)) : term :=
   | h :: t => tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
                      [snd h; mk_lhs_prod_type2_non_monad t; fst h; mk_lhs_prod_tm2_non_monad t]
   end.
-
-(** Look up the argument types for predicate [indNm] in [predTypeInf]. *)
-Fixpoint get_pred_tp_fm_lst (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
-  match predTypeInf with
-  | []         => []
-  | h :: rest  => if String.eqb indNm (fst h) then snd h else get_pred_tp_fm_lst indNm rest
-  end.
-
-(** Rewrite a predicate conjunct into an equality against the animated function.
-    Currently a stub — returns the conjunct unchanged. *)
-Definition rewrite_pred_conj (conj' : term) (modes : list (string * (list nat * list nat))) (predTypeInf : list (string * (list term))) : term := conj'.
 
 (** Topologically sort and orient conjuncts by known variables [kv]:
     equalities where one side is fully known go to [sortedConjs] (let-bindings);

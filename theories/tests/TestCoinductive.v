@@ -8,7 +8,7 @@ Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
-Require Import List.
+From Stdlib Require Import List.
 From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.

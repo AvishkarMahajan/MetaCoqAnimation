@@ -10,7 +10,7 @@
 
 Require Import Animation.MetaRocqUtils.
 
-Require Import List.
+From Stdlib Require Import List.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -581,19 +581,7 @@ Fixpoint just_animate_mult_pat
          (fuel : nat)
   : TemplateMonad (list term) :=
   match branchData with
-  | [] => tmFail "no Branch Data"
-  | [h] =>
-      t <- just_animate_pat_mat4
-             induct
-             (fst h)
-             inputType
-             (tApp (tConstruct {| inductive_mind := <?option?>; inductive_ind := 0 |} 0 [])
-                   [outputType; snd h])
-             (tApp <%option%> [outputType])
-             (tApp (tConstruct {| inductive_mind := <?option?>; inductive_ind := 0 |} 1 [])
-                   [outputType])
-             fuel ;;
-      tmReturn [t]
+  | [] => tmReturn []
   | h :: rest =>
       t <- just_animate_pat_mat4
              induct
@@ -682,33 +670,16 @@ tmReturn t'.
 
 (** Compile a constructor-pattern equality [t_pattern = t_expr] into a composed
     [animation_result] function: first match the input against [t_expr] to get
-    the pattern variables, then match those against [t_pattern] to produce the output. *)
+    the pattern variables, then match those against [t_pattern] to produce the output.
+    The [rhsTerm] is the right-hand side of the equality (either a [tApp] or [tVar]). *)
 Definition extract_pat_mat_binders_partial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
-
   match conjunct with
-  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
-                      tIn <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-
-                      let u :=
-                       (tApp <%compose_outcome_poly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
-
-                      tmReturn u'
-
-  | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
-                      tIn <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
-                      tOut <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-
-                      let u :=
-                       (tApp <%compose_outcome_poly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
-                      u'' <- tmEval all u ;;
-
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
-                      tmReturn u'
-
+  | tApp <%eq%> [typeVar; patMatTerm; rhsTerm] =>
+      tIn <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct inputTm inputTp rhsTerm typeVar (String.append (snd kn) "IN") fuel ;;
+      tOut <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct patMatTerm typeVar outputTm outputTp (String.append (snd kn) "OUT") fuel ;;
+      let u := tApp <%compose_outcome_poly%> [inputTp; typeVar; outputTp; tIn; tOut] in
+      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
+      tmReturn u'
   | _ => tmFail "incorrect inductive shape"
   end.
 
