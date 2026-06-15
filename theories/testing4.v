@@ -1,11 +1,11 @@
-Require Import Animation.animationModulesIntegration2.
-Require Import Animation.animationModulesFixPt.
+Require Import Animation.AnimationDispatch.
+Require Import Animation.AnimationEngine.
 
 
-Require Import Animation.animationModulesSimplEq.
+Require Import Animation.EqualityResolution.
 
-Require Import Animation.utils2.
-Require Import Animation.animationModulesPatMat.
+Require Import Animation.MetaRocqUtils.
+Require Import Animation.PatternCompilation.
 
 Require Import List.
 Require Import MetaRocq.Template.All.
@@ -93,7 +93,7 @@ Inductive stack_step : (indTp state) -> list sinstr Ã— list nat -> list sinstr Ã
     
 (*
 Unset Universe Checking.
-Definition animAllCl'' {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
+Definition animateInductive'' {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (list term) :=
 allClauseData <- getData' kn modes ;;
 
 let clLst := clauseLst allClauseData in
@@ -105,14 +105,14 @@ let inductData := prodInOut (getFixptData allClauseData) in
 
 let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
           u' <- tmEval all u ;;
-          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          t' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
           tmPrint t' ;;
                f <- tmUnquote t';;
                tmPrint f ;;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false (String.append (snd kn) "AnimatedTopFn") (Some hnf) ;; *) tmReturn tms.
 (*              
-MetaRocq Run (animAllCl'' stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
+MetaRocq Run (animateInductive'' stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
 *)
 MetaRocq Run (d <- getData' <?stack_step?> [("stack_step",([0;1],[2]))];; cd' <- tmEval all (clauseLst d);; tmPrint cd').
 
@@ -148,12 +148,12 @@ tmPrint combineGuard ;;
 tmReturn fkTm.
 (*
 match inVars with
- | h :: rest => tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%outcomePoly%> [mkProdTypeVars inVars])(splitInputs' inVars (letBind combineGuard))))
+ | h :: rest => tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%AnimationResult%> [telescopeToProdType inVars])(splitInputs' inVars (letBind combineGuard))))
  | [] => tmReturn (mkLamTp (app (mkAnimatedFnNm lhsPreds) [("fuel", <%nat%>)]) (splitInputs' inVars (letBind combineGuard)))
 end. 
 *)
 
-Definition animateListLetAndPredGuard3'' {A : Type} (ind : A) (kn : kername) (bigConj : term) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
+Definition compileLetBindingsAndGuards'' {A : Type} (ind : A) (kn : kername) (bigConj : term) (cstrNm : string) (inVars : list (prod string term))  (outVars : list (prod string term)) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (lhsPreds : list (string * term)) (fuel : nat) : TemplateMonad term :=
 
 let listAllConjs := getListConjAll bigConj in
 let gConjsEq := filterConjsEq listAllConjs in
@@ -182,7 +182,7 @@ tmPrint gConjsEq;;*)
 animateListLetAndPredGuard'' ind kn lConjs gConjsEq gConjsPred inVars outVars (modes) (predTypeInf) (allVarTpInf) (lhsPreds) fuel ;;
 tmReturn fkTm.
 (*
-t'' <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption t)) ;;
+t'' <- tmEval all  (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption t)) ;;
 *)
 (*
 tmPrint t'';;
@@ -225,7 +225,7 @@ c5 <- tmEval all predTpsOccAn ;;
 
 
 
-(animateListLetAndPredGuard3'' ind kn c cstrNm c1 c2 modes c3 c4 c5 fuel). 
+(compileLetBindingsAndGuards'' ind kn c cstrNm c1 c2 modes c3 c4 c5 fuel). 
 
 
 
@@ -312,6 +312,6 @@ MetaRocq Run (animateListConjLetCl'' (stack_step) (<?stack_step?>) (ss_pushLC) (
                    
 Set Universe Checking.
 *)
-MetaRocq Run (animAllCl stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
+MetaRocq Run (animateInductive stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
 
 

@@ -1,11 +1,11 @@
-Require Import Animation.animationModulesIntegration2.
-Require Import Animation.animationModulesFixPt.
+Require Import Animation.AnimationDispatch.
+Require Import Animation.AnimationEngine.
 
 
-Require Import Animation.animationModulesSimplEq.
+Require Import Animation.EqualityResolution.
 
-Require Import Animation.utils2.
-Require Import Animation.animationModulesPatMat.
+Require Import Animation.MetaRocqUtils.
+Require Import Animation.PatternCompilation.
 
 Require Import List.
 Require Import MetaRocq.Template.All.
@@ -23,27 +23,27 @@ Print indTp.
 
 CoInductive Stream : Set := Seq { hd : nat; tl : Stream }.
 Print Seq.
-Print outcomePoly.
+Print AnimationResult.
 (*
-Definition mapToOutCoInd (A : Type) (B : Type) (f : A -> B) (a : outcomePoly A) : outcomePoly B :=
+Definition mapOutcomePoly (A : Type) (B : Type) (f : A -> B) (a : AnimationResult A) : AnimationResult B :=
 match a with
-| fuelErrorPoly  => fuelErrorPoly B 
-| successPoly a' => successPoly B (f a')
-| noMatchPoly => noMatchPoly B
+| FuelError  => FuelError B 
+| Success a' => Success B (f a')
+| NoMatch => NoMatch B
 end.
 *)
 
 (*
 
-CoInductive polyStream (A : Type) := 
-| Scons : A -> polyStream A -> polyStream A.
+CoInductive ResultStream (A : Type) := 
+| Scons : A -> ResultStream A -> ResultStream A.
 
 Compute Scons nat 4.
 
-CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : polyStream B :=
+CoFixpoint makeStm (A : Type) (B : Type) (f : nat -> A -> B) (n0 : nat) (inp : A) : ResultStream B :=
 Scons B (f n0 inp) (makeStm A B f (S n0) inp). 
 
-Definition makeStm0 (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : polyStream B :=
+Definition streamFromFunction (A : Type) (B : Type) (f : nat -> A -> B) (inp : A) : ResultStream B :=
 makeStm A B f 0 inp.
  
 
@@ -64,21 +64,21 @@ Definition eqFnCounter : Counter -> Counter -> bool := (fun s1 s2 => true).
 CoFixpoint from (n : nat) : Stream :=
 Seq n (from (S n)).
 
-Definition hdPoly {A : Type} (s : polyStream A) : A :=
+Definition hdPoly {A : Type} (s : ResultStream A) : A :=
 match s with 
 | Scons h0 t0 => h0
 end.
 
-Definition tlPoly {A : Type} (s : polyStream A) : polyStream A :=
+Definition tlPoly {A : Type} (s : ResultStream A) : ResultStream A :=
 match s with 
 | Scons h0 t0 => t0
 end.
 
 
-Fixpoint StmN {A : Type} (n : nat) (s : polyStream A) :  A :=
+Fixpoint streamNth {A : Type} (n : nat) (s : ResultStream A) :  A :=
 match n with
 | 0 => hdPoly s
-| S n => StmN n (tlPoly s)
+| S n => streamNth n (tlPoly s)
 end.
 
 
@@ -92,11 +92,11 @@ Parameter IntegrateRest : Stream -> Stream.
 Parameter addStmRest : (nat * Stream) -> Stream.
 Parameter zipStRest : (Stream * Stream) -> Stream.
 
-MetaRocq Run (animAllClCoInd Integrate <? Integrate ?> [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive Integrate <? Integrate ?> [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 500).
 
 Print IntegrateAnimatedTopFn.
 
-MetaRocq Run (r <- tmEval all (StmN 15 (IntegrateAnimatedTopFnStream (successPoly (Stream) ((from 0))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 15 (IntegrateAnimatedTopFnStream (Success (Stream) ((from 0))))) ;; tmPrint r).
 
 
 CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
@@ -104,7 +104,7 @@ CoInductive zipSt : Stream -> Stream -> Stream -> Prop :=
                       -> zipSt s1 s3 s6. 
 
 
-MetaRocq Run (animAllClCoInd zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive zipSt <? zipSt ?> [("zipSt", ([0;1], [2]))] 500).
 
 Print zipStAnimatedTopFn.
     
@@ -114,7 +114,7 @@ Check zipStAnimatedTopFnStream.
 
 
 
-Compute (StmN 6 (zipStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 7), (from 9))))).
+Compute (streamNth 6 (zipStAnimatedTopFnStream (Success (Stream * Stream) ((from 7), (from 9))))).
 
 
 Inductive coBool : Type :=
@@ -132,13 +132,13 @@ Parameter eqStRest : (Stream * Stream) -> bool.
 Definition eqFncoBool (c1 : coBool) (c2 : coBool) : bool := true.
 *)
 
-MetaRocq Run (animAllClCoInd eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
-Compute (StmN 10 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 9), (from 9))))).
+Compute (streamNth 10 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 9), (from 9))))).
 
-Compute (StmN 0 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
+Compute (streamNth 0 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
-Compute (StmN 7 (eqStAnimatedTopFnStream (successPoly (Stream * Stream) ((from 5), (from 9))))).
+Compute (streamNth 7 (eqStAnimatedTopFnStream (Success (Stream * Stream) ((from 5), (from 9))))).
 
 
 
@@ -191,9 +191,9 @@ CoInductive length : Stream -> Counter -> Prop :=
 
 Parameter lengthRest : Stream -> Counter.
 
-MetaRocq Run (animAllClCoInd length <? length ?> [("length", ([0], [1]))] 500).
+MetaRocq Run (animateCoinductive length <? length ?> [("length", ([0], [1]))] 500).
 
-Compute (StmN 20 (lengthAnimatedTopFnStream (successPoly (Stream) (from 5)))).
+Compute (streamNth 20 (lengthAnimatedTopFnStream (Success (Stream) (from 5)))).
 
 
 Fixpoint isEven (n : nat) : bool :=
@@ -209,26 +209,26 @@ CoInductive filterEven : Stream -> Stream -> Prop :=
 
 Parameter filterEvenRest : Stream -> Stream.
 
-MetaRocq Run (animAllClCoInd filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
+MetaRocq Run (animateCoinductive filterEven <? filterEven ?> [("filterEven", ([0], [1]))] 500).
 
 
-Compute (StmN 20 (filterEvenAnimatedTopFnStream (successPoly (Stream) (from 0)))).
+Compute (streamNth 20 (filterEvenAnimatedTopFnStream (Success (Stream) (from 0)))).
 
 
 
 (* Correctness criteria :
 
-(One successPoly element in stream)
+(One Success element in stream)
 
 Co-Inductive or Inductive interpretation of R
 
 given an input i to relation R, say (i,R) is 'order independent with result' if the following holds : there exists j (j might not be fixed) st. R(i,j) holds, where at each stage of the computation when solving for 
 for some relation instance R'(i',j') the clauses in R' (where R' may be R itself) maybe applied in aribtrary order. 
 
-Then given such an (i, R) if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = successPoly (F u RRest), then there exists some k st
+Then given such an (i, R) if there exists n st. stmN n RTopFnAnimatedStream Success (i) = Success (F u RRest), then there exists some k st
 R(i, F u k) holds. (i.e. u is guaranteed to be the prefix of j where R(i,j) holds.)
 
-if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = successPoly (j) where j does not use the symbol RRest, then it must be the case that 
+if there exists n st. stmN n RTopFnAnimatedStream Success (i) = Success (j) where j does not use the symbol RRest, then it must be the case that 
 R (i,j) holds.
 
 (one noMatch element in result stream)
@@ -238,15 +238,15 @@ Co-Inductive or Inductive interpretation of R
 Given R say R is 'order independent' if for any any input i there exists j (possibly not fixed) st. R (i,j) under arbitrary clause order of  the involved relations at each stage of the computation or 
 it is always the case that there is no j st. R (i, j) regardless of the clause order used at each stage of the computation. 
 
-Then given such an R and on some aribitrary input i, if there exists n st. stmN n RTopFnAnimatedStream successPoly (i) = noMatchPoly then there exists no j st. R(i,j).
+Then given such an R and on some aribitrary input i, if there exists n st. stmN n RTopFnAnimatedStream Success (i) = NoMatch then there exists no j st. R(i,j).
 
 
-(Constant successPoly stream)
+(Constant Success stream)
 
 Co-Inductive interpretation of R or Inductive interpretation of R with all inductive types : 
 
-Given R is order independent if there exists m st. for all n>= m, stmN n RTopFnAnimatedStream successPoly (i) = successPoly j, for some fixed j where j does  not use the parameter RRest, then it must be the case that R(i,j).
-(but not for inductive interpretation of a relation over co-inductive types, for eg. the inductive interpretation of zipSt is empty, but zipStAnimatedTopFnStream is not a stream of noMatchPoly)
+Given R is order independent if there exists m st. for all n>= m, stmN n RTopFnAnimatedStream Success (i) = Success j, for some fixed j where j does  not use the parameter RRest, then it must be the case that R(i,j).
+(but not for inductive interpretation of a relation over co-inductive types, for eg. the inductive interpretation of zipSt is empty, but zipStAnimatedTopFnStream is not a stream of NoMatch)
 
 
 
@@ -269,22 +269,22 @@ both interpretations produce a result for a given input, the result must have th
 
 (*
 Check rest
-                   (successPoly Stream
+                   (Success Stream
                       ((cofix Fcofix (x : nat) : Stream := {| hd := x; tl := Fcofix (S x) |}) 5)).
 
-Definition addOut {A:Type} {B : Type} (f : A -> B) (n : nat) (input : outcomePoly A): (outcomePoly B) :=
+Definition addOut {A:Type} {B : Type} (f : A -> B) (n : nat) (input : AnimationResult A): (AnimationResult B) :=
  match input with
- | successPoly input' => successPoly B (f input')
- | fuelErrorPoly => fuelErrorPoly B 
- | noMatchPoly => noMatchPoly B
+ | Success input' => Success B (f input')
+ | FuelError => FuelError B 
+ | NoMatch => NoMatch B
 end. 
 Parameter errCounter : Counter.
-Definition removeOut (x : outcomePoly Counter) : Counter :=
+Definition removeOut (x : AnimationResult Counter) : Counter :=
 match x with
-| successPoly x' => x'
+| Success x' => x'
 | _ => errCounter
 end.
-MetaRocq Run (f' <- tmEval all (fun topFn s  => removeOut (plus1Animated  (addOut (topFn)) 5 (successPoly Stream s))) ;; tmDefinition "Plus1An" f').
+MetaRocq Run (f' <- tmEval all (fun topFn s  => removeOut (plus1Animated  (addOut (topFn)) 5 (Success Stream s))) ;; tmDefinition "Plus1An" f').
 
 Compute (fun f => Plus1An f).
 
@@ -327,15 +327,15 @@ Print lengthAnimatedTopFn.
 
 Print appendStAnimatedTopFn.
 CoFixpoint from (n:nat) : Stream := Seq n (from (S n)).
-Definition tFun : nat -> outcomePoly (Stream × Stream) -> outcomePoly Stream := fun x y => successPoly Stream (from 7).
+Definition tFun : nat -> AnimationResult (Stream × Stream) -> AnimationResult Stream := fun x y => Success Stream (from 7).
 
 
 
 
-Compute appStAnimated tFun 5 (successPoly (Stream * Stream) ((from 13), (from 1))).
+Compute appStAnimated tFun 5 (Success (Stream * Stream) ((from 13), (from 1))).
 
 (*
-Theorem try : appendStAnimatedTopFn 9 (successPoly (Stream * Stream) ((from 0), (from 1))) = fuelErrorPoly Stream.
+Theorem try : appendStAnimatedTopFn 9 (Success (Stream * Stream) ((from 0), (from 1))) = FuelError Stream.
 simpl. simpl. simpl. simpl. 
 *)
 
@@ -351,9 +351,9 @@ end.
 CoInductive appendSt'' : Stream -> nat -> Stream -> Prop :=
  | appSt'': forall n s1 s2, s2 = Seq n s1  -> appendSt'' s1 n s2. 
 
-MetaRocq Run (animAllCl appendSt'' <? appendSt'' ?> [("appendSt''", ([0;1], [2]))] 500).
+MetaRocq Run (animateInductive appendSt'' <? appendSt'' ?> [("appendSt''", ([0;1], [2]))] 500).
 
-Compute appendSt''AnimatedTopFn 5 (successPoly (Stream * nat) ((from 0), 1)).
+Compute appendSt''AnimatedTopFn 5 (Success (Stream * nat) ((from 0), 1)).
 
 CoInductive ilist : Type :=
 | iCons : nat -> ilist -> ilist.
@@ -375,32 +375,32 @@ CoInductive eqSt : Stream -> Stream -> bool -> Prop :=
  | eqC: forall n m s1 s2 s3 s4 b1 b2, s1 = Seq n s2  /\ s3 = Seq m s4 /\ n = m /\  eqSt s2 s4 b1 /\ b2 = (b1) -> eqSt s1 s3 b2. 
 
 
-MetaRocq Run (animAllCl eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
+MetaRocq Run (animateInductive eqSt <? eqSt ?> [("eqSt", ([0;1], [2]))] 500).
 
 Print eqStAnimatedTopFn.
 
 
 Definition esatf :=
-fix eqStAnimatedTopFn (fuel : nat) (input : outcomePoly (Stream × Stream)) {struct fuel} :
-    outcomePoly Stream :=
+fix eqStAnimatedTopFn (fuel : nat) (input : AnimationResult (Stream × Stream)) {struct fuel} :
+    AnimationResult Stream :=
   match fuel with
-  | 0 => successPoly Stream s
-  | 1 => successPoly Stream s
-  | 2 => successPoly Stream s
+  | 0 => Success Stream s
+  | 1 => Success Stream s
+  | 2 => Success Stream s
   | S remFuel =>
       dispatchOutcomePolyExt (Stream × Stream) Stream [eqCAnimated eqStAnimatedTopFn] remFuel input
   end
 with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> outcomePoly A -> outcomePoly B)) (fuel' : nat)
-  (input' : outcomePoly A) {struct fuel'} : outcomePoly B :=
+  (A B : Type) (lst : list (nat -> AnimationResult A -> AnimationResult B)) (fuel' : nat)
+  (input' : AnimationResult A) {struct fuel'} : AnimationResult B :=
   match fuel' with
-  | 0 => fuelErrorPoly B
+  | 0 => FuelError B
   | S remFuel' =>
       match lst with
-      | [] => noMatchPoly B
+      | [] => NoMatch B
       | h :: t =>
           match h remFuel' input' with
-          | @noMatchPoly _ => dispatchOutcomePolyExt A B t remFuel' input'
+          | @NoMatch _ => dispatchOutcomePolyExt A B t remFuel' input'
           | _ => h remFuel' input'
           end
       end
@@ -408,9 +408,9 @@ with dispatchOutcomePolyExt
 for
 eqStAnimatedTopFn.
 
-Compute esatf 10 (successPoly (Stream * Stream) ((from 0), (from 1))).
+Compute esatf 10 (Success (Stream * Stream) ((from 0), (from 1))).
 
-Compute esatf 10 (successPoly (Stream * Stream) ((from 1), (from 1))).
+Compute esatf 10 (Success (Stream * Stream) ((from 1), (from 1))).
 
 
 

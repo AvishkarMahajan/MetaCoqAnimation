@@ -1,11 +1,11 @@
-Require Import Animation.animationModulesIntegration2.
-Require Import Animation.animationModulesFixPt.
+Require Import Animation.AnimationDispatch.
+Require Import Animation.AnimationEngine.
 
 
-Require Import Animation.animationModulesSimplEq.
+Require Import Animation.EqualityResolution.
 
-Require Import Animation.utils2.
-Require Import Animation.animationModulesPatMat.
+Require Import Animation.MetaRocqUtils.
+Require Import Animation.PatternCompilation.
 
 Require Import List.
 Require Import MetaRocq.Template.All.
@@ -132,23 +132,23 @@ with lookup : list type -> nat -> type -> Prop :=
 
 
 
-MetaRocq Run (animAllCl typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
+MetaRocq Run (animateInductive typing <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Con 5))))). 
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Con 5))))). 
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],((Add (Con 5) (Var 1)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],((Add (Con 5) (Var 1)))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
 
 
 
@@ -159,12 +159,12 @@ with odd : nat -> bool -> Prop :=
  | oddSucc : forall (w : nat), even w true -> odd (S w) true. 
  
 
-MetaRocq Run (animAllCl even <? even ?> [("even", ([0], [1]));("odd", ([0], [1]))] 100).
+MetaRocq Run (animateInductive even <? even ?> [("even", ([0], [1]));("odd", ([0], [1]))] 100).
 
-Compute evenAnimatedTopFn 30 (successPoly nat 5).
-Compute evenAnimatedTopFn 30 (successPoly nat 4).
-Compute evenAnimatedTopFn 30 (successPoly nat 3).
-Compute evenAnimatedTopFn 30 (successPoly nat 0).
+Compute evenAnimatedTopFn 30 (Success nat 5).
+Compute evenAnimatedTopFn 30 (Success nat 4).
+Compute evenAnimatedTopFn 30 (Success nat 3).
+Compute evenAnimatedTopFn 30 (Success nat 0).
 
 
 
@@ -172,26 +172,26 @@ Inductive suffix : list nat -> list nat -> list nat -> Prop := (* mode = ([0;2],
  | suffixNil : forall (l2  : list nat), suffix [] l2 l2
  | suffixCons : forall (w : nat) (l2 l3 l4 : list nat), suffix l2 l3 l4  -> suffix (w :: l2) l3 (w :: l4).
 
-MetaRocq Run (animAllCl suffix <? suffix ?> [("suffix", ([0;2], [1]))] 100).
+MetaRocq Run (animateInductive suffix <? suffix ?> [("suffix", ([0;2], [1]))] 100).
 
-Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7], [8;7;9;7;8])).
-Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7;9;7;8], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (Success ((list nat) * (list nat)) ([8;7], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (Success ((list nat) * (list nat)) ([8;7;9;7;8], [8;7;9;7;8])).
 
-Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;7;9;7;5], [8;7;9;7;8])).
-Compute suffixAnimatedTopFn 50 (successPoly ((list nat) * (list nat)) ([8;6], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (Success ((list nat) * (list nat)) ([8;7;9;7;5], [8;7;9;7;8])).
+Compute suffixAnimatedTopFn 50 (Success ((list nat) * (list nat)) ([8;6], [8;7;9;7;8])).
 
 
 Inductive prefix : list nat -> list nat -> list nat -> Prop := (* mode = ([0;2], [1] *)
  | prefixNil : forall (l2  : list nat), prefix [] l2 l2
  | prefixCons : forall (w : nat) (l2 l3 l4 : list nat), prefix l2 l3 l4 -> prefix (w :: l2) l3 (w :: l4).
 
-MetaRocq Run (animAllCl prefix <? prefix ?> [("prefix", ([1;2], [0]))] 100).
+MetaRocq Run (animateInductive prefix <? prefix ?> [("prefix", ([1;2], [0]))] 100).
 
 Inductive append : list nat -> list nat -> list nat -> Prop := (* mode = ([0;1], [2] *)
  | appendNil : forall (l2  : list nat), append [] l2 l2
  | appendCons : forall (w : nat) (l2 l3 l4 : list nat), append l2 l3 l4 -> append (w :: l2) l3 (w :: l4).
 
-MetaRocq Run (animAllCl append <? append ?> [("append", ([0;1], [2]))] 100).
+MetaRocq Run (animateInductive append <? append ?> [("append", ([0;1], [2]))] 100).
 
 (*
 Print TemplateMonad.
@@ -205,12 +205,12 @@ Compute typingData.
 Search (nat -> string).
 Search (forall A : Type, A -> list A -> A).
 
-Fixpoint rewriteArgs (l : list term) (varPfix : string) (n : nat) (argTps : list term) : list ((list term * list term) * list (string * term)) :=
+Fixpoint substitutePatternVariables (l : list term) (varPfix : string) (n : nat) (argTps : list term) : list ((list term * list term) * list (string * term)) :=
 match l with
 | [] => []
-| (tVar str) :: rest => (([(tVar str)], []), []) :: (rewriteArgs rest varPfix n (tl argTps))
+| (tVar str) :: rest => (([(tVar str)], []), []) :: (substitutePatternVariables rest varPfix n (tl argTps))
 | t' :: rest => 
-      (([(tVar (String.append varPfix (string_of_nat n)))], [tApp <%eq%> [(hd <%bool%> argTps) ; (tVar (String.append varPfix (string_of_nat n))); t']]) , ([(String.append varPfix (string_of_nat n),(hd <%bool%> argTps))]))  :: (rewriteArgs rest varPfix (S n) (tl argTps))
+      (([(tVar (String.append varPfix (string_of_nat n)))], [tApp <%eq%> [(hd <%bool%> argTps) ; (tVar (String.append varPfix (string_of_nat n))); t']]) , ([(String.append varPfix (string_of_nat n),(hd <%bool%> argTps))]))  :: (substitutePatternVariables rest varPfix (S n) (tl argTps))
        
 end.
 Fixpoint findTp (s : string) (allPredArgTps : list (string * (list term))) : list term :=
@@ -219,16 +219,16 @@ match allPredArgTps with
 | h :: t => if String.eqb s (fst h) then snd h else findTp s t
 end. 
 
-Fixpoint rewriteConjL (l : list term) (varPfix : string) (n : nat) (allPredArgTps : list (string * (list term))) :  list ((term * list term) * list (string * term)) :=
+Fixpoint resolveConjunctionInputs (l : list term) (varPfix : string) (n : nat) (allPredArgTps : list (string * (list term))) :  list ((term * list term) * list (string * term)) :=
 match l with
 | [] => []
-| (tApp <%eq%> lstArgs) :: rest => (((tApp <%eq%> lstArgs) , []), []) :: rewriteConjL (rest) (varPfix) (n) (allPredArgTps) 
-| (tApp (tVar str) lstArgs) :: rest =>  let result := rewriteArgs lstArgs varPfix n (findTp str allPredArgTps) in ((((tApp (tVar str) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: rewriteConjL (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
+| (tApp <%eq%> lstArgs) :: rest => (((tApp <%eq%> lstArgs) , []), []) :: resolveConjunctionInputs (rest) (varPfix) (n) (allPredArgTps) 
+| (tApp (tVar str) lstArgs) :: rest =>  let result := substitutePatternVariables lstArgs varPfix n (findTp str allPredArgTps) in ((((tApp (tVar str) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
 | (tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs) :: rest => 
-     let result := rewriteArgs lstArgs varPfix n (findTp indNm allPredArgTps) in ((((tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: rewriteConjL (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
+     let result := substitutePatternVariables lstArgs varPfix n (findTp indNm allPredArgTps) in ((((tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
 
      
-| t'' :: rest => ((t'', []), []) :: rewriteConjL (rest) (varPfix) (n) (allPredArgTps)    
+| t'' :: rest => ((t'', []), []) :: resolveConjunctionInputs (rest) (varPfix) (n) (allPredArgTps)    
 
 end.          
 
@@ -293,7 +293,7 @@ Definition rewriteCl (t : term) (allTpInf : list ((string × term) × list (stri
 let prefix := mkFreshVPrefix (S (list_max (map String.length (extractOrderedVars2 t)))) in
 let lstTm := flattenClause t in
 let allPredArgTp := findPredTps allTpInf in
-buildClause (app (concat (map (fun y => (snd (fst y))) (rewriteConjL lstTm prefix 0 allPredArgTp)))  (map (fun y => (fst (fst y))) (rewriteConjL lstTm prefix 0 allPredArgTp))).
+buildClause (app (concat (map (fun y => (snd (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp)))  (map (fun y => (fst (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp))).
 
 
 Definition getExtraTpInf (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * term) :=
@@ -301,7 +301,7 @@ Definition getExtraTpInf (t : term) (allTpInf : list ((string × term) × list (
 let prefix := mkFreshVPrefix (S (list_max (map String.length (extractOrderedVars2 t)))) in
 let lstTm := flattenClause t in
 let allPredArgTp := findPredTps allTpInf in
-(concat (map (fun y => (snd (y))) (rewriteConjL lstTm prefix 0 allPredArgTp))).  
+(concat (map (fun y => (snd (y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp))).  
 
 Compute typingData.
 

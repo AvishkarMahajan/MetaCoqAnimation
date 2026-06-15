@@ -1,11 +1,19 @@
-Require Import Animation.utils2.
+(** * PatternCompilation — Pattern-Match Animation
 
+    Compiles constructor patterns of inductive types into executable
+    term-level pattern matches.  The central function is
+    [justAnimatePatMat4], which takes a constructor term and produces
+    a function that matches against that pattern.  [mkMulPatMatFn]
+    combines multiple branch functions into a single dispatching function.
+
+    Depends on: [MetaRocqUtils]. *)
+
+Require Import Animation.MetaRocqUtils.
 
 Require Import List.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
-
 
 Import MetaRocqNotations.
 
@@ -25,32 +33,9 @@ Definition extractIndDecl (x : global_decl) : option mutual_inductive_body :=
   | _ => None
   end.
 
-(** Error values for partial functions. *)
-Parameter error : kername * global_decl.
-Parameter error2 : one_inductive_body.
-Parameter error3 : constructor_body.
-Parameter error4 : context_decl.
-Parameter termErr : term.
-
 (** Extract all inductive type declarations from a program. *)
 Definition extractTypeData (p : program) : list (option mutual_inductive_body) :=
   map extractIndDecl ((map snd ((((declarations (fst p))))))).
-
-(** Extract pattern match data from the first constructor of the first inductive in a program. *)
-Definition extractPatMatData (p : program) : term :=
-  let r :=
-    option_map decl_type
-      (option_map (hd error4)
-         (option_map cstr_args
-            (option_map (hd error3)
-               (option_map ind_ctors
-                  (option_map (hd error2)
-                     (option_map ind_bodies
-                        (extractIndDecl (snd (hd error (declarations (fst p))))))))))) in
-     match r with
-     | Some x => x
-     | None => termErr
-     end.
 
 (** Generate a fresh variable name of the form "vN" where N is a number. *)
 Definition genVar (n : nat) : string :=
@@ -81,12 +66,10 @@ Definition unfoldConsStep
      (i, t, (str, (tRel k), nil) :: resolvedTs, remTs)
  | (str, tVar varStr) :: t =>
      (i, t, (str, (tVar varStr ), nil) :: resolvedTs, remTs)
- (*| (str, (tApp (tInd indType ls') args)) :: t =>
-     (i + (length args), t, ((str, (tInd indType ls'), (map fst (genVarlst i args))) :: resolvedTs), (app (genVarlst i args) remTs)) *)
  | (str, tConstruct typeInfo k lst) :: t =>
      (i, t, (str, (tConstruct typeInfo k lst), nil) :: resolvedTs, remTs)
  | (str, tApp <%eq%> args) :: t =>
-     (i + length args, t, (str, <%eq%>, map fst (genVarlst i args)) :: resolvedTs, app (genVarlst i args) remTs) 
+     (i + length args, t, (str, <%eq%>, map fst (genVarlst i args)) :: resolvedTs, app (genVarlst i args) remTs)
 
  | (str, tApp func args) :: t =>
      (i, t, (str, tApp func args, nil) :: resolvedTs, remTs)
@@ -94,10 +77,10 @@ Definition unfoldConsStep
  | (str, tInd indType ls') :: t =>
      (i, t, (str, tInd indType ls', nil) :: resolvedTs, remTs)
  | (str, tConst indType ls') :: t =>
-     (i, t, (str, tConst indType ls', nil) :: resolvedTs, remTs) 
+     (i, t, (str, tConst indType ls', nil) :: resolvedTs, remTs)
  | (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) :: t =>
-     (i, t, (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2, nil) :: resolvedTs, remTs)     
-        
+     (i, t, (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2, nil) :: resolvedTs, remTs)
+
  | (str, _) :: t =>
      (i, t, resolvedTs, remTs)
  end.
@@ -120,17 +103,10 @@ Fixpoint unfoldConsStepIter
 Definition preProcCons (fuel : nat) (t : term) : list ((string * term) * list string) :=
   rev (snd (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))).
 
-(** Reduce a natural number by 2 if possible. *)
-Definition reduce2 (x : nat) : option nat :=
-  match x with
-  | S (S n) => Some n
-  | _ => None
-  end.
-
 (** Check if all terms have been processed (no remaining terms). *)
 Definition preProcConsRem (fuel : nat) (t : term) : bool :=
-  let r := app (snd (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], [])))
-               (snd (fst (fst (unfoldConsStepIter fuel (0, [("x"%bs, t)], [], []))))) in
+  let st := unfoldConsStepIter fuel (0, [("x"%bs, t)], [], []) in
+  let r := app (snd st) (snd (fst (fst st))) in
   match r with
   | [] => true
   | _ => false
@@ -152,8 +128,7 @@ Fixpoint lookUpVarsOne
             | tApp (tInd typeInfo js) args => ([], [tApp (tInd typeInfo js) args])
             | tApp (tConst typeInfo lst) args => ([], [tApp (tConst typeInfo lst) args])
             | tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args => ([], [tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args])
-            
-            
+
             | tRel k => ([str], [])
             | tVar str'' => ([str], [])
             | tInd typeInfo js => ([], [(tInd typeInfo js)])
@@ -174,8 +149,8 @@ Fixpoint lookUpVars
   | (h :: t) =>
       match lookUpVarsOne h ls with
       | ([], []) => lookUpVars t ls
-      | ([e], []) => (e :: (fst (lookUpVars t ls)), snd (lookUpVars t ls))
-      | ([], [e]) => (fst (lookUpVars t ls),  e :: (snd (lookUpVars t ls)))
+      | ([e], []) => let rest := lookUpVars t ls in (e :: (fst rest), snd rest)
+      | ([], [e]) => let rest := lookUpVars t ls in (fst rest, e :: (snd rest))
       | _ => lookUpVars t ls
       end
   end.
@@ -207,8 +182,6 @@ Fixpoint genBinNmLsStr (ls : list string) : list (binder_annot name) :=
   | [] => []
   | h :: t => {| binder_name := nNamed h ; binder_relevance := Relevant |} :: genBinNmLsStr t
  end.
-
-
 
 (** Create a branch with None as the body, used for non-matching constructor cases. *)
 Definition mkNoneBr (cstrArity : nat) (noneVal : term) : branch term :=
@@ -246,12 +219,6 @@ Fixpoint extractTypeCsArlst (muts : list mutual_inductive_body) : list (string *
   | h :: t => map getcsAr (ind_bodies h) ++ extractTypeCsArlst t
   end.
 
-(** Error parameters for partial functions. *)
-Parameter error_nat : nat.
-Parameter errorInd : inductive.
-Parameter errorStr : string.
-Parameter errorlstNat : list nat.
-
 (** Construct a term representing a list of nat variables. *)
 Fixpoint retVarVals' (lst : list string) : term :=
   match lst with
@@ -282,27 +249,20 @@ Fixpoint sortBindersOne
 (** Sort all binders according to a list of output variables. *)
 Definition sortBinders (outputVars : list string) (lst : list ((string * term) * list string)) : ((list string)) :=
   concat (map (fun x : string => sortBindersOne x lst) outputVars).
-Compute (sortBinders ["a" ; "f"] ([("x", <%eq%>, ["v1"; "v2"; "v3"]);
-        ("v6", tVar "a", [])])).
-
-Compute (retVarVals ["v6"]).
-
 
 (** Get the constructor index from a resolved term structure. *)
 Definition getCstrIndex (s : ((string * term) * list string)) : nat :=
   match s with
    | (str, tConstruct typeInfo k ls, lsStr) => k
-   | _ => error_nat
+   | _ => sentinel_nat
   end.
 
 (** Get the inductive type from a resolved term structure. *)
 Definition getType (s : ((string * term) * list string)) :=
   match s with
    | (str, tConstruct typeInfo k ls, lsStr) => typeInfo
-   | _ => errorInd
+   | _ => sentinel_inductive
   end.
-Compute (getType (("x", <%eq%>, ["v1"; "v2"; "v3"]))).
-
 
 (** Extract the type name from a constructor term. *)
 Definition getTypeNm (s : (string * term) * list string) : string :=
@@ -310,7 +270,7 @@ Definition getTypeNm (s : (string * term) * list string) : string :=
   | (str,
          tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
            k ls, lsStr) => nmStr
-  | _ => errorStr
+  | _ => sentinel_string
  end.
 
 (** Check if a string is a member of a list of strings. *)
@@ -334,24 +294,10 @@ Fixpoint filterTypeCon' (ls : list ((string * term) * list string)) (mut : list 
                 end
    end.
 
-(** Filter type constructors (currently identity function). *)
-Definition filterTypeCon (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) :
-                         list ((string * term) * list string) := ls.
-
-
-
-
-
-
-
-
-
-
-
 (** Look up the list of constructor arities for a given type name. *)
 Fixpoint getCstrArityLst' (typeName : string) (r : list (string * list nat)) : list nat :=
   match r with
-   | [] => errorlstNat
+   | [] => sentinel_nat_list
    | (h :: t) => if String.eqb typeName (fst h) then snd h else getCstrArityLst' typeName t
   end.
 
@@ -409,8 +355,6 @@ Definition mkBrLst (s : (string * term) * list string) (l : list mutual_inductiv
   let index := getCstrIndex s in
   map mkNoneBranch (untilLst index csArlst) ++ [mkSomeBranch (rev (snd s)) t] ++ map mkNoneBranch (restLst index csArlst).
 
-
-
 (** Create a case expression (pattern match) term.
     Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
 Definition mkCase'  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term)
@@ -442,14 +386,8 @@ Definition mkCase'  (s' : ((string * term) * list string) * list term ) (l : lis
      |} (tVar (fst (fst s))) (* Will be converted to De Bruijn index later *)
       (mkBrLst s l t)).
 
-
-
 (** The identity function as a quoted term. *)
-Definition idTerm := <%(fun A : Type => (fun x : A => x))%>.
-MetaRocq Quote Definition oBoolT := (Some true).
-
-(** Term representation of the polymorphic identity function. *)
-Definition identityTerm : term := idTerm.
+Definition identityTerm := <%(fun A : Type => (fun x : A => x))%>.
 
 (** Create nested pattern matches recursively.
     Base case returns identity, single case returns value, multiple cases nest. *)
@@ -474,115 +412,19 @@ Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
   | (None :: t) => removeOpt t
  end.
 
-(** Create a lambda abstraction wrapping the nested pattern match.
-    Returns None if the structure doesn't match expected shape. *)
-Definition mkLam' (ls : list (((string * term) * list string))) (outputVars : list string) (mut : list mutual_inductive_body) : option term :=
-  match ls with
-  | [] => None
-  | (h :: ((str, typeInfo, []) :: t))  =>
-      Some (tLambda {| binder_name := nNamed "v2"%bs; binder_relevance := Relevant |}
-                    typeInfo (mkPmNested ls outputVars mut))
-  | _ => None
-  end.
-
-(** Wrapper for mkLam' that filters out None options from mutual inductives. *)
-Definition mkLam (ls : list (((string * term) * list string))) (outputVars : list string) (mut : list (option mutual_inductive_body)) : option term :=
-  mkLam' ls outputVars (removeOpt mut).
-
-
-
-(** Create a lambda term from an inductive by extracting and processing pattern match data.
-    Checks that all terms are fully processed before constructing the lambda. *)
-Definition mkLamfromInd (p : program) (outputVars : list string) (fuel : nat) : option term :=
- let td := extractTypeData p in
-  let pmd := extractPatMatData p in
-   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None.
-
-(** Similar to mkLamfromInd but takes an explicit conjunction term instead of extracting it. *)
-Definition mkLamfromInd2 (conjTm : term) (p : program) (outputVars : list string) (fuel : nat) : option term :=
- let td := extractTypeData p in
-  let pmd := conjTm in
-   if (preProcConsRem fuel pmd) then (mkLam (preProcCons fuel pmd) outputVars td) else None.
-
-(** Error term for partial functions. *)
-Parameter errTm : term.
-
-(** Unwrap an option term, returning error term if None. *)
-Definition removeopTm (o : option term) : term :=
+(** Unwrap an option term, returning sentinel if None. *)
+Definition unwrapOptionTerm (o : option term) : term :=
  match o with
   | Some t => t
-  | None => errTm
+  | None => sentinel_term
  end.
-
-
-(*
-tApp
-             (tConstruct
-                {|
-                  inductive_mind := <?option?>; inductive_ind := 0
-                |} 0 [])
-             [tApp
-                (tInd
-                   {|
-                     inductive_mind := <?list?>; inductive_ind := 0
-                   |} [])
-                [<%nat%>];
-              tApp
-                (tConstruct
-                   {|
-                     inductive_mind := <?list?>; inductive_ind := 0
-                   |} 1 [])
-                [<%nat%>; tVar "y";
-                 tApp
-                   (tConstruct
-                      {|
-                        inductive_mind := <?list?>;
-                        inductive_ind := 0
-                      |} 1 [])
-                   [<%nat%>; tVar "y";
-                    tApp
-                      (tConstruct
-                         {|
-                           inductive_mind := <?list?>;
-                           inductive_ind := 0
-                         |} 0 [])
-                      [<%nat%>]]]]
-*)
-
-(** Error value for module path. *)
-Parameter errorPath : prod modpath ident.
-
-(** Extract the kernel name from an inductive term. *)
-Definition getPathIdent (t : term) : prod modpath ident :=
- match t with
-  | tInd p l => inductive_mind p
-  | _ => errorPath
- end.
-
-(** Main animation function: generates an executable pattern matching function
-    from an inductive predicate.
-    Takes the inductive, output variables, function name, and fuel limit.
-    Produces a TemplateMonad computation that defines the animated function. *)
-Definition justAnimatePatMat {A : Type} (induct : A) (outputVar : list string) (nameFn : string) (fuel : nat) : TemplateMonad unit :=
- indTm <- tmQuote induct ;;
- termConj <- general.animate2 (getPathIdent indTm) ;;
- termFull <- tmQuoteRecTransp  induct  false ;;
- t <- tmEval all  (typeConstrPatMatch.removeopTm (DB.deBruijnOption ((typeConstrPatMatch.removeopTm (typeConstrPatMatch.mkLamfromInd2 termConj termFull outputVar fuel))))) ;;
- f <- tmUnquote t ;;
- tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (nameFn) (Some hnf) ;;
- tmMsg "done".
 
 End typeConstrPatMatch.
 
-
-Parameter errorTm : term.
-
-
-
+(** Like [typeConstrPatMatch.mkNoneBr] but with a custom wildcard return term
+    instead of the default [None]. *)
 Definition mkNoneBranch2 (wildCardRet : term) (n : nat)  : branch term :=
   typeConstrPatMatch.mkNoneBr n wildCardRet.
-
 
 (** Create branch list with custom wildcard return value for non-matching cases. *)
 Definition mkBrLst2 (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
@@ -609,7 +451,6 @@ Definition mkCase2'  (s' : ((string * term) * list string) * list term ) (l : li
      |} (tVar (fst (fst s))) (* Should get changed to a tRel after deBruijning *)
       (mkBrLst2 s l t wildCardRet)).
 
-
 (** Collect sets of variable names and bound variables from a pattern structure.
     Returns a pair of lists: variables with tVar terms, and all variable names. *)
 Fixpoint collectVarSets (l : list ((string * term) * list string)) : list string * list string :=
@@ -627,7 +468,6 @@ Fixpoint noRepeat (l1 : list string) (l2 : list string) : bool :=
   | [] => true
   | (h :: t) => negb (typeConstrPatMatch.chkMemberStr h (l2)) && (noRepeat t l2)
  end.
-
 
 (** Extract a mapping from original variable names to their tVar references. *)
 Fixpoint origVarsMap (l : list ((string * term) * list string)) : list (string * string) :=
@@ -658,8 +498,6 @@ Definition switchVars' (d : list (string * string))  (l : list ((string * term) 
 Definition changeVars (l : list ((string * term) * list string)) : list ((string * term) * list string) :=
  switchVars' (origVarsMap l) l.
 
-
-
 (** Create nested pattern matches with custom output term, type, and wildcard.
     Version 2 with more flexibility than mkPmNested. *)
 Fixpoint mkPmNested2' (ls : list (((string * term) * list string) * list term)) (ls' : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
@@ -675,16 +513,9 @@ Definition mkPmNested2 (ls' : list (((string * term) * list string))) (outputTer
             (mut : list mutual_inductive_body)  : term :=
             mkPmNested2' (typeConstrPatMatch.preProcConsTypeVar ls' ls') ls' outputTerm outputType wildCardRet mut.
 
-(** Remove None values from a list of options (duplicate definition). *)
-Fixpoint removeOpt {A : Type} (optls : list (option A)) : list A :=
- match optls with
-  | [] => []
-  | (Some x :: t) => (x :: removeOpt t)
-  | (None :: t) => removeOpt t
- end.
-
-(** Create a lambda abstraction wrapping nested pattern match (version 2).
-    Requires specific structure with at least 3 elements. *)
+(** Build a lambda abstraction that pattern-matches the outermost constructor,
+    using [mkPmNested2] for the body.  Returns [None] if the structure is empty
+    or lacks a two-variable binding form. *)
 Definition mkLam2' (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body)  : option term :=
  match ls with
  | [] => None
@@ -693,48 +524,22 @@ Definition mkLam2' (ls : list (((string * term) * list string))) (outputTerm : t
  | _ => None
  end.
 
-(** Wrapper for mkLam2' that filters out None options. *)
+(** Wrapper for [mkLam2'] that filters [None] entries from the mutual inductive list. *)
 Definition mkLam2 (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body))  : option term :=
-  mkLam2' ls outputTerm outputType wildCardRet (removeOpt mut).
+  mkLam2' ls outputTerm outputType wildCardRet (typeConstrPatMatch.removeOpt mut).
 
-
-
-(** Create lambda from inductive with custom conjunction term and multiple programs.
-    Version 3 supporting multiple programs and custom output term/type. *)
+(** Compile an inductive constructor pattern [conjTm] from quoted programs [lstP]
+    into a lambda that pattern-matches [conjTm] and returns [outputTerm].
+    Returns [None] if the constructor cannot be fully unfolded within [fuel] steps. *)
 Definition mkLamfromInd3 (conjTm : term) (lstP : list program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
  let td := concat (map (typeConstrPatMatch.extractTypeData) lstP) in
   let pmd := conjTm in
    if (typeConstrPatMatch.preProcConsRem fuel pmd) then (mkLam2 (changeVars (typeConstrPatMatch.preProcCons fuel pmd)) outputTerm outputType wildCardRet td) else None.
 
-(** Error term parameter (duplicate definition). *)
-Parameter errTm : term.
-
-(** Unwrap option term, returning error if None (duplicate definition). *)
-Definition removeopTm (o : option term) : term :=
- match o with
-  | Some t => t
-  | None => errTm
- end.
-
-
-
-(** Error path parameter (duplicate definition). *)
-Parameter errorPath : prod modpath ident.
-
-(** Extract kernel name from inductive term (duplicate definition). *)
-Definition getPathIdent (t : term) : prod modpath ident :=
- match t with
-  | tInd p l => inductive_mind p
-  | _ => errorPath
- end.
- 
- 
- 
-
-(* Animation version 4: returns a term instead of defining it.
-   Useful for building dispatch tables programmatically.
-   Checks for variable clashes and sufficient fuel. *)
-
+(** Compile a single constructor pattern [inputTerm'] against an existing
+    [AnimationResult inputType] into a function returning [AnimationResult outputType].
+    Quotes the inductive type, builds nested pattern matches, and converts to de Bruijn.
+    Fails if constructor variables clash or fuel is insufficient. *)
 Definition justAnimatePatMat4
            {A : Type}
            (induct : A)
@@ -746,16 +551,16 @@ Definition justAnimatePatMat4
            (fuel : nat)
   : TemplateMonad term :=
   termFull <- tmQuoteRecTransp induct false ;;
-  outcomePolyProg <- tmQuoteRecTransp outcomePoly false ;;
+  outcomePolyProg <- tmQuoteRecTransp AnimationResult false ;;
   prodTpProg <- tmQuoteRecTransp prod false ;;
   let inputTerm := tApp <%eq%> [inputType; inputTerm'; tVar "v_init"] in
   if andb (noRepeat (fst (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm)))
                     (snd (collectVarSets (typeConstrPatMatch.preProcCons fuel inputTerm))))
           (typeConstrPatMatch.preProcConsRem fuel inputTerm)
   then
-    t <- tmEval all (typeConstrPatMatch.removeopTm
+    t <- tmEval all (typeConstrPatMatch.unwrapOptionTerm
                       (DB.deBruijnOption
-                        (typeConstrPatMatch.removeopTm
+                        (typeConstrPatMatch.unwrapOptionTerm
                           (mkLamfromInd3 inputTerm
                                         [termFull; outcomePolyProg; prodTpProg]
                                         outputTerm
@@ -765,11 +570,8 @@ Definition justAnimatePatMat4
     tmReturn t
   else
     tmFail "found clashing variables or insufficient fuel".
-    
-    
-    
-(* Animate multiple pattern branches for a single inductive predicate.
-   Creates a list of animated functions, one per branch pattern. *)
+
+(** Animate multiple pattern branches for a single inductive predicate. *)
 Fixpoint justAnimateMultPat
          {A : Type}
          (induct : A)
@@ -807,7 +609,6 @@ Fixpoint justAnimateMultPat
       tmReturn (t :: lstT)
   end.
 
-
 (** Construct a dispatch function from a list of animated branch functions.
     Wraps with defaultVal to provide a fallback for unmatched inputs. *)
 Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term)  : term :=
@@ -821,8 +622,7 @@ Definition mkMulPatMatFn' (fns : list term) (wildCardRet : term) (inputType : te
             [outputType]) in
  (tApp <%defaultVal%> [inputType; outputType; wildCardRet; (tApp <%dispatchInternal%> [inputType; outputType; (mkLstTm' fns fnType)])]).
 
-(* Create a multi-branch pattern match function with dispatch mechanism.
-   Combines multiple animated branches into a single function with fallback. *)
+(** Create a multi-branch pattern match function with dispatch mechanism. *)
 Definition mkMulPatMatFn
            {A : Type}
            (induct : A)
@@ -835,187 +635,19 @@ Definition mkMulPatMatFn
   subfns <- justAnimateMultPat induct branchData inputType outputType fuel ;;
   tmReturn (mkMulPatMatFn' subfns wildCardRet inputType outputType).
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-(* Join two pattern match animations in sequence (composition).
-   Creates a function that transforms from preIn to postOut through an intermediate step.
-   Wraps inputs/outputs in outcomePoly and handles fuel errors. *)
-Definition joinPatMatPoly
-           {A : Type}
-           (induct : A)
-           (preIn' : term)
-           (preInType' : term)
-           (preOut' : term)
-           (preOutType' : term)
-           (postIn' : term)
-           (postInType' : term)
-           (postOut' : term)
-           (postOutType' : term)
-           (nmFn : string)
-           (fuel : nat)
-  : TemplateMonad unit :=
-  let preIn := tApp <%successPoly%> [preInType'; preIn'] in
-  let preInType := tApp <%outcomePoly%> [preInType'] in
-  let preOut := tApp <%successPoly%> [preOutType'; preOut'] in
-  let preOutType := tApp <%outcomePoly%> [preOutType'] in
-  let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-  let postInType := tApp <%outcomePoly%> [postInType'] in
-  let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-  let postOutType := tApp <%outcomePoly%> [postOutType'] in
-  let nmFnpreInpreOut := "animatePreConFn" in
-  let preInpreOutFnType := (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                                  preInType
-                                  preOutType) in
-  preOutTopostOutFn <- mkMulPatMatFn
-                         induct
-                         [(preOut, postOut);
-                          (tApp <%fuelErrorPoly%> [preOutType'],
-                           tApp <%fuelErrorPoly%> [postOutType'])]
-                         preOutType
-                         postOutType
-                         (tApp <%noMatchPoly%> [postOutType'])
-                         fuel ;;
-  tBody <- mkMulPatMatFn
-             induct
-             [(postIn, tApp preOutTopostOutFn [tApp (tVar nmFnpreInpreOut) [preIn]]);
-              (tApp <%fuelErrorPoly%> [postInType'],
-               tApp <%fuelErrorPoly%> [postOutType'])]
-             postInType
-             postOutType
-             (tApp <%noMatchPoly%> [postOutType'])
-             fuel ;;
-  t' <- tmEval all (removeopTm (DB.deBruijnOption (tLam nmFnpreInpreOut preInpreOutFnType tBody))) ;;
-  f <- tmUnquote t' ;;
-  tmEval hnf (my_projT2 f) >>=
-  tmDefinitionRed_ false nmFn (Some hnf) ;;
-  tmMsg "done".
-
-
-
-
-
-
-
-(** Generate all possible fuel error pattern combinations.
-    Creates patterns for handling fuel exhaustion in multi-predicate scenarios. *)
-Fixpoint genFuelErrorPatMat (lhsInd : list (term * term)) (index : nat) : list (list (term * term)) :=
-match index with
- | 0 => []
- | S index' => match lhsInd with
-                | [] => []
-                | [(tm, tmTp)] => [[(tVar (String.append "fuelErrorVar" (string_of_nat index)), (tApp (<%outcomePoly%>) [tmTp]))]; [((tApp (<%fuelErrorPoly%>) [tmTp]), (tApp (<%outcomePoly%>) [tmTp]))]]
-                | (tm, tmTp) :: rest => app (map (fun l' => (((tVar (String.append "fuelErrorVar" (string_of_nat index))), (tApp (<%outcomePoly%>) [tmTp])) :: l'))  (genFuelErrorPatMat rest index')) (map (fun l' => ((tApp (<%fuelErrorPoly%>) [tmTp]), (tApp (<%outcomePoly%>) [tmTp])) :: l')  (genFuelErrorPatMat rest index'))
-               end
-end.
-
-(* Create product terms for fuel error patterns. *)
-Fixpoint mkProdTmFuelError (lhsIndl : list (list (term * term))) : TemplateMonad (list term) :=
-  match lhsIndl with
-  | [] => tmReturn []
-  | [h] =>
-      res <- mklhsProdTm h ;;
-      tmReturn [res]
-  | h :: t =>
-      resTail <- mkProdTmFuelError t ;;
-      res <- mklhsProdTm h ;;
-      tmReturn (res :: resTail)
-  end.
-
-(* Create pattern match data for handling fuel errors. *)
-Definition mkFuelErrorPatMatData
-           (lhsInd : list (term * term))
-           (fuelErrorOut : term)
-  : TemplateMonad (list (term * term)) :=
-  inData <- mkProdTmFuelError (tl (genFuelErrorPatMat lhsInd (S (length lhsInd)))) ;;
-  tmReturn (map (fun s => (s, fuelErrorOut)) inData).
-
-
-
 (** Fuel-aware join without LHS predicates (base case).
     Simpler version for constructors with no recursive premises. *)
-Definition joinPatMatPolyGenFuelAwareNoLHS {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad unit :=
-
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in
-
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-
-
-
-let u :=
- (tLam "fuel" <%nat%>
-            (tCase
-               {|
-                 ci_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |};
-                 ci_npar := 0;
-                 ci_relevance := Relevant
-               |}
-               {|
-                 puinst := [];
-                 pparams := [];
-                 pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType)
-
-               |} (tVar "fuel")
-               [{|
-                  bcontext := [];
-                  bbody :=
-                    (tApp <%fuelErrorPolyCstFn%> [postInType; postOutType'])
-                |};
-                {|
-                  bcontext := [{| binder_name := nNamed "remFuel"; binder_relevance := Relevant |}];
-                  bbody := tBody'
-
-                              |}]
-                     )) in
-
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-
-f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append nmCon "Animated") (Some hnf) ;; tmMsg "done".
-
-
-
 Definition joinPatMatPolyGenFuelAwareNoLHSTm {A : Type} (induct : A)
                       (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
                         (fuel : nat) : TemplateMonad term :=
 
+let postIn := tApp <%Success%> [postInType'; postIn'] in
+let postInType := tApp <%AnimationResult%> [postInType'] in
 
-let postIn := tApp <%successPoly%> [postInType'; postIn'] in
-let postInType := tApp <%outcomePoly%> [postInType'] in
+let postOut := tApp <%Success%> [postOutType'; postOut'] in
+let postOutType := tApp <%AnimationResult%> [postOutType'] in
 
-let postOut := tApp <%successPoly%> [postOutType'; postOut'] in
-let postOutType := tApp <%outcomePoly%> [postOutType'] in
-
-
-
-
-
-
-tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%fuelErrorPoly%> [postInType']),(tApp <%fuelErrorPoly%> [postOutType'])) ]) postInType postOutType (tApp <%noMatchPoly%> [postOutType']) fuel ;;
-
-
+tBody' <-  mkMulPatMatFn (induct) ([(postIn, (postOut)); ((tApp <%FuelError%> [postInType']),(tApp <%FuelError%> [postOutType'])) ]) postInType postOutType (tApp <%NoMatch%> [postOutType']) fuel ;;
 
 let u :=
  (tLam "fuel" <%nat%>
@@ -1044,64 +676,44 @@ let u :=
                               |}]
                      )) in
 
-
-
-
-
-t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+t' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
 
 tmReturn t'.
 
-
-
-
+(** Compile a constructor-pattern equality [t_pattern = t_expr] into a composed
+    [AnimationResult] function: first match the input against [t_expr] to get
+    the pattern variables, then match those against [t_pattern] to produce the output. *)
 Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
 
 match conjunct with
  | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
                       tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tApp (func) lst) typeVar (String.append (snd kn) "IN") fuel ;;
                       tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      
-
 
                       let u :=
                        (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
-                      
-                      u' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
-                     
-                      tmReturn u'
-                     
-                     
 
+                      u' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
+
+                      tmReturn u'
 
  | tApp <%eq%> [typeVar; patMatTerm; tVar str] =>
                       tIn <- joinPatMatPolyGenFuelAwareNoLHSTm induct (inputTm) (inputTp) (tVar str) typeVar (String.append (snd kn) "IN") fuel ;;
                       tOut <- joinPatMatPolyGenFuelAwareNoLHSTm induct  patMatTerm typeVar  (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
-                      
-
-
-
 
                       let u :=
                        (tApp <%composeOutcomePoly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
-                      
 
-                      u' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+                      u' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
                       tmReturn u'
-            
-
-
 
  | _ => tmFail "incorrect inductive shape"
  end.
 
-
-
-
-
-
+(** Orient a constructor-pattern equality so the known-variable side is on the
+    right, then delegate to [extractPatMatBindersPartial'']. *)
 Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 match conjunct with
 | tApp <%eq%> [typeVar; t1; t2] => if isListSubStr (extractOrderedVars t1) inputVars then
@@ -1109,6 +721,4 @@ match conjunct with
                                    extractPatMatBindersPartial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
 | _ => tmFail "incorrect inductive shape"
 end.
-
-
 

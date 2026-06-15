@@ -1,11 +1,11 @@
-Require Import Animation.animationModulesIntegration2.
-Require Import Animation.animationModulesFixPt.
+Require Import Animation.AnimationDispatch.
+Require Import Animation.AnimationEngine.
 
 
-Require Import Animation.animationModulesSimplEq.
+Require Import Animation.EqualityResolution.
 
-Require Import Animation.utils2.
-Require Import Animation.animationModulesPatMat.
+Require Import Animation.MetaRocqUtils.
+Require Import Animation.PatternCompilation.
 
 Require Import List.
 Require Import MetaRocq.Template.All.
@@ -31,21 +31,21 @@ CoInduction :
 - Automate generation of augmented types/ (co)inductive relations
 - map result back to original types
 *)
-Definition hdPoly {A : Type} (s : polyStream A) : A :=
+Definition hdPoly {A : Type} (s : ResultStream A) : A :=
 match s with 
 | Scons h0 t0 => h0
 end.
 
-Definition tlPoly {A : Type} (s : polyStream A) : polyStream A :=
+Definition tlPoly {A : Type} (s : ResultStream A) : ResultStream A :=
 match s with 
 | Scons h0 t0 => t0
 end.
 
 
-Fixpoint StmN {A : Type} (n : nat) (s : polyStream A) :  A :=
+Fixpoint streamNth {A : Type} (n : nat) (s : ResultStream A) :  A :=
 match n with
 | 0 => hdPoly s
-| S n => StmN n (tlPoly s)
+| S n => streamNth n (tlPoly s)
 end.
 
 
@@ -141,7 +141,7 @@ with lookup : list type -> nat -> type -> Prop :=
 
 
 
-MetaRocq Run (animAllCl typing <?typing?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
+MetaRocq Run (animateInductive typing <?typing?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] 100).
 
 
               
@@ -170,7 +170,7 @@ inductData <- tmEval all (prodInOut (getFixptData allClauseData)) ;;
 
 let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
           u' <- tmEval all u ;;
-          t' <- tmEval all (removeopTm (DB.deBruijnOption u)) ;;
+          t' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
           tmPrint t' ;;
                f <- tmUnquote t';;
                tmPrint f ;;
@@ -184,21 +184,21 @@ MetaRocq Run (animAllCl30 typing <? typing ?> [("typing", ([0;1], [2]));("lookup
 Compute rewriteData.
 
 *)
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Con 5))))). 
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Con 5))))). 
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 0)))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(Abs (N) (Add (Con 5) (Var 1)))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],((Add (Con 5) (Var 1)))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],((Add (Con 5) (Var 1)))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Con 1))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 0))))).
  
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (N) (Add (Con 5) (Var 0))) (Var 1))))).
 
-Compute (typingAnimatedTopFn 50 (successPoly ((list type) * Term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
+Compute (typingAnimatedTopFn 50 (Success ((list type) * Term) ([],(App (Abs (Arr N N) (Add (Con 5) (Var 0))) (Var 1))))).
 
 End typingQuickChick. 
 
@@ -498,22 +498,22 @@ Definition isValueRest := fun t : tm => undefinedBool.
 
 
 
-MetaRocq Run (animAllClCoInd bigStep <? bigStep ?> [("bigStep", ([0], [1])); ("step", ([0], [1])); ("isValue", ([0], [1]))] 100).
+MetaRocq Run (animateCoinductive bigStep <? bigStep ?> [("bigStep", ([0], [1])); ("step", ([0], [1])); ("isValue", ([0], [1]))] 100).
 
 
 
 
-MetaRocq Run (r <- tmEval all (StmN 25 (bigStepAnimatedTopFnStream (successPoly (tm) ((testTm))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 25 (bigStepAnimatedTopFnStream (Success (tm) ((testTm))))) ;; tmPrint r).
 
 Definition omega : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))) (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_app (tm_var "x") (tm_var "x"))).
 
-MetaRocq Run (r <- tmEval all (StmN 30 (bigStepAnimatedTopFnStream (successPoly (tm) ((omega))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 30 (bigStepAnimatedTopFnStream (Success (tm) ((omega))))) ;; tmPrint r).
 Check bigStepAnimatedTopFnStream.
 Definition testTm' : tm :=
 tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_app (tm_abs "x" (Ty_Arrow Ty_Bool Ty_Bool) (tm_var "x")) (tm_abs "x" (Ty_Bool) (tm_var "x"))).
 
-MetaRocq Run (r <- tmEval all (StmN 30 (bigStepAnimatedTopFnStream (successPoly (tm) ((testTm'))))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 30 (bigStepAnimatedTopFnStream (Success (tm) ((testTm'))))) ;; tmPrint r).
 
 End STLC.
 
@@ -585,7 +585,7 @@ Inductive stack_step : (state) -> list sinstr × list nat -> list sinstr × list
     
     
     
-MetaRocq Run (animAllCl stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
+MetaRocq Run (animateInductive stack_step <?stack_step?> [("stack_step",([0;1],[2]))] 200).
 
 End StackStep.
 
@@ -658,7 +658,7 @@ CoInductive evalCmd : vars -> cmd -> vars -> Prop :=
 
 Parameter evalCmdRest : (vars * cmd) -> vars.
 
-MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
 *)
 
 
@@ -698,7 +698,7 @@ end.
 
 Definition evalCmdRest := fun vc : (coVars * cmd) => undefinedCoV.
 
-MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
 
 Definition prog :=
 While (Var 4) (Assign 8 (Const 8)).
@@ -709,7 +709,7 @@ pure (fun m : nat => m + 1).
 
 
 
-MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
 
 
 
@@ -720,7 +720,7 @@ While (Var 0) (Assign 8 (Const 9)).
 Definition initFn' :=
 pure  (fun m : nat => m).
 
-MetaRocq Run (r <- tmEval all (StmN 25 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 25 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
 End ImpSem.
 
@@ -799,7 +799,7 @@ CoInductive evalCmd : vars -> cmd -> vars -> Prop :=
 
 Parameter evalCmdRest : (vars * cmd) -> vars.
 
-MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
 *)
 
 
@@ -856,7 +856,7 @@ Definition lastRest := fun ct : coVarsTr => undefinedCoV.
 Definition appTrRest := fun ctct : (coVarsTr * coVarsTr) => undefinedCoVTr. 
 
 
-MetaRocq Run (animAllClCoInd evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]));("last", ([0], [1]));("appTr", ([0;1], [2]))] 500).
+MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?> [("evalCmd", ([0;1], [2]));("last", ([0], [1]));("appTr", ([0;1], [2]))] 500).
 
 Definition prog :=
 While (Var 4) (Assign 8 (Const 8)).
@@ -867,7 +867,7 @@ pure ( add1).
 
 
 
-MetaRocq Run (r <- tmEval all (StmN 30 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 30 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn, prog)))) ;; tmPrint r).
 
 
 
@@ -878,7 +878,7 @@ While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2)) (Seq (Assign 2 (Va
 Definition initFn' :=
 pure ( (fun m : nat => m)).
 
-MetaRocq Run (r <- tmEval all (StmN 40 (evalCmdAnimatedTopFnStream (successPoly (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
+MetaRocq Run (r <- tmEval all (streamNth 40 (evalCmdAnimatedTopFnStream (Success (coVars * cmd) (initFn', prog')))) ;; tmPrint r).
 
 End ImpSemTr.
 
