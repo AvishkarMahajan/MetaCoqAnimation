@@ -114,32 +114,11 @@ outputVarNm <- tmEval all ((fst (snd conjunct'))) ;;
 outputVarTp <- tmEval all ((snd (snd conjunct'))) ;;   
 animationFn <-  animateAnyLet (ind) (kn) (conjunct') (inputTm) (inputTp) (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
                                                                                                                   
-(*                                                               
-
-
-
-match fst conjunct' with
-| tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) _lstArgs => match (fst (getModeFmLst indNm modes)) with
-                                                                                         | [] =>  tmReturn (animateOneConjAnyLetPredEmptyIn' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn))
-
-                                                                                         | _ => tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn))
-                                                                                         end
-
-
-
-
-| tApp (tVar indNm) _lstArgs  =>                                                         match (fst (getModeFmLst indNm modes)) with
-                                                                                         | [] =>  tmReturn (animateOneConjAnyLetPredEmptyIn' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn))
-
-                                                                                         | _ => tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn))
-                                                                                         end
-| _ => *)tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn))
-(*end*).
+tmReturn (animateOneConjAnyLet' (outputVarNm) (outputVarTp) (inputVarsLstTm) (animationFn) (partialLetfn)).
                                                                                         
                                  
 
 
-       
 
 
                                
@@ -530,6 +509,80 @@ match t with
 | tApp (tConstruct ind_type k lst) lstArgs => true
 | _ => false
 end.   
+Print getModeFmLst.
+Fixpoint mklhsProdType2NonMonad (lhsIndPre : list (term * term)) :  term :=
+  match lhsIndPre with
+  | [] =>  <%bool%>
+  | [h] =>  (snd h)
+  | h :: t =>
+      let res := mklhsProdType2NonMonad t in
+       (tApp (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} [])
+                     [snd h; res])
+  end.
+
+
+
+(* Construct a product term from a list of term-type pairs. *)
+Fixpoint mklhsProdTm2NonMonad (lhsIndPre : list (term * term)) : term :=
+  match lhsIndPre with
+  | [] =>  <%true%>
+  | [h] =>  (fst h)
+  | h :: t =>
+      let res := mklhsProdTm2NonMonad t in
+      let resT := mklhsProdType2NonMonad t in
+       (tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
+                     [snd h; resT; fst h; res])
+                     
+ end.  
+ 
+
+Fixpoint getPredTpFmLst (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
+match predTypeInf with
+| [] => []
+| h :: rest => if String.eqb indNm (fst h) then (snd h) else getPredTpFmLst indNm rest
+end.
+         
+Definition rewritePredConj (conj' : term) (modes : list (string * (list nat * list nat))) (predTypeInf : list (string * (list term))) : term :=
+match conj' with
+| tApp <%eq%> [typeVar; t1; t2] => conj'
+| tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => match fst (getModeFmLst indNm modes) with
+                                                                                        | [] => let outputType := mklhsProdType2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in 
+                                                                                                let outputTm := mklhsProdTm2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in
+                                                                                                 tApp <%eq%> [tApp <%outcomePoly%> [outputType] ; tApp <%successPoly%> [outputType; outputTm] ; tApp (tVar (String.append indNm "AnimatedTopFn")) [tVar "fuel"]]
+                                                                                        
+                                                                                        | _nonEmpty => match snd (getModeFmLst indNm modes) with
+                                                                                                       | [] => let outputType := <%bool%> in 
+                                                                                                               let outputTm := <%true%> in
+                                                                                                               let inputType := mklhsProdType2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in 
+                                                                                                               let inputTm := mklhsProdTm2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in
+                                                                                                 
+                                                                                                               tApp <%eq%> [tApp <%outcomePoly%> [outputType] ; tApp <%successPoly%> [outputType; outputTm] ; tApp (tVar (String.append indNm "AnimatedTopFn")) [tVar "fuel"; tApp <%successPoly%> [inputType; inputTm]]]
+                                                                                                               
+                                                                                                       | _ => conj'
+                                                                                                       end
+                                                                                       end
+ | tApp (tVar indNm) lstArgs =>                                                        match fst (getModeFmLst indNm modes) with
+                                                                                        | [] => let outputType := mklhsProdType2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in 
+                                                                                                let outputTm := mklhsProdTm2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in
+                                                                                                 tApp <%eq%> [tApp <%outcomePoly%> [outputType] ; tApp <%successPoly%> [outputType; outputTm] ; tApp (tVar (String.append indNm "AnimatedTopFn")) [tVar "fuel"]]
+                                                                                        
+                                                                                        | _nonEmpty => match snd (getModeFmLst indNm modes) with
+                                                                                                       | [] => let outputType := <%bool%> in 
+                                                                                                               let outputTm := <%true%> in
+                                                                                                               let inputType := mklhsProdType2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in 
+                                                                                                               let inputTm := mklhsProdTm2NonMonad (crossList lstArgs (getPredTpFmLst indNm predTypeInf)) in
+                                                                                                 
+                                                                                                               tApp <%eq%> [tApp <%outcomePoly%> [outputType] ; tApp <%successPoly%> [outputType; outputTm] ; tApp (tVar (String.append indNm "AnimatedTopFn")) [tVar "fuel"; tApp <%successPoly%> [inputType; inputTm]]]
+                                                                                                               
+                                                                                                       | _ => conj'
+                                                                                                       end
+                                                                                       end
+
+
+
+| _ => conj'
+end.                                                                                                                          
+                                 
 
 Fixpoint getSortedOrientedConjs (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
 match fuel with
@@ -546,13 +599,13 @@ match fuel with
                                                             (if  (andb (isListSubStr (extractOrderedVars t2) kv) (hasRightShape t1)) then getSortedOrientedConjs modes t remConjs (tApp <%eq%> [typeVar; t1; t2] :: sortedConjs) (guardConjs) (app (extractOrderedVars t1) kv) n else
                                                             (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)))
                         
-                        | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => if isListSubStr (extractOrderedVars conj') kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else
+                        | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs => if isListSubStr (concat (map extractOrderedVars lstArgs)) kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else
                                                                                                               if isListSubStr (extractOrderedVarsfmLst (getInArgs indNm modes lstArgs)) kv then getSortedOrientedConjs modes t remConjs (conj' :: sortedConjs) (guardConjs) (app (extractOrderedVarsfmLst (getOutArgs indNm modes lstArgs)) kv) n else 
                                                                                                               (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)                             
                         
                         
                         
-                        | tApp (tVar indNm) lstArgs => if isListSubStr (extractOrderedVars conj') kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else
+                        | tApp (tVar indNm) lstArgs => if isListSubStr (concat (map extractOrderedVars lstArgs)) kv then (getSortedOrientedConjs modes t (remConjs) (sortedConjs) (conj':: guardConjs) (kv) n) else
                                                                                                               if isListSubStr (extractOrderedVarsfmLst (getInArgs indNm modes lstArgs)) kv then getSortedOrientedConjs modes t remConjs (conj' :: sortedConjs) (guardConjs) (app (extractOrderedVarsfmLst (getOutArgs indNm modes lstArgs)) kv) n else 
                                                                                                               (getSortedOrientedConjs modes t (conj' :: remConjs) (sortedConjs) (guardConjs) (kv) n)                             
                         

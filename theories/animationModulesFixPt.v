@@ -1159,4 +1159,3 @@ let u := (mkrecFn (mkAllIndTop (inductData) topKn modes) 0)  in
 
 
 Set Universe Checking.
-
