@@ -12,22 +12,22 @@ Inductive add : nat -> nat -> nat -> Prop :=
 | add_succ : forall (m n k : nat), add m n k -> add (S m) n (S k).
 ```
 
-and a mode declaration `([0;1], [2])` (arguments 0 and 1 are inputs, argument 2 is output), the library generates `addAnimatedTopFn : nat -> AnimationResult nat -> AnimationResult nat` at compile time. No runtime interpretation, no external tools — the function is produced by Rocq's elaborator and is callable like any other definition.
+and a mode declaration `([0;1], [2])` (arguments 0 and 1 are inputs, argument 2 is output), the library generates `addAnimatedTopFn : nat -> animation_result nat -> animation_result nat` at compile time. No runtime interpretation, no external tools — the function is produced by Rocq's elaborator and is callable like any other definition.
 
 ### Result type
 
-All generated functions return `AnimationResult A`:
+All generated functions return `animation_result A`:
 
 ```coq
-Inductive AnimationResult (A : Type) : Type :=
-| Success    : A -> AnimationResult A   (* derivation found, output is the value *)
-| NoMatch    : AnimationResult A        (* no rule applies — relation is false *)
-| FuelError  : AnimationResult A.       (* recursion limit reached *)
+Inductive animation_result (A : Type) : Type :=
+| Success    : A -> animation_result A   (* derivation found, output is the value *)
+| NoMatch    : animation_result A        (* no rule applies — relation is false *)
+| FuelError  : animation_result A.       (* recursion limit reached *)
 ```
 
 ### Calling convention
 
-Generated functions take a fuel argument and an `AnimationResult` wrapping the inputs:
+Generated functions take a fuel argument and an `animation_result` wrapping the inputs:
 
 ```coq
 addAnimatedTopFn 100 (Success (nat * nat) (3, 2)) = Success nat 5
@@ -59,7 +59,7 @@ Inductive add : nat -> nat -> nat -> Prop :=
 | add_succ : forall (m n k : nat), add m n k -> add (S m) n (S k).
 
 (* 2. Run the animation *)
-MetaRocq Run (animateInductive add <?add?> [("add", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive add <?add?> [("add", ([0;1], [2]))] 100).
 
 (* 3. Call the generated function *)
 Compute addAnimatedTopFn 100 (Success (nat * nat) (3, 2)).
@@ -79,7 +79,7 @@ Inductive even : nat -> bool -> Prop :=
 with odd : nat -> bool -> Prop :=
 | oddSucc  : forall (w : nat), even w true -> odd (S w) true.
 
-MetaRocq Run (animateInductive even <?even?>
+MetaRocq Run (animate_inductive even <?even?>
   [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
 
 (* evenAnimatedTopFn and oddAnimatedTopFn are both generated *)
@@ -131,22 +131,25 @@ Requires Rocq ≥ 9.0.0 and `rocq-metarocq`.
 Or build individual test files:
 
 ```sh
-make -f Makefile.coq theories/TestNat.vo theories/TestList.vo theories/TestSTLC.vo
+make -f Makefile.coq theories/tests/TestNat.vo theories/tests/TestList.vo theories/tests/TestSTLC.vo
 ```
 
 ## Project structure
 
 | File | Contents |
 |---|---|
-| `theories/MetaRocqUtils.v` | Core types (`AnimationResult`, `ResultStream`), term-building utilities, and combinators |
+| `theories/MetaRocqUtils.v` | Core types (`animation_result`, `Stream`), term-building utilities, and combinators |
 | `theories/PatternCompilation.v` | Pattern matching compilation: translates constructor patterns into equality constraints |
 | `theories/EqualityResolution.v` | Equality analysis: determines which equalities become let-bindings vs guards |
 | `theories/AnimationDispatch.v` | Clause sorting and the top-level dispatch over multiple clauses |
-| `theories/AnimationEngine.v` | Main compilation driver: `animateInductive`, `animateCoinductive`, fixpoint construction |
-| `theories/TestNat.v` | Tests for natural number relations (addition, multiplication, even/odd, ≤) |
-| `theories/TestList.v` | Tests for list relations (append, length, suffix, reverse) |
-| `theories/TestSTLC.v` | Tests for STLC typing and small-step reduction |
-| `theories/TestLambdaCalc.v` | Additional lambda calculus tests |
+| `theories/AnimationEngine.v` | Main compilation driver: `animate_inductive`, `animate_coinductive`, fixpoint construction |
+| `theories/tests/TestNat.v` | Tests for natural number relations (addition, multiplication, even/odd, ≤) |
+| `theories/tests/TestList.v` | Tests for list relations (append, length, suffix, reverse) |
+| `theories/tests/TestSTLC.v` | Tests for STLC typing and small-step reduction |
+| `theories/tests/TestLambdaCalc.v` | Additional lambda calculus tests |
+| `theories/tests/TestStack.v` | Tests for a small-step stack machine relation |
+| `theories/tests/TestImp.v` | Tests for imperative language semantics (Assign/Seq/While) |
+| `theories/tests/TestCoinductive.v` | Tests for coinductive stream relations |
 
 ## Examples in detail
 
@@ -160,7 +163,7 @@ Inductive typing : list ty -> tm -> ty -> Prop :=
     typing cxt (tapp e1 e2) t2
 ...
 
-MetaRocq Run (animateInductive typing <?typing?>
+MetaRocq Run (animate_inductive typing <?typing?>
   [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
 
 (* Type an application — checks argument type matches parameter type *)
@@ -187,7 +190,7 @@ Inductive step : tm -> tm -> Prop :=
 | ST_If      : forall (t1 t1' t2 t3 : tm),
     step t1 t1' -> step (tif t1 t2 t3) (tif t1' t2 t3).
 
-MetaRocq Run (animateInductive step <?step?> [("step", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive step <?step?> [("step", ([0], [1]))] 100).
 
 Compute stepAnimatedTopFn 50 (Success tm (tif ttrue ttrue tfalse)).
 (* ==> Success tm ttrue *)

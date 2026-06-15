@@ -24,7 +24,7 @@ Inductive add : nat -> nat -> nat -> Prop :=
 | add_zero : forall (n : nat), add 0 n n
 | add_succ : forall (m n k : nat), add m n k -> add (S m) n (S k).
 
-MetaRocq Run (animateInductive add <?add?> [("add", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive add <?add?> [("add", ([0;1], [2]))] 100).
 
 Example test_add_0_0 :
   addAnimatedTopFn 100 (Success (nat * nat) (0, 0)) = Success nat 0.
@@ -61,7 +61,7 @@ Inductive mul : nat -> nat -> nat -> Prop :=
 | mul_zero : forall (n : nat), mul 0 n 0
 | mul_succ : forall (m n k : nat), mul m n k -> mul (S m) n (n + k).
 
-MetaRocq Run (animateInductive mul <?mul?> [("mul", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive mul <?mul?> [("mul", ([0;1], [2]))] 100).
 
 Example test_mul_0_5 :
   mulAnimatedTopFn 100 (Success (nat * nat) (0, 5)) = Success nat 0.
@@ -92,7 +92,7 @@ Inductive even : nat -> bool -> Prop :=
 with odd : nat -> bool -> Prop :=
 | oddSucc : forall (w : nat), even w true -> odd (S w) true.
 
-MetaRocq Run (animateInductive even <?even?> [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive even <?even?> [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
 
 Example test_even_0 :
   evenAnimatedTopFn 30 (Success nat 0) = Success bool true.
@@ -135,7 +135,7 @@ Inductive leq : nat -> nat -> bool -> Prop :=
 | leq_succ : forall (m n : nat) (b : bool), leq m n b -> leq (S m) (S n) b
 | leq_fail : forall (m : nat), leq (S m) 0 false.
 
-MetaRocq Run (animateInductive leq <?leq?> [("leq", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive leq <?leq?> [("leq", ([0;1], [2]))] 100).
 
 Example test_leq_0_0 :
   leqAnimatedTopFn 100 (Success (nat * nat) (0, 0)) = Success bool true.

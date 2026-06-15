@@ -67,7 +67,7 @@ with lookup : list ty -> nat -> ty -> Prop :=
 | LookupThere : forall (m : nat) (t t' : ty) (cxt : list ty),
     lookup cxt m t -> lookup (t' :: cxt) (S m) t.
 
-MetaRocq Run (animateInductive typing <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive typing <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
 
 (* --- Typing tests --- *)
 
@@ -185,7 +185,7 @@ Inductive step : tm -> tm -> Prop :=
     step t1 t1' ->
     step (tif t1 t2 t3) (tif t1' t2 t3).
 
-MetaRocq Run (animateInductive step <?step?> [("step", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive step <?step?> [("step", ([0], [1]))] 100).
 
 (* --- Step tests --- *)
 

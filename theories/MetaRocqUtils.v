@@ -72,7 +72,7 @@ Definition ident_eq (x y : ident) : bool :=
 Module DB.
   (** Convert a named-variable term to de Bruijn representation given an outer
       context [ctx].  Free variables (not in [ctx]) are left as [tVar]. *)
-  Definition deBruijn' (ctx : list name) (t : named_term) : TemplateMonad term :=
+  Definition de_bruijn' (ctx : list name) (t : named_term) : TemplateMonad term :=
     let fix find_in_ctx (count : nat) (id : ident) (ctx : list name) : option nat :=
       match ctx with
       | nil => None
@@ -161,10 +161,10 @@ Module DB.
     in go ctx t.
 
   (** Convert a named-variable term to de Bruijn representation with no outer context. *)
-  Definition deBruijn (t : named_term) : TemplateMonad term := deBruijn' nil t.
+  Definition de_bruijn (t : named_term) : TemplateMonad term := de_bruijn' nil t.
 
-  (** Pure (non-monadic) variant of [deBruijn']; returns [None] on failure. *)
-Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
+  (** Pure (non-monadic) variant of [de_bruijn']; returns [None] on failure. *)
+Definition de_bruijn_option' (ctx : list name) (t : named_term) : option term :=
     let fix find_in_ctx (count : nat) (id : ident) (ctx : list name) : option nat :=
       match ctx with
       | nil => None
@@ -252,12 +252,12 @@ Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
         end
     in go ctx t.
 
-  (** Pure variant of [deBruijn] with no outer context. *)
-  Definition deBruijnOption (t : named_term) : option term := deBruijn'Option nil t.
+  (** Pure variant of [de_bruijn] with no outer context. *)
+  Definition de_bruijn_option (t : named_term) : option term := de_bruijn_option' nil t.
 
   (** Convert a de Bruijn term back to named representation given context [ctx]:
       replaces [tRel n] with [tVar id] where [ctx !! n = nNamed id]. *)
-  Definition undeBruijn' (ctx : list name) (t : term) : TemplateMonad named_term :=
+  Definition un_de_bruijn' (ctx : list name) (t : term) : TemplateMonad named_term :=
     let fix go (ctx : list name) (t : term) : TemplateMonad named_term :=
         let go_mfix (mf : mfixpoint term) : TemplateMonad (mfixpoint named_term) :=
           let ctx' := map (fun x => binder_name (dname x)) mf in
@@ -340,30 +340,30 @@ Definition deBruijn'Option (ctx : list name) (t : named_term) : option term :=
     in go ctx t.
 
   (** Convert a de Bruijn term to named representation with no outer context. *)
-  Definition undeBruijn (t : term) : TemplateMonad named_term :=
-    undeBruijn' nil t.
+  Definition un_de_bruijn (t : term) : TemplateMonad named_term :=
+    un_de_bruijn' nil t.
 
-  (* Example usage for deBruijn:
+  (* Example usage for de_bruijn:
 
-   MetaRocq Run (t <- DB.deBruijn
+   MetaRocq Run (t <- DB.de_bruijn
                       (tLambda (mkBindAnn (nNamed "x") Relevant)
                                 <% bool %> (tVar "x"))%string ;;
                 t' <- tmUnquoteTyped (bool -> bool) t ;;
                 tmPrint t).
   *)
 
-  (* Example usage for undeBruijn:
+  (* Example usage for un_de_bruijn:
 
-   MetaRocq Run (t <- DB.undeBruijn <% fun (x : bool) => x %> ;;
+   MetaRocq Run (t <- DB.un_de_bruijn <% fun (x : bool) => x %> ;;
                 tmPrint t).
   *)
 
   (* Round trip test:
 
-  MetaRocq Run (t <- DB.undeBruijn
+  MetaRocq Run (t <- DB.un_de_bruijn
                       <% fix f (x y : nat) :=
                            match x with S x' => f x' (S y) | O => y end %> ;;
-               t <- DB.deBruijn t ;;
+               t <- DB.de_bruijn t ;;
                t' <- tmUnquoteTyped (nat -> nat -> nat) t ;;
                tmPrint t').
   *)
@@ -922,16 +922,16 @@ Parameter sentinel_nat_list : list nat.
 Parameter sentinel_def_term : def term.
 
 (** String constants for generated definition names. *)
-Definition animatedTopFnSuffix : string := "AnimatedTopFn".
-Definition animatedStreamSuffix : string := "AnimatedTopFnStream".
-Definition animatedSuffix : string := "Animated".
+Definition animated_top_fn_suffix : string := "AnimatedTopFn".
+Definition animated_stream_suffix : string := "AnimatedTopFnStream".
+Definition animated_suffix : string := "Animated".
 
-(** Append [animatedTopFnSuffix] to every function name in the [(name, type)] list,
+(** Append [animated_top_fn_suffix] to every function name in the [(name, type)] list,
     producing the names used for the generated animated definitions. *)
 Fixpoint mk_animated_fn_nm (l : list (string * term)) : list (string * term) :=
   match l with
   | [] => []
-  | (s,tp) :: t => ((String.append s animatedTopFnSuffix), tp) :: mk_animated_fn_nm t
+  | (s,tp) :: t => ((String.append s animated_top_fn_suffix), tp) :: mk_animated_fn_nm t
   end.
 
 (** Project the first component of a paired [animation_result]: discards the second

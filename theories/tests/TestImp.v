@@ -67,7 +67,7 @@ CoInductive evalCmd : co_vars -> cmd -> co_vars -> Prop :=
 
 Definition evalCmdRest := fun _ : (co_vars * cmd) => undefinedCoV.
 
-MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?>
+MetaRocq Run (animate_coinductive evalCmd <? evalCmd ?>
   [("evalCmd", ([0;1], [2]))] 500).
 
 (** While (var 4 != 0) { var 8 := 8 }, starting with all vars = n+1. *)
@@ -161,7 +161,7 @@ Definition evalCmdRest := fun _ : (co_vars * cmd) => undefinedCoVTr.
 Definition lastRest     := fun _ : co_vars_tr => undefinedCoV.
 Definition appTrRest    := fun _ : (co_vars_tr * co_vars_tr) => undefinedCoVTr.
 
-MetaRocq Run (animateCoinductive evalCmd <? evalCmd ?>
+MetaRocq Run (animate_coinductive evalCmd <? evalCmd ?>
   [("evalCmd", ([0;1], [2])); ("last", ([0], [1])); ("appTr", ([0;1], [2]))] 500).
 
 (** While (var 4 != 0) { var 8 := 8 }, all vars start at n+1 — diverges. *)

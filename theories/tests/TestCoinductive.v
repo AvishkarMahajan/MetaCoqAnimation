@@ -53,7 +53,7 @@ with addStm : nat -> stream -> stream -> Prop :=
 Definition IntegrateRest := fun _ : stream => undefinedStm.
 Definition addStmRest := fun _ : (nat * stream) => undefinedStm.
 
-MetaRocq Run (animateCoinductive Integrate <? Integrate ?>
+MetaRocq Run (animate_coinductive Integrate <? Integrate ?>
   [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 500).
 
 (** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
@@ -75,7 +75,7 @@ CoInductive zipSt : stream -> stream -> stream -> Prop :=
 
 Definition zipStRest := fun _ : (stream * stream) => undefinedStm.
 
-MetaRocq Run (animateCoinductive zipSt <? zipSt ?>
+MetaRocq Run (animate_coinductive zipSt <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 500).
 
 Compute (Str_nth 6 (zipStAnimatedTopFnStream (Success (stream * stream) (from 7, from 9)))).
@@ -97,7 +97,7 @@ CoInductive eqSt : stream -> stream -> co_bool -> Prop :=
 
 Definition eqStRest := fun _ : (stream * stream) => undefinedB.
 
-MetaRocq Run (animateCoinductive eqSt <? eqSt ?>
+MetaRocq Run (animate_coinductive eqSt <? eqSt ?>
   [("eqSt", ([0;1], [2]))] 500).
 
 Compute (Str_nth 12 (eqStAnimatedTopFnStream (Success (stream * stream) (from 8, from 9)))).
@@ -121,7 +121,7 @@ CoInductive filterEven : stream -> stream -> Prop :=
 
 Definition filterEvenRest := fun _ : stream => undefinedStm.
 
-MetaRocq Run (animateCoinductive filterEven <? filterEven ?>
+MetaRocq Run (animate_coinductive filterEven <? filterEven ?>
   [("filterEven", ([0], [1]))] 500).
 
 Compute (Str_nth 50 (filterEvenAnimatedTopFnStream (Success stream (from 0)))).

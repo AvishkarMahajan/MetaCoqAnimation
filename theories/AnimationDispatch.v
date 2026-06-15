@@ -41,7 +41,7 @@ match conjunct with
                                                     | [] => tmReturn (tApp <%Success%> [typeVar;t2])
                                                     | h :: rest => gen_fun_animate_eq_partial_let_clause' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
                                                    end
-                                    | tApp (tConstruct ind_type k lst) lstArgs => extractPatMatBindersPartial' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
+                                    | tApp (tConstruct ind_type k lst) lstArgs => extract_pat_mat_binders_partial' ind kn conjunct inputTm inputTp outputTm outputTp inputVars fuel
                                     | _ => tmFail "incorrect Conj shape"
                                     end
 
@@ -49,7 +49,7 @@ match conjunct with
         | Some (indNm, _lstArgs) =>
             match fst (get_mode_fm_lst indNm modes) with
             | [] => animate_predicate_empty_in ind kn conjunct' modes predTypeInf allVarTpInf fuel
-            | _ => compileRelationClause ind kn conjunct' modes predTypeInf allVarTpInf fuel
+            | _ => compile_relation_clause ind kn conjunct' modes predTypeInf allVarTpInf fuel
             end
         | None => tmFail "incorrect Conj shape"
         end
@@ -182,7 +182,7 @@ Definition gen_fun_animate_eq_partial_guard_con' {A : Type} (induct : A) (kn : k
      t0 <- constr_fun_animate_eq induct postIn' postInType' postOut' postOutType'  fuel ;;
 
      let t1 := (tApp <%option_to_outcome%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption t1)) ;;
+     t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option t1)) ;;
      tmReturn t').
 
 (** Lift [gen_fun_animate_eq_partial_guard_con'] to work directly with variable
@@ -257,7 +257,7 @@ let guardConEqAn := (tApp gFun [tVar "fuel"; mk_out_poly_prod_tm (allVarTpInf)])
 combineGuard <- animate_list_conj_pred_guard_br_out_bool (ind) (kn) (gConjsPred) (modes) (predTypeInf) (allVarTpInf) (outVars) (guardConEqAn) (fuel);;
   match inVars with
   | h :: rest => tmReturn (mk_lam_tp (app (mk_animated_fn_nm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%animation_result%> [telescope_to_prod_type inVars])(split_inputs' inVars (letBind combineGuard))))
-  | [] => tmReturn (mk_lam_tp (app (mk_animated_fn_nm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%animation_result%> [<%bool%>]) ((*tLetIn {| binder_name := nNamed "input"; binder_relevance := Relevant |} <%Success bool true%>  <%animation_result bool%> *) (split_inputs' inVars (letBind combineGuard)))))
+  | [] => tmReturn (mk_lam_tp (app (mk_animated_fn_nm lhsPreds) [("fuel", <%nat%>)]) (tLam "input" (tApp <%animation_result%> [<%bool%>]) (split_inputs' inVars (letBind combineGuard))))
 
   end.
 

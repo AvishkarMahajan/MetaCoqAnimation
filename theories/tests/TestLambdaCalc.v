@@ -52,7 +52,7 @@ Inductive lam_step : lam_tm -> lam_tm -> Prop :=
     lam_step e1 e1' ->
     lam_step (lapp e1 e2) (lapp e1' e2).
 
-MetaRocq Run (animateInductive lam_step <?lam_step?> [("lam_step", ([0], [1]))] 200).
+MetaRocq Run (animate_inductive lam_step <?lam_step?> [("lam_step", ([0], [1]))] 200).
 
 (* --- CBN reduction tests --- *)
 

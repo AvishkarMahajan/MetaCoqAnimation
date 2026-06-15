@@ -4,7 +4,7 @@
     conjunctions into let-bindings, orienting equations so that the
     output variable is on the left, generating boolean equality functions
     for supported types, and compiling individual relation clauses via
-    [compileRelationClause].
+    [compile_relation_clause].
 
     Depends on: [MetaRocqUtils], [PatternCompilation]. *)
 
@@ -33,7 +33,7 @@ Definition eqb_indTp (A : Type) (eqFnA : A -> A -> bool) (a1 : ind_tp A) (a2 : i
                  end
   end.
 (** Prefix prepended to an inductive name to form its boolean equality function name. *)
-Definition eqFnPrefix : string := "eqFn".
+Definition eq_fn_prefix : string := "eqFn".
 
 (** Map a type term to its corresponding boolean equality function term.
     Handles [nat], [bool], [string], user-defined inductives, [list], [prod],
@@ -47,7 +47,7 @@ Fixpoint type_to_bool_eq (t : term) : term :=
            inductive_mind := (MPdot (MPfile ["bytestring"; "Utils"; "MetaRocq"]) "String", "t");
            inductive_ind := 0
          |} [] => <%String.eqb%>
-  | tInd {| inductive_mind := (defLoc, str); inductive_ind := _j |} [] => tConst (defLoc, (String.append eqFnPrefix str)) []
+  | tInd {| inductive_mind := (defLoc, str); inductive_ind := _j |} [] => tConst (defLoc, (String.append eq_fn_prefix str)) []
 
   | tApp <%list%> [tp] => tApp <%@eqb_list%> [tp; (type_to_bool_eq tp)]
   | tApp <%prod%> [tp1 ; tp2] => tApp <%eqb_prod%> [tp1; tp2; (type_to_bool_eq tp1); (type_to_bool_eq tp2)]
@@ -346,13 +346,13 @@ Definition gen_fun_animate_eq_partial_let_clause' {A : Type} (induct : A) (kn : 
      t0 <- constr_fun_animate_eq induct postIn' postInType' postOut' postOutType'  fuel ;;
 
      let t1 := (tApp <%option_to_outcome%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption t1)) ;;
+     t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option t1)) ;;
      tmReturn t')
      else tmFail "no boolean equality over some type".
 
 (** Compile a single clause of an inductive relation into executable code,
     resolving equality premises and generating pattern matching. *)
-Definition compileRelationClause {A : Type} (induct : A) (kn : kername) (conjunct' : (term * (string * term))) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
+Definition compile_relation_clause {A : Type} (induct : A) (kn : kername) (conjunct' : (term * (string * term))) (modes : list (string * ((list nat) * (list nat)))) (predTypeInf : list (string * (list term))) (allVarTpInf : list (string * term)) (fuel : nat) : TemplateMonad term :=
 
 outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
 outputTp <- tmEval all ((snd (snd conjunct'))) ;;
@@ -378,11 +378,11 @@ let conjunct := fst conjunct' in
                       predInProdTp <- mk_lhs_prod_type predInArgs ;;
                       predInProdTm <- mk_lhs_prod_tm predInArgs ;;
                       tIn' <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
-                      let tIn := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ; (tVar (String.append indNm animatedTopFnSuffix))]) in
+                      let tIn := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ; (tVar (String.append indNm animated_top_fn_suffix))]) in
                       tOut <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct predOutProdTm predOutProdTp (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
                       let u := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
+                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
                       tmReturn u'
 
   | None => tmFail "incorrect inductive shape"
@@ -442,11 +442,11 @@ let conjunct := fst conjunct' in
                       predInProdTp <- mk_lhs_prod_type2 predInArgs ;;
                       predInProdTm <- mk_lhs_prod_tm2 predInArgs ;;
                       tIn' <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct (inputVarProdTm) (inputVarProdTp) predInProdTm predInProdTp (String.append (snd kn) "IN") fuel ;;
-                      let tIn := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ; (tLam "fuel" <%nat%> (tLam "input" <%animation_result bool%> (tApp (tVar (String.append indNm animatedTopFnSuffix))[tVar "fuel"])))]) in
+                      let tIn := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predInProdTp ; (predOutProdTp) ; tIn' ; (tLam "fuel" <%nat%> (tLam "input" <%animation_result bool%> (tApp (tVar (String.append indNm animated_top_fn_suffix))[tVar "fuel"])))]) in
                       tOut <- join_pat_mat_poly_gen_fuel_aware_no_lhs_tm induct predOutProdTm predOutProdTp (outputTm) (outputTp) (String.append (snd kn) "OUT") fuel ;;
                       let u := (tApp <%compose_outcome_poly%> [(inputVarProdTp); predOutProdTp ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
+                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
                       tmReturn u'
 
   | None => tmFail "incorrect inductive shape"

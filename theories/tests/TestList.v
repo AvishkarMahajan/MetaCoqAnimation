@@ -25,7 +25,7 @@ Inductive append : list nat -> list nat -> list nat -> Prop :=
 | appendCons : forall (w : nat) (l2 l3 l4 : list nat),
     append l2 l3 l4 -> append (w :: l2) l3 (w :: l4).
 
-MetaRocq Run (animateInductive append <?append?> [("append", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive append <?append?> [("append", ([0;1], [2]))] 100).
 
 Example test_append_nil_nil :
   appendAnimatedTopFn 100 (Success (list nat * list nat) ([], []))
@@ -64,7 +64,7 @@ Inductive length_rel : list nat -> nat -> Prop :=
 | length_cons : forall (w : nat) (l : list nat) (n : nat),
     length_rel l n -> length_rel (w :: l) (S n).
 
-MetaRocq Run (animateInductive length_rel <?length_rel?> [("length_rel", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive length_rel <?length_rel?> [("length_rel", ([0], [1]))] 100).
 
 Example test_length_nil :
   length_relAnimatedTopFn 100 (Success (list nat) [])
@@ -98,7 +98,7 @@ Inductive suffix : list nat -> list nat -> list nat -> Prop :=
 | suffixCons : forall (w : nat) (l2 l3 l4 : list nat),
     suffix l2 l3 l4 -> suffix (w :: l2) l3 (w :: l4).
 
-MetaRocq Run (animateInductive suffix <?suffix?> [("suffix", ([0;2], [1]))] 100).
+MetaRocq Run (animate_inductive suffix <?suffix?> [("suffix", ([0;2], [1]))] 100).
 
 Example test_suffix_nil :
   suffixAnimatedTopFn 50 (Success (list nat * list nat) ([], [1;2;3]))
@@ -139,7 +139,7 @@ Inductive rev_acc : list nat -> list nat -> list nat -> Prop :=
 | rev_cons : forall (w : nat) (l acc res : list nat),
     rev_acc l (w :: acc) res -> rev_acc (w :: l) acc res.
 
-MetaRocq Run (animateInductive rev_acc <?rev_acc?> [("rev_acc", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive rev_acc <?rev_acc?> [("rev_acc", ([0;1], [2]))] 100).
 
 Example test_rev_nil :
   rev_accAnimatedTopFn 100 (Success (list nat * list nat) ([], []))

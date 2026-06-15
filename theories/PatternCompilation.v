@@ -559,7 +559,7 @@ Definition just_animate_pat_mat4
           (typeConstrPatMatch.pre_proc_cons_rem fuel inputTerm)
   then
     t <- tmEval all (typeConstrPatMatch.unwrap_option_term
-                      (DB.deBruijnOption
+                      (DB.de_bruijn_option
                         (typeConstrPatMatch.unwrap_option_term
                           (mk_lam_from_ind3 inputTerm
                                         [termFull; outcomePolyProg; prodTpProg]
@@ -676,14 +676,14 @@ let u :=
                               |}]
                      )) in
 
-t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
+t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
 
 tmReturn t'.
 
 (** Compile a constructor-pattern equality [t_pattern = t_expr] into a composed
     [animation_result] function: first match the input against [t_expr] to get
     the pattern variables, then match those against [t_pattern] to produce the output. *)
-Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
+Definition extract_pat_mat_binders_partial'' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
 
   match conjunct with
   | tApp <%eq%> [typeVar; patMatTerm; tApp (func) lst] =>
@@ -694,7 +694,7 @@ Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) 
                        (tApp <%compose_outcome_poly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
 
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
+                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
 
                       tmReturn u'
 
@@ -706,19 +706,19 @@ Definition extractPatMatBindersPartial'' {A : Type} (induct : A) (kn : kername) 
                        (tApp <%compose_outcome_poly%> [(inputTp); typeVar ; (outputTp) ; tIn ; tOut]) in
                       u'' <- tmEval all u ;;
 
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
+                      u' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.de_bruijn_option u)) ;;
                       tmReturn u'
 
   | _ => tmFail "incorrect inductive shape"
   end.
 
 (** Orient a constructor-pattern equality so the known-variable side is on the
-    right, then delegate to [extractPatMatBindersPartial'']. *)
-Definition extractPatMatBindersPartial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
+    right, then delegate to [extract_pat_mat_binders_partial'']. *)
+Definition extract_pat_mat_binders_partial' {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
   match conjunct with
   | tApp <%eq%> [typeVar; t1; t2] => if is_list_sub_str (extract_ordered_vars t1) inputVars then
-                                   extractPatMatBindersPartial'' induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if is_list_sub_str (extract_ordered_vars t2) inputVars then
-                                   extractPatMatBindersPartial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
+                                   extract_pat_mat_binders_partial'' induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if is_list_sub_str (extract_ordered_vars t2) inputVars then
+                                   extract_pat_mat_binders_partial'' induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
   | _ => tmFail "incorrect inductive shape"
   end.
 

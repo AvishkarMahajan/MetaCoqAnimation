@@ -60,7 +60,7 @@ Inductive stack_step : ind_tp state -> list sinstr * list nat -> list sinstr * l
     ps0 = (SMult :: p, n :: m :: stk) /\ ps1 = (p, (m * n) :: stk)
     -> stack_step st ps0 ps1.
 
-MetaRocq Run (animateInductive stack_step <? stack_step ?>
+MetaRocq Run (animate_inductive stack_step <? stack_step ?>
   [("stack_step", ([0;1], [2]))] 200).
 
 Definition empty_state : state := fun (_ : string) => 0.
