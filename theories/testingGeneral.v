@@ -19,7 +19,7 @@ Local Open Scope nat_scope.
 Open Scope bs.
 Print option.
 
-Print indTp.
+Print ind_tp.
 
 CoInductive Stream : Type := 
 | undefinedStm : Stream
@@ -55,18 +55,18 @@ end.
 CoFixpoint from (n : nat) : Stream :=
 Seq n (from (S n)).
 
-Definition hdPoly {A : Type} (s : ResultStream A) : A :=
+Definition hdPoly {A : Type} (s : result_stream A) : A :=
 match s with 
 | Scons h0 t0 => h0
 end.
 
-Definition tlPoly {A : Type} (s : ResultStream A) : ResultStream A :=
+Definition tlPoly {A : Type} (s : result_stream A) : result_stream A :=
 match s with 
 | Scons h0 t0 => t0
 end.
 
 
-Fixpoint streamNth {A : Type} (n : nat) (s : ResultStream A) :  A :=
+Fixpoint streamNth {A : Type} (n : nat) (s : result_stream A) :  A :=
 match n with
 | 0 => hdPoly s
 | S n => streamNth n (tlPoly s)
@@ -353,14 +353,14 @@ Check rest
                    (Success Stream
                       ((cofix Fcofix (x : nat) : Stream := {| hd := x; tl := Fcofix (S x) |}) 5)).
 
-Definition addOut {A:Type} {B : Type} (f : A -> B) (n : nat) (input : AnimationResult A): (AnimationResult B) :=
+Definition addOut {A:Type} {B : Type} (f : A -> B) (n : nat) (input : animation_result A): (animation_result B) :=
  match input with
  | Success input' => Success B (f input')
  | FuelError => FuelError B 
  | NoMatch => NoMatch B
 end. 
 Parameter errCounter : Counter.
-Definition removeOut (x : AnimationResult Counter) : Counter :=
+Definition removeOut (x : animation_result Counter) : Counter :=
 match x with
 | Success x' => x'
 | _ => errCounter
@@ -408,7 +408,7 @@ Print lengthAnimatedTopFn.
 
 Print appendStAnimatedTopFn.
 CoFixpoint from (n:nat) : Stream := Seq n (from (S n)).
-Definition tFun : nat -> AnimationResult (Stream × Stream) -> AnimationResult Stream := fun x y => Success Stream (from 7).
+Definition tFun : nat -> animation_result (Stream × Stream) -> animation_result Stream := fun x y => Success Stream (from 7).
 
 
 
@@ -462,18 +462,18 @@ Print eqStAnimatedTopFn.
 
 
 Definition esatf :=
-fix eqStAnimatedTopFn (fuel : nat) (input : AnimationResult (Stream × Stream)) {struct fuel} :
-    AnimationResult Stream :=
+fix eqStAnimatedTopFn (fuel : nat) (input : animation_result (Stream × Stream)) {struct fuel} :
+    animation_result Stream :=
   match fuel with
   | 0 => Success Stream s
   | 1 => Success Stream s
   | 2 => Success Stream s
   | S remFuel =>
-      dispatchOutcomePolyExt (Stream × Stream) Stream [eqCAnimated eqStAnimatedTopFn] remFuel input
+      dispatch_outcome_poly_ext (Stream × Stream) Stream [eqCAnimated eqStAnimatedTopFn] remFuel input
   end
-with dispatchOutcomePolyExt
-  (A B : Type) (lst : list (nat -> AnimationResult A -> AnimationResult B)) (fuel' : nat)
-  (input' : AnimationResult A) {struct fuel'} : AnimationResult B :=
+with dispatch_outcome_poly_ext
+  (A B : Type) (lst : list (nat -> animation_result A -> animation_result B)) (fuel' : nat)
+  (input' : animation_result A) {struct fuel'} : animation_result B :=
   match fuel' with
   | 0 => FuelError B
   | S remFuel' =>
@@ -481,7 +481,7 @@ with dispatchOutcomePolyExt
       | [] => NoMatch B
       | h :: t =>
           match h remFuel' input' with
-          | @NoMatch _ => dispatchOutcomePolyExt A B t remFuel' input'
+          | @NoMatch _ => dispatch_outcome_poly_ext A B t remFuel' input'
           | _ => h remFuel' input'
           end
       end

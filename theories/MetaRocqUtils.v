@@ -2,8 +2,8 @@
 
     Foundational utilities shared by the entire animation pipeline:
     notation macros, De Bruijn conversion, term substitution, type-level
-    helpers ([AnimationResult], [indTp], sentinels), and term-construction
-    combinators ([mkLstTm], [telescopeToProdType], [composeOutcomePoly], …).
+    helpers ([animation_result], [ind_tp], sentinels), and term-construction
+    combinators ([mk_lst_tm], [telescope_to_prod_type], [compose_outcome_poly], …).
 
     All other animation modules depend on this file. *)
 
@@ -472,46 +472,46 @@ Module ConstSubstitution.
 End ConstSubstitution.
 
 (** Result type for animated functions: success with a value, fuel exhaustion, or no matching clause. *)
-Inductive AnimationResult (A : Type) : Type :=
-| FuelError : AnimationResult A
-| Success : A -> AnimationResult A
-| NoMatch : AnimationResult A.
+Inductive animation_result (A : Type) : Type :=
+| FuelError : animation_result A
+| Success : A -> animation_result A
+| NoMatch : animation_result A.
 
 (** Wrapper type that marks a value as coming from an inductive definition.
     Used to distinguish inductive values in animation result types. *)
-Inductive indTp (A : Type) : Type :=
-| indWrap : A -> indTp A.
+Inductive ind_tp (A : Type) : Type :=
+| indWrap : A -> ind_tp A.
 
 (** Build a product type from a list of output variable specs.
     Returns bool for empty list, single type for singleton, nested products otherwise. *)
-Fixpoint telescopeToProdType (outputData : list (string * term)) :  term :=
- match outputData with
+Fixpoint telescope_to_prod_type (outputData : list (string * term)) :  term :=
+  match outputData with
   | [] => <%bool%>
   | [h] =>  (snd h)
-  | h :: t => let res := telescopeToProdType t in  (tApp
+  | h :: t => let res := telescope_to_prod_type t in  (tApp
                                             (tInd
                                              {|
                                              inductive_mind := <?prod?>; inductive_ind := 0
                                               |} []) [(snd h) ; res])
- end.
+  end.
 
 (** Build a product term from a list of output variables.
     Constructs nested pairs of variables. *)
-Fixpoint telescopeToProdTerm  (outputData : list (string * term )) : term :=
- match outputData with
+Fixpoint telescope_to_prod_term  (outputData : list (string * term )) : term :=
+  match outputData with
   | [] => <%true%>
   | [h] => (tVar (fst h))
-  | h :: t => let res := telescopeToProdTerm t in
-                                        let resT := telescopeToProdType t in (tApp (tConstruct
+  | h :: t => let res := telescope_to_prod_term t in
+                                        let resT := telescope_to_prod_type t in (tApp (tConstruct
                                                   {|
                                                    inductive_mind := <?prod?>; inductive_ind := 0
                                                    |} 0 []) [(snd h); resT ; (tVar (fst h)) ; res])
- end.
+  end.
 
 (** Kleisli composition for animated functions: run [f] on the input, then feed
     its [Success] result into [f'], propagating [FuelError] and [NoMatch]. *)
-Definition composeOutcomePoly (A : Type) (B : Type) (C : Type) (f : nat -> AnimationResult A -> AnimationResult B) (f' : nat -> AnimationResult B -> AnimationResult C)
-                                   : (nat -> AnimationResult A -> AnimationResult C) :=
+Definition compose_outcome_poly (A : Type) (B : Type) (C : Type) (f : nat -> animation_result A -> animation_result B) (f' : nat -> animation_result B -> animation_result C)
+                                   : (nat -> animation_result A -> animation_result C) :=
  fun fuel input => match f fuel input with
                     | Success res => f' fuel  (Success B res)
                     | FuelError => (FuelError C)
@@ -522,85 +522,85 @@ Open Scope bs.
 
 (** Build the product type of a non-empty list of [(term, type)] pairs.
     Fails if the list is empty; returns a single type for singletons. *)
-Fixpoint mklhsProdType (lhsIndPre : list (term * term)) : TemplateMonad term :=
+Fixpoint mk_lhs_prod_type (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
   | [] => tmFail "no predicates on LHS0"
   | [h] => tmReturn (snd h)
   | h :: t =>
-      res <- mklhsProdType t ;;
+      res <- mk_lhs_prod_type t ;;
       tmReturn (tApp (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} [])
                      [snd h; res])
   end.
 
 (** Build the product term of a non-empty list of [(term, type)] pairs.
-    Companion to [mklhsProdType]; fails on empty input. *)
-Fixpoint mklhsProdTm (lhsIndPre : list (term * term)) : TemplateMonad term :=
+    Companion to [mk_lhs_prod_type]; fails on empty input. *)
+Fixpoint mk_lhs_prod_tm (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
   | [] => tmFail "no predicates on LHS1"
   | [h] => tmReturn (fst h)
   | h :: t =>
-      res <- mklhsProdTm t ;;
-      resT <- mklhsProdType t ;;
+      res <- mk_lhs_prod_tm t ;;
+      resT <- mk_lhs_prod_type t ;;
       tmReturn (tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
                      [snd h; resT; fst h; res])
   end.
 
 (** Constant function that always returns fuel error.
     Used as a fallback when fuel is exhausted. *)
-Definition fuelErrorPolyCstFn (inputType : Type) (outputType' : Type) : (inputType -> (AnimationResult outputType') ) :=
+Definition fuel_error_poly_cst_fn (inputType : Type) (outputType' : Type) : (inputType -> (animation_result outputType') ) :=
  fun x : inputType => FuelError outputType'.
 
 (** Test whether nat [a] occurs in list [l]. *)
-Fixpoint inNatLst (a : nat) (l : list nat) : bool :=
- match l with
+Fixpoint in_nat_lst (a : nat) (l : list nat) : bool :=
+  match l with
   | nil => false
-  | (h :: t) => if (Nat.eqb h a) then true else (inNatLst a t)
- end.
+  | (h :: t) => if (Nat.eqb h a) then true else (in_nat_lst a t)
+  end.
 
 (** Test whether every element of [l1] occurs in [l2] (multiset subset). *)
-Fixpoint isListSub (l1 l2 : list nat) : bool :=
+Fixpoint is_list_sub (l1 l2 : list nat) : bool :=
   match l1 with
   | [] => true
-  | h :: t => inNatLst h l2 && isListSub t l2
+  | h :: t => in_nat_lst h l2 && is_list_sub t l2
   end.
 
 (** Test whether string [s] occurs in list [l1]. *)
-Fixpoint inStrLst (s : string) (l1 : list string) : bool :=
+Fixpoint in_str_lst (s : string) (l1 : list string) : bool :=
   match l1 with
   | [] => false
-  | h :: t => if String.eqb s h then true else inStrLst s t
+  | h :: t => if String.eqb s h then true else in_str_lst s t
   end.
 
 (** Test whether every element of string list [l1] occurs in [l2]. *)
-Fixpoint isListSubStr (l1 l2 : list string) : bool :=
+Fixpoint is_list_sub_str (l1 l2 : list string) : bool :=
   match l1 with
   | [] => true
-  | h :: t => inStrLst h l2 && isListSubStr t l2
+  | h :: t => in_str_lst h l2 && is_list_sub_str t l2
   end.
 
 (** Return [true] iff every element of [lst] is [true] (conjunction). *)
-Fixpoint checkBool (lst : list bool) : bool :=
- match lst with
- | [] => true
- | h :: t => andb h (checkBool t)
-end.
+Fixpoint check_bool (lst : list bool) : bool :=
+  match lst with
+  | [] => true
+  | h :: t => andb h (check_bool t)
+  end.
 
 (** Decide pointwise equality of two [nat] lists. *)
-Fixpoint eqLstNat (l1 : list nat) (l2 : list nat) : bool :=
- match l1 with
+Fixpoint eq_lst_nat (l1 : list nat) (l2 : list nat) : bool :=
+  match l1 with
   | [] => match l2 with
           | [] => true
           | _ => false
           end
   | (h :: t) => match l2 with
                  | [] => false
-                 | (h' :: t') => if (Nat.eqb h h') then eqLstNat t t' else false
+                 | (h' :: t') => if (Nat.eqb h h') then eq_lst_nat t t' else false
                 end
   end.
 
-(** Adapt a function returning [AnimationResult (option B)] into one returning
-    [AnimationResult B]: [Some v] becomes [Success v], [None] becomes [NoMatch]. *)
-Definition optionToOutcome (A : Type) (B : Type) (f : nat -> AnimationResult A -> AnimationResult (option B)) : (nat -> AnimationResult A -> AnimationResult B) :=
+(** Adapt a function returning [animation_result (option B)] into one returning
+    [animation_result B]: [Some v] becomes [Success v], [None] becomes [NoMatch]. *)
+Definition option_to_outcome (A : Type) (B : Type) (f : nat -> animation_result A -> animation_result (option B)) : (nat -> animation_result A -> animation_result B) :=
 fun k k' => match f k k' with
              | Success (Some res) => Success B res
              | Success None => NoMatch B
@@ -609,15 +609,15 @@ fun k k' => match f k k' with
             end.
 
 (** Return [true] iff [lst] is empty. *)
-Definition isEmptyLst {A : Type} (lst : list A) : bool :=
-match lst with
- | [] => true
- | _ => false
-end.
+Definition is_empty_lst {A : Type} (lst : list A) : bool :=
+  match lst with
+  | [] => true
+  | _ => false
+  end.
 
 (** Build a quoted [list term] literal from [lst], with element type [typeofTm]. *)
-Fixpoint mkLstTm' (lst : list term) (typeofTm : term) : term :=
- match lst with
+Fixpoint mk_lst_tm' (lst : list term) (typeofTm : term) : term :=
+  match lst with
   | [] => tApp
            (tConstruct
               {|
@@ -626,47 +626,47 @@ Fixpoint mkLstTm' (lst : list term) (typeofTm : term) : term :=
   | h :: t =>  tApp
                (tConstruct
                {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
-               [typeofTm; h; (mkLstTm' t typeofTm)]
- end.
+               [typeofTm; h; (mk_lst_tm' t typeofTm)]
+  end.
 
 (** Dispatch mechanism: try each function in the list until one returns Some.
     Returns None if all functions return None. *)
 
-Fixpoint dispatchInternal (inT : Type) (outT : Type)
+Fixpoint dispatch_internal (inT : Type) (outT : Type)
                             (listFn : list (inT -> option (outT))) : (inT -> (option outT)) :=
  fun x => match listFn with
            | [] => None
            | h :: t => let r := h x in
                        match r with
-                       | None => (dispatchInternal inT outT t) x
+                       | None => (dispatch_internal inT outT t) x
                        | _ => r
                        end
           end .
 
 (** Provide a default value for an option-returning function. *)
-Definition defaultVal (inputType : Type) (outputType : Type) (default : outputType) (f : inputType -> option (outputType)) : (inputType -> outputType) :=
+Definition default_val (inputType : Type) (outputType : Type) (default : outputType) (f : inputType -> option (outputType)) : (inputType -> outputType) :=
  fun x => match f x with
            | Some y => y
            | None => default
           end.
 
 (** Quote each element of [l] into a MetaRocq term using [tmQuote]. *)
-Fixpoint quoteList {A : Type} (l : list A) : TemplateMonad (list term) :=
+Fixpoint quote_list {A : Type} (l : list A) : TemplateMonad (list term) :=
   match l with
   | [] => ret []
   | h :: rest =>
       t <- tmQuote h ;;
-      l' <- quoteList rest ;;
+      l' <- quote_list rest ;;
       tmReturn (t :: l')
   end.
 
 (** Extract variable names from a flat list of terms (non-[tVar] terms are dropped). *)
-Fixpoint extractOrderedVarsHelper (ls : list term) : list string :=
- match ls with
- | [] => []
- | (tVar str) :: t => str :: (extractOrderedVarsHelper t)
- | _ :: t => (extractOrderedVarsHelper t)
- end.
+Fixpoint extract_ordered_vars_helper (ls : list term) : list string :=
+  match ls with
+  | [] => []
+  | (tVar str) :: t => str :: (extract_ordered_vars_helper t)
+  | _ :: t => (extract_ordered_vars_helper t)
+  end.
 
 Local Open Scope nat_scope.
 Open Scope bs.
@@ -695,135 +695,135 @@ Notation "<%bool%>" := (tInd {| inductive_mind := <?bool?>; inductive_ind := 0 |
 
 (** Extract variable names from a term in declaration order.
     For equality terms, lists known-side variables before unknown-side variables. *)
-Fixpoint extractOrderedVars (t : term) : list string :=
+Fixpoint extract_ordered_vars (t : term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
-  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: extractOrderedVarsHelper (lst)
-  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (extractOrderedVarsHelper (lst)) [str1]
+  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: extract_ordered_vars_helper (lst)
+  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (extract_ordered_vars_helper (lst)) [str1]
   | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] => [str1]
   | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>  [str1]
 
   | tVar str  => [str]
-  | tApp _ lst => concat (map extractOrderedVars lst)
+  | tApp _ lst => concat (map extract_ordered_vars lst)
   | _ => []
   end.
 
-(** Apply [extractOrderedVars] to each element of [l] and concatenate the results. *)
-Fixpoint extractOrderedVarsfmLst (l : list term) : list string :=
-match l with
-| [] => []
-| h :: t => app (extractOrderedVars h) (extractOrderedVarsfmLst t)
-end.
+(** Apply [extract_ordered_vars] to each element of [l] and concatenate the results. *)
+Fixpoint extract_ordered_vars_fm_lst (l : list term) : list string :=
+  match l with
+  | [] => []
+  | h :: t => app (extract_ordered_vars h) (extract_ordered_vars_fm_lst t)
+  end.
 (** Return a singleton list containing element [ind] of [l], or [[]] if out of bounds. *)
-Fixpoint listSearch' {A : Type} (ind : nat) (l : list A) : list A :=
-match ind with
-| 0 => match l with
+Fixpoint list_search' {A : Type} (ind : nat) (l : list A) : list A :=
+  match ind with
+  | 0 => match l with
      | h :: t => [h]
      | [] => []
      end
-| S m => listSearch' m (tl l)
-end.
+  | S m => list_search' m (tl l)
+  end.
 
 (** Select elements at positions [indLst] from list [l]. *)
-Fixpoint listSearch {A : Type} (indLst : list nat) (l : list A) : list A :=
-match indLst with
-| [] => []
-| h :: t => app (listSearch' h l) (listSearch t l)
-end.
+Fixpoint list_search {A : Type} (indLst : list nat) (l : list A) : list A :=
+  match indLst with
+  | [] => []
+  | h :: t => app (list_search' h l) (list_search t l)
+  end.
 
 (** Select the input arguments of predicate [indNm] from [lstArgs] according to its mode. *)
-Fixpoint getInArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
-match modes with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then listSearch (fst (snd h)) lstArgs else getInArgs indNm t lstArgs
-end.
+Fixpoint get_in_args (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+  match modes with
+  | [] => []
+  | h :: t => if String.eqb indNm (fst h) then list_search (fst (snd h)) lstArgs else get_in_args indNm t lstArgs
+  end.
 
 (** Select the output arguments of predicate [indNm] from [lstArgs] according to its mode. *)
-Fixpoint getOutArgs (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
-match modes with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then listSearch (snd (snd h)) lstArgs else getOutArgs indNm t lstArgs
-end.
+Fixpoint get_out_args (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+  match modes with
+  | [] => []
+  | h :: t => if String.eqb indNm (fst h) then list_search (snd (snd h)) lstArgs else get_out_args indNm t lstArgs
+  end.
 
 (** Return the singleton entry for variable [varNm] in the type environment,
     or [[]] if not found. *)
-Fixpoint lookUpVarsOne (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match allVarTpInf with
-| [] => []
-| h :: t => if String.eqb varNm (fst h) then [h] else lookUpVarsOne varNm t
-end.
+Fixpoint look_up_vars_one (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+  match allVarTpInf with
+  | [] => []
+  | h :: t => if String.eqb varNm (fst h) then [h] else look_up_vars_one varNm t
+  end.
 
 (** Convert a [(variable_name, type)] list to a [(tVar name, type)] list. *)
-Fixpoint mkLstTm (lst : list (prod string term)) : list (prod term term) :=
-match lst with
-| [] => []
-| (str,tp) :: t => (tVar str, tp) :: mkLstTm t
-end.
+Fixpoint mk_lst_tm (lst : list (prod string term)) : list (prod term term) :=
+  match lst with
+  | [] => []
+  | (str,tp) :: t => (tVar str, tp) :: mk_lst_tm t
+  end.
 (** Look up each variable name in [lst] in the type environment, dropping missing entries. *)
-Fixpoint lookUpVars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
-match lst with
-| [] => []
-| h :: t => match lookUpVarsOne h allVarTpInf with
-             | [h'] => h' :: lookUpVars t allVarTpInf
-             | _ =>  lookUpVars t allVarTpInf
+Fixpoint look_up_vars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+  match lst with
+  | [] => []
+  | h :: t => match look_up_vars_one h allVarTpInf with
+             | [h'] => h' :: look_up_vars t allVarTpInf
+             | _ =>  look_up_vars t allVarTpInf
             end
-end.
+  end.
 
 (** Look up the mode (input-position list, output-position list) for [indNm],
     returning ([],[]) if not found. *)
-Fixpoint getModeFmLst (indNm : string) (modes : list (string * ((list nat) * (list nat)))) : (list nat) * (list nat) :=
- match modes with
+Fixpoint get_mode_fm_lst (indNm : string) (modes : list (string * ((list nat) * (list nat)))) : (list nat) * (list nat) :=
+  match modes with
   | [] => ([],[])
-  | h :: t => if String.eqb indNm (fst h) then (snd h) else getModeFmLst indNm t
- end.
+  | h :: t => if String.eqb indNm (fst h) then (snd h) else get_mode_fm_lst indNm t
+  end.
 
 (** Select the input arguments from [lstArgs] using a pre-looked-up [mode] pair. *)
-Definition getInArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
-listSearch (fst mode) lstArgs.
+Definition get_in_args'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+list_search (fst mode) lstArgs.
 
 (** Select the output arguments from [lstArgs] using a pre-looked-up [mode] pair. *)
-Definition getOutArgs'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
-listSearch (snd mode) lstArgs.
+Definition get_out_args'  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+list_search (snd mode) lstArgs.
 
 (** Look up the argument types for predicate [indNm] in a type-info table. *)
-Fixpoint getPredTp (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
-match predTypeInf with
-| [] => []
-| h :: t => if String.eqb indNm (fst h) then snd h else getPredTp indNm t
-end.
+Fixpoint get_pred_tp (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
+  match predTypeInf with
+  | [] => []
+  | h :: t => if String.eqb indNm (fst h) then snd h else get_pred_tp indNm t
+  end.
 
 (** Zip two lists into a list of pairs, stopping at the shorter one. *)
-Fixpoint crossList {A : Type} {B : Type} (lst1 : list A) (lst2 : list B) : list (A * B) :=
-match lst1 with
- | [] => []
- | (h :: t) => match lst2 with
+Fixpoint cross_list {A : Type} {B : Type} (lst1 : list A) (lst2 : list B) : list (A * B) :=
+  match lst1 with
+  | [] => []
+  | (h :: t) => match lst2 with
                 | [] => []
-                | h' :: t' => (h,h') :: crossList t t'
+                | h' :: t' => (h,h') :: cross_list t t'
                end
-end.
+  end.
 
 (** Build the right-nested product type of a list of types, using [bool] as the
     empty-list base case. *)
-Fixpoint prodTerm (lstTypes : list term) : term :=
-match lstTypes with
- | [] => <%bool%>
- | [h] => h
- | h :: t => tApp
+Fixpoint prod_term (lstTypes : list term) : term :=
+  match lstTypes with
+  | [] => <%bool%>
+  | [h] => h
+  | h :: t => tApp
                      (tInd
                         {|
                           inductive_mind := <?prod?>;
                           inductive_ind := 0
-                        |} []) [h ; (prodTerm t)]
-end.
+                        |} []) [h ; (prod_term t)]
+  end.
 
-(** Identity function on [AnimationResult]: used as the single-element join. *)
-Definition joinOutcomeUnit (A: Type) (x : AnimationResult A) : AnimationResult A :=
+(** Identity function on [animation_result]: used as the single-element join. *)
+Definition join_outcome_unit (A: Type) (x : animation_result A) : animation_result A :=
 x.
 
 (** Applicative product of two animation results: succeeds with a pair iff both
     succeed; propagates [FuelError] over [NoMatch]. *)
-Definition joinOutcome (A : Type) (B : Type) (x : AnimationResult A) (y : AnimationResult B) : AnimationResult (prod A B) :=
- match x with
+Definition join_outcome (A : Type) (B : Type) (x : animation_result A) (y : animation_result B) : animation_result (prod A B) :=
+  match x with
   | NoMatch => NoMatch (prod A B)
   | FuelError => FuelError (prod A B)
   | Success k => match y with
@@ -831,87 +831,87 @@ Definition joinOutcome (A : Type) (B : Type) (x : AnimationResult A) (y : Animat
                         | FuelError => FuelError (prod A B)
                         | Success j => Success (prod A B) (k,j)
                         end
- end.
+  end.
 
-(** Build the body of a join function for [lstTypes]: folds [joinOutcome] over
+(** Build the body of a join function for [lstTypes]: folds [join_outcome] over
     variables named "o0", "o1", …, starting at index [n]. *)
-Fixpoint mkJoinOutcomeFnBody (lstTypes : list term) (n : nat) : term :=
-match lstTypes with
- | [] => <%Success bool true%>
- | [h] => tApp <%joinOutcomeUnit%> [h; tVar (String.append "o" (string_of_nat n))]
- | [h ; h1] => tApp <%joinOutcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
- | h :: t => tApp <%joinOutcome%> [h; (prodTerm t); tVar (String.append "o" (string_of_nat n)); mkJoinOutcomeFnBody t (S n)]
-end.
+Fixpoint mk_join_outcome_fn_body (lstTypes : list term) (n : nat) : term :=
+  match lstTypes with
+  | [] => <%Success bool true%>
+  | [h] => tApp <%join_outcome_unit%> [h; tVar (String.append "o" (string_of_nat n))]
+  | [h ; h1] => tApp <%join_outcome%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
+  | h :: t => tApp <%join_outcome%> [h; (prod_term t); tVar (String.append "o" (string_of_nat n)); mk_join_outcome_fn_body t (S n)]
+  end.
 
-(** Wrap [fnBody] in lambdas "o0 : AnimationResult T0", "o1 : …", etc. for each type in [lstTypes]. *)
-Fixpoint mkJoinOutcomeLam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
-match lstTypes with
-| [] => fnBody
-| [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%AnimationResult%> [h]) fnBody
-| h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%AnimationResult%> [h]) (mkJoinOutcomeLam t (S n) fnBody)
-end.
+(** Wrap [fnBody] in lambdas "o0 : animation_result T0", "o1 : …", etc. for each type in [lstTypes]. *)
+Fixpoint mk_join_outcome_lam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
+  match lstTypes with
+  | [] => fnBody
+  | [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%animation_result%> [h]) fnBody
+  | h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%animation_result%> [h]) (mk_join_outcome_lam t (S n) fnBody)
+  end.
 
-(** Build a quoted function that joins multiple [AnimationResult] values into one
-    product result, combining [mkJoinOutcomeFnBody] and [mkJoinOutcomeLam]. *)
-Definition mkJoinOutcomeTm (lstTypes : list term) : term :=
-let fnBody := mkJoinOutcomeFnBody lstTypes 0 in
-mkJoinOutcomeLam lstTypes 0 fnBody.
+(** Build a quoted function that joins multiple [animation_result] values into one
+    product result, combining [mk_join_outcome_fn_body] and [mk_join_outcome_lam]. *)
+Definition mk_join_outcome_tm (lstTypes : list term) : term :=
+let fnBody := mk_join_outcome_fn_body lstTypes 0 in
+mk_join_outcome_lam lstTypes 0 fnBody.
 
-(** Compare two [AnimationResult] values with [eqfn]: returns [Success true] if
+(** Compare two [animation_result] values with [eqfn]: returns [Success true] if
     both succeed and are equal, [NoMatch] if unequal or one is [NoMatch],
     [FuelError] if either is a fuel error. *)
-Definition eqOutcomeTp (A : Type) (eqfn : A -> A -> bool) (x: AnimationResult A) (y : AnimationResult A) : AnimationResult bool :=
-match x with
-| Success j => match y with
+Definition eq_outcome_tp (A : Type) (eqfn : A -> A -> bool) (x: animation_result A) (y : animation_result A) : animation_result bool :=
+  match x with
+  | Success j => match y with
                     | Success k => if eqfn j k then (Success bool true) else (NoMatch bool)
                     | NoMatch => NoMatch bool
                     | FuelError => FuelError bool
                    end
-| FuelError => FuelError bool
-| NoMatch =>  match y with
+  | FuelError => FuelError bool
+  | NoMatch =>  match y with
                     | FuelError => FuelError bool
                     | _ => NoMatch bool
                    end
-end.
+  end.
 
-(** Build a quoted term [eqOutcomeTp tpTm tpEqFn]: the equality function on
-    [AnimationResult tpTm] using the boolean equality [tpEqFn] on the base type. *)
-Definition typeToBoolEqOutcome (tpTm : term) (tpEqFn : term) : term := tApp <%eqOutcomeTp%> [tpTm; tpEqFn].
+(** Build a quoted term [eq_outcome_tp tpTm tpEqFn]: the equality function on
+    [animation_result tpTm] using the boolean equality [tpEqFn] on the base type. *)
+Definition type_to_bool_eq_outcome (tpTm : term) (tpEqFn : term) : term := tApp <%eq_outcome_tp%> [tpTm; tpEqFn].
 
 (** Short-circuit conjunction of two boolean animation results: [Success true]
     only if both succeed with [true]; [FuelError] takes priority over [NoMatch]. *)
-Definition compOutcomeBool (x : AnimationResult bool) (y : AnimationResult bool) : AnimationResult bool :=
-match x with
- | FuelError  => FuelError bool
- | NoMatch => match y with
+Definition comp_outcome_bool (x : animation_result bool) (y : animation_result bool) : animation_result bool :=
+  match x with
+  | FuelError  => FuelError bool
+  | NoMatch => match y with
                    | FuelError => FuelError bool
                    | _ => NoMatch bool
                   end
- | Success true => match y with
+  | Success true => match y with
                         | Success true => Success bool true
                         | Success false => NoMatch bool
                         | NoMatch => NoMatch bool
                         | FuelError => FuelError bool
                        end
- | Success false => match y with
+  | Success false => match y with
                          | FuelError => FuelError bool
                          | _ => NoMatch bool
                         end
-end.
+  end.
 
-(** Build a quoted term that joins the [AnimationResult] values of all output
-    variables [outVars] into a single product result using [mkJoinOutcomeTm]. *)
-Definition mkOutPolyProdTm (outVars : list (prod string term)) : term :=
-tApp (mkJoinOutcomeTm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
+(** Build a quoted term that joins the [animation_result] values of all output
+    variables [outVars] into a single product result using [mk_join_outcome_tm]. *)
+Definition mk_out_poly_prod_tm (outVars : list (prod string term)) : term :=
+tApp (mk_join_outcome_tm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
 
 (** Wrap [fnBody] in a sequence of lambda abstractions, one for each [(name, type)]
     pair in [inVars], building innermost-first. *)
-Fixpoint mkLamTp (inVars : list (prod string term)) (fnBody : term) :=
-match inVars with
-| [] => fnBody
+Fixpoint mk_lam_tp (inVars : list (prod string term)) (fnBody : term) :=
+  match inVars with
+  | [] => fnBody
 
-| h :: t => tLam (fst h) (snd h) (mkLamTp t fnBody)
-end.
+  | h :: t => tLam (fst h) (snd h) (mk_lam_tp t fnBody)
+  end.
 
 (** Sentinel values for partial functions — used as defaults in match fallbacks. *)
 Parameter sentinel_term : term.
@@ -928,26 +928,26 @@ Definition animatedSuffix : string := "Animated".
 
 (** Append [animatedTopFnSuffix] to every function name in the [(name, type)] list,
     producing the names used for the generated animated definitions. *)
-Fixpoint mkAnimatedFnNm (l : list (string * term)) : list (string * term) :=
-match l with
-| [] => []
-| (s,tp) :: t => ((String.append s animatedTopFnSuffix), tp) :: mkAnimatedFnNm t
-end.
+Fixpoint mk_animated_fn_nm (l : list (string * term)) : list (string * term) :=
+  match l with
+  | [] => []
+  | (s,tp) :: t => ((String.append s animatedTopFnSuffix), tp) :: mk_animated_fn_nm t
+  end.
 
-(** Project the first component of a paired [AnimationResult]: discards the second
+(** Project the first component of a paired [animation_result]: discards the second
     component on [Success], preserves [FuelError] and [NoMatch]. *)
-Definition splitOutcomePolyFst (A : Type) (B : Type) (x : AnimationResult (A * B)) : AnimationResult A :=
-match x with
- | Success (a,b) => Success A a
- | NoMatch => NoMatch A
- | FuelError => FuelError A
-end.
+Definition split_outcome_poly_fst (A : Type) (B : Type) (x : animation_result (A * B)) : animation_result A :=
+  match x with
+  | Success (a,b) => Success A a
+  | NoMatch => NoMatch A
+  | FuelError => FuelError A
+  end.
 
-(** Project the second component of a paired [AnimationResult]: discards the first
+(** Project the second component of a paired [animation_result]: discards the first
     component on [Success], preserves [FuelError] and [NoMatch]. *)
-Definition splitOutcomePolySnd (A : Type) (B : Type) (x : AnimationResult (A * B)) : AnimationResult B :=
-match x with
- | Success (a,b) => Success B b
- | NoMatch => NoMatch B
- | FuelError => FuelError B
-end.
+Definition split_outcome_poly_snd (A : Type) (B : Type) (x : animation_result (A * B)) : animation_result B :=
+  match x with
+  | Success (a,b) => Success B b
+  | NoMatch => NoMatch B
+  | FuelError => FuelError B
+  end.

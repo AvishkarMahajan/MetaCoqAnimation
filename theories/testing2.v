@@ -196,7 +196,7 @@ MetaRocq Run (animateInductive append <? append ?> [("append", ([0;1], [2]))] 10
 (*
 Print TemplateMonad.
 
-MetaRocq Run (allClauseData <- getData'  <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "typingData" allClauseData).
+MetaRocq Run (allClauseData <- get_data'  <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "typingData" allClauseData).
 MetaRocq Run (mut <- tmQuoteInductive <?typing?> ;; 
 allTpData <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;; tmDefinition "allTpDTyping" allTpData).
 
@@ -213,39 +213,39 @@ match l with
       (([(tVar (String.append varPfix (string_of_nat n)))], [tApp <%eq%> [(hd <%bool%> argTps) ; (tVar (String.append varPfix (string_of_nat n))); t']]) , ([(String.append varPfix (string_of_nat n),(hd <%bool%> argTps))]))  :: (substitutePatternVariables rest varPfix (S n) (tl argTps))
        
 end.
-Fixpoint findTp (s : string) (allPredArgTps : list (string * (list term))) : list term :=
+Fixpoint find_tp (s : string) (allPredArgTps : list (string * (list term))) : list term :=
 match allPredArgTps with
 | [] => []
-| h :: t => if String.eqb s (fst h) then snd h else findTp s t
+| h :: t => if String.eqb s (fst h) then snd h else find_tp s t
 end. 
 
 Fixpoint resolveConjunctionInputs (l : list term) (varPfix : string) (n : nat) (allPredArgTps : list (string * (list term))) :  list ((term * list term) * list (string * term)) :=
 match l with
 | [] => []
 | (tApp <%eq%> lstArgs) :: rest => (((tApp <%eq%> lstArgs) , []), []) :: resolveConjunctionInputs (rest) (varPfix) (n) (allPredArgTps) 
-| (tApp (tVar str) lstArgs) :: rest =>  let result := substitutePatternVariables lstArgs varPfix n (findTp str allPredArgTps) in ((((tApp (tVar str) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
+| (tApp (tVar str) lstArgs) :: rest =>  let result := substitutePatternVariables lstArgs varPfix n (find_tp str allPredArgTps) in ((((tApp (tVar str) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
 | (tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs) :: rest => 
-     let result := substitutePatternVariables lstArgs varPfix n (findTp indNm allPredArgTps) in ((((tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
+     let result := substitutePatternVariables lstArgs varPfix n (find_tp indNm allPredArgTps) in ((((tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) (concat (map (fun y => fst (fst y)) result)))), (concat (map (fun y => snd (fst y)) result))), (concat (map snd result))) :: resolveConjunctionInputs (rest) (varPfix) ((length lstArgs) + (S n)) (allPredArgTps)    
 
      
 | t'' :: rest => ((t'', []), []) :: resolveConjunctionInputs (rest) (varPfix) (n) (allPredArgTps)    
 
 end.          
 
-Fixpoint extractOrderedVars2 (t : term) : list string :=
+Fixpoint extract_ordered_vars2 (t : term) : list string :=
   match t with
   
   (* Combine the pattern matches to handle fns of arbitrary arity *)
 
   | tVar str  => [str]
   | (tInd {| inductive_mind := (_path, str); inductive_ind := k |} []) => [str]
-  | tApp fn lst => app (concat (map extractOrderedVars2 lst)) (extractOrderedVars2 fn)  
+  | tApp fn lst => app (concat (map extract_ordered_vars2 lst)) (extract_ordered_vars2 fn)  
   
-  | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 => app (extractOrderedVars2 t1) (extractOrderedVars2 t2) 
+  | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2 => app (extract_ordered_vars2 t1) (extract_ordered_vars2 t2) 
   | _ => []
   end.  
 
-Compute extractOrderedVars2 (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+Compute extract_ordered_vars2 (tProd {| binder_name := nAnon; binder_relevance := Relevant |}
              (tApp <%and%>
                 [tApp
                    (tInd
@@ -260,28 +260,28 @@ Compute extractOrderedVars2 (tProd {| binder_name := nAnon; binder_relevance := 
                 [tApp (tConstruct {| inductive_mind := <?nat?>; inductive_ind := 0 |} 1 []) [tVar "w"];
                  tConstruct {| inductive_mind := <?bool?>; inductive_ind := 0 |} 0 []])).
 Compute list_max (map String.length  ["w"; "even'"; "even'"; "w"]).
-Fixpoint mkFreshVPrefix (n : nat) : string :=
+Fixpoint mk_fresh_v_prefix (n : nat) : string :=
 match n with
 | 0 => "j"
-| S m => String.append "j" (mkFreshVPrefix m)
+| S m => String.append "j" (mk_fresh_v_prefix m)
 end.
 
               
 Search (term -> list term).
 
-Definition findPredTps' (allTpInf : list ((string × term) × list (string × list (string × term)))) :=
+Definition find_pred_tps' (allTpInf : list ((string × term) × list (string × list (string × term)))) :=
 map fst allTpInf.
 
-Definition findPredTps (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * list term) :=
-map (fun y => (fst y , getType (snd y))) (findPredTps' allTpInf).
+Definition find_pred_tps (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * list term) :=
+map (fun y => (fst y , get_type (snd y))) (find_pred_tps' allTpInf).
 
-Definition flattenClause (t : term) : list term :=
+Definition flatten_clause (t : term) : list term :=
 match t with
 | tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%and%> lst) t' => app lst [t']
 | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t'' t' =>  [t''; t']
 | t''' => [t''']
 end.
-Definition buildClause (ts : list term) : term :=
+Definition build_clause (ts : list term) : term :=
 match rev ts with
 | [] => errTpTm
 | [h] => h
@@ -289,49 +289,49 @@ match rev ts with
 | h :: t => tProd {| binder_name := nAnon; binder_relevance := Relevant |} (tApp <%and%> t) h
 end.
 
-Definition rewriteCl (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : term :=
-let prefix := mkFreshVPrefix (S (list_max (map String.length (extractOrderedVars2 t)))) in
-let lstTm := flattenClause t in
-let allPredArgTp := findPredTps allTpInf in
-buildClause (app (concat (map (fun y => (snd (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp)))  (map (fun y => (fst (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp))).
+Definition rewrite_cl (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : term :=
+let prefix := mk_fresh_v_prefix (S (list_max (map String.length (extract_ordered_vars2 t)))) in
+let lstTm := flatten_clause t in
+let allPredArgTp := find_pred_tps allTpInf in
+build_clause (app (concat (map (fun y => (snd (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp)))  (map (fun y => (fst (fst y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp))).
 
 
-Definition getExtraTpInf (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * term) :=
+Definition get_extra_tp_inf (t : term) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * term) :=
 
-let prefix := mkFreshVPrefix (S (list_max (map String.length (extractOrderedVars2 t)))) in
-let lstTm := flattenClause t in
-let allPredArgTp := findPredTps allTpInf in
+let prefix := mk_fresh_v_prefix (S (list_max (map String.length (extract_ordered_vars2 t)))) in
+let lstTm := flatten_clause t in
+let allPredArgTp := find_pred_tps allTpInf in
 (concat (map (fun y => (snd (y))) (resolveConjunctionInputs lstTm prefix 0 allPredArgTp))).  
 
 Compute typingData.
 
-Fixpoint rewriteClAll1 (allClauseData1 : list (string × term)) (allTpInf : list ((string × term) × list (string × list (string × term)))) : (list (string × term)) :=
+Fixpoint rewrite_cl_all1 (allClauseData1 : list (string × term)) (allTpInf : list ((string × term) × list (string × list (string × term)))) : (list (string × term)) :=
 match allClauseData1 with
 | [] => []
-| (cstrNm,t) :: rest => (cstrNm, rewriteCl t allTpInf) :: (rewriteClAll1 rest allTpInf)
+| (cstrNm,t) :: rest => (cstrNm, rewrite_cl t allTpInf) :: (rewrite_cl_all1 rest allTpInf)
 end.
 
-Definition rewriteClAll1' (allClauseData1 : (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) :  (((string × list term) × list term) × list (string × term)) :=
+Definition rewrite_cl_all1' (allClauseData1 : (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) :  (((string × list term) × list term) × list (string × term)) :=
 match allClauseData1 with
-| (((indNm, inTps), outTps), cstrData) => (((indNm, inTps), outTps), (rewriteClAll1 cstrData allTpInf))
+| (((indNm, inTps), outTps), cstrData) => (((indNm, inTps), outTps), (rewrite_cl_all1 cstrData allTpInf))
 end.
 
-Definition rewriteClAll (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) :  list (((string × list term) × list term) × list (string × term)) :=
-map (fun y => rewriteClAll1' y allTpInf) allClauseData.
+Definition rewrite_cl_all (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) :  list (((string × list term) × list term) × list (string × term)) :=
+map (fun y => rewrite_cl_all1' y allTpInf) allClauseData.
 
 
 Compute allTpDTyping.
 
-Fixpoint getExtraTpInfLst (allClauseData1 : list (string × term)) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * list (string * term)) :=
+Fixpoint get_extra_tp_inf_lst (allClauseData1 : list (string × term)) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * list (string * term)) :=
 match allClauseData1 with
 | [] => []
-| (cstrNm, t) :: rest => (cstrNm, getExtraTpInf t allTpInf) :: getExtraTpInfLst rest allTpInf
+| (cstrNm, t) :: rest => (cstrNm, get_extra_tp_inf t allTpInf) :: get_extra_tp_inf_lst rest allTpInf
 end.
  
-Fixpoint getExtraTpInfLstAll (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * (list (string * list (string * term)))) :=
+Fixpoint get_extra_tp_inf_lst_all (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * (list (string * list (string * term)))) :=
 match allClauseData with
 | [] => []
-| (((indNm, inTps), outTps), listCons) :: rest => (indNm, getExtraTpInfLst listCons allTpInf) :: (getExtraTpInfLstAll rest allTpInf)
+| (((indNm, inTps), outTps), listCons) :: rest => (indNm, get_extra_tp_inf_lst listCons allTpInf) :: (get_extra_tp_inf_lst_all rest allTpInf)
 end.
 
 Fixpoint retrieve (cstrNm : string) (l : list (string × list (string × term))) : list (string * term) :=
@@ -340,32 +340,32 @@ match l with
 | h :: rest => if (String.eqb cstrNm (fst h)) then (snd h) else retrieve cstrNm rest
 end.
 
-Fixpoint getOldTpInf (indNm : string) (cstrNm : string) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * term) :=
+Fixpoint get_old_tp_inf (indNm : string) (cstrNm : string) (allTpInf : list ((string × term) × list (string × list (string × term)))) : list (string * term) :=
 match allTpInf with
 | [] => []
-| (str, t, lst) :: rest => if (String.eqb indNm str) then retrieve cstrNm lst else getOldTpInf indNm cstrNm rest
+| (str, t, lst) :: rest => if (String.eqb indNm str) then retrieve cstrNm lst else get_old_tp_inf indNm cstrNm rest
 end.
 
-Fixpoint getNewTpInf (indNm : string) (cstrNm : string) (extraTpInf : list ((string) × list (string × list (string × term)))) : list (string * term) :=
+Fixpoint get_new_tp_inf (indNm : string) (cstrNm : string) (extraTpInf : list ((string) × list (string × list (string × term)))) : list (string * term) :=
 match extraTpInf with
 | [] => []
-| (str, lst) :: rest => if (String.eqb indNm str) then retrieve cstrNm lst else getNewTpInf indNm cstrNm rest
+| (str, lst) :: rest => if (String.eqb indNm str) then retrieve cstrNm lst else get_new_tp_inf indNm cstrNm rest
 end.
-Definition updateTpInf (allTpInf1 :  ((string × term) × list (string × list (string × term)))) (allTpInf :  list((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
+Definition update_tp_inf (allTpInf1 :  ((string × term) × list (string × list (string × term)))) (allTpInf :  list((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
 match allTpInf1 with 
 
-| ((indNm, t), lst) => ((indNm, t), map (fun y => ((fst y), app (getOldTpInf indNm (fst y) allTpInf) (getNewTpInf indNm (fst y) extraTpInf))) lst)
+| ((indNm, t), lst) => ((indNm, t), map (fun y => ((fst y), app (get_old_tp_inf indNm (fst y) allTpInf) (get_new_tp_inf indNm (fst y) extraTpInf))) lst)
 end.
 
-Definition updateTpInfLst (allTpInf1l :  list ((string × term) × list (string × list (string × term)))) (allTpInf :  list((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
-map (fun y => updateTpInf y allTpInf extraTpInf) allTpInf1l.
+Definition update_tp_inf_lst (allTpInf1l :  list ((string × term) × list (string × list (string × term)))) (allTpInf :  list((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
+map (fun y => update_tp_inf y allTpInf extraTpInf) allTpInf1l.
 
-Definition updateTpInfFinal' (allTpInf :  list ((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
-updateTpInfLst allTpInf allTpInf extraTpInf.
+Definition update_tp_inf_final' (allTpInf :  list ((string × term) × list (string × list (string × term)))) (extraTpInf : list ((string) × list (string × list (string × term)))) :=
+update_tp_inf_lst allTpInf allTpInf extraTpInf.
   
 
-Definition updateTpInfFinal (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) : (list ((string × term) × list (string × list (string × term)))) :=
-updateTpInfFinal' allTpInf  (getExtraTpInfLstAll allClauseData allTpInf).
+Definition update_tp_inf_final (allClauseData : list (((string × list term) × list term) × list (string × term))) (allTpInf : list ((string × term) × list (string × list (string × term)))) : (list ((string × term) × list (string × list (string × term)))) :=
+update_tp_inf_final' allTpInf  (get_extra_tp_inf_lst_all allClauseData allTpInf).
 
 MetaRocq Run (mut <- tmQuoteInductive <?even'?> ;; 
 allTpData <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;; tmDefinition "allTpDataEven'" allTpData).
@@ -373,8 +373,8 @@ allTpData <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;; tmDefinition "allT
 Compute even'Data.
 Compute allTpDataEven'.
 
-Compute rewriteClAll even'Data allTpDataEven'.
-Compute updateTpInfFinal even'Data allTpDataEven'.
+Compute rewrite_cl_all even'Data allTpDataEven'.
+Compute update_tp_inf_final even'Data allTpDataEven'.
 *)
 (*    
 Fixpoint eqFntype (t1 : type) (t2 : type) : bool :=

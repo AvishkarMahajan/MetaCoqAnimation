@@ -31,18 +31,18 @@ CoInduction :
 - Automate generation of augmented types/ (co)inductive relations
 - map result back to original types
 *)
-Definition hdPoly {A : Type} (s : ResultStream A) : A :=
+Definition hdPoly {A : Type} (s : result_stream A) : A :=
 match s with 
 | Scons h0 t0 => h0
 end.
 
-Definition tlPoly {A : Type} (s : ResultStream A) : ResultStream A :=
+Definition tlPoly {A : Type} (s : result_stream A) : result_stream A :=
 match s with 
 | Scons h0 t0 => t0
 end.
 
 
-Fixpoint streamNth {A : Type} (n : nat) (s : ResultStream A) :  A :=
+Fixpoint streamNth {A : Type} (n : nat) (s : result_stream A) :  A :=
 match n with
 | 0 => hdPoly s
 | S n => streamNth n (tlPoly s)
@@ -148,29 +148,29 @@ MetaRocq Run (animateInductive typing <?typing?> [("typing", ([0;1], [2]));("loo
 (*
 
 MetaRocq Run (mut <- tmQuoteInductive <? lookup ?>;; tmPrint mut).
-MetaRocq Run (tDat <- getData' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "tDat" tDat).
+MetaRocq Run (tDat <- get_data' <? typing ?> [("typing", ([0;1], [2]));("lookup", ([0;1], [2]))] ;; tmDefinition "tDat" tDat).
 
 Compute tDat.
 
 Definition animAllCl30 {A : Type} (ind : A) (kn : kername) (modes : list (string * ((list nat) * (list nat)))) (fuel : nat) : TemplateMonad (bool) :=
-allClauseData' <- getData' kn modes ;;
+allClauseData' <- get_data' kn modes ;;
 mut <- tmQuoteInductive kn ;; 
 allTpData' <- tmEval all (getClauseTpInfo (ind_bodies mut)) ;;
-allClauseData <- tmEval all (rewriteClAll allClauseData' allTpData') ;;
-allTpData <- tmEval all (updateTpInfFinal allClauseData' allTpData') ;;
+allClauseData <- tmEval all (rewrite_cl_all allClauseData' allTpData') ;;
+allTpData <- tmEval all (update_tp_inf_final allClauseData' allTpData') ;;
 tmDefinition "rewriteData" allClauseData;;
 tmReturn true.
 (*
-clLst <- tmEval all (clauseLst allClauseData) ;;
+clLst <- tmEval all (clause_lst allClauseData) ;;
 
 
-tms <- animAllClLst ind kn clLst modes fuel ;;
+tms <- anim_all_cl_lst ind kn clLst modes fuel ;;
 
-inductData <- tmEval all (prodInOut (getFixptData allClauseData)) ;; 
+inductData <- tmEval all (prod_in_out (get_fixpt_data allClauseData)) ;; 
 
-let u := (mkrecFn (mkAllIndTop (inductData) kn) 0)  in
+let u := (mk_rec_fn (mk_all_ind_top (inductData) kn) 0)  in
           u' <- tmEval all u ;;
-          t' <- tmEval all (typeConstrPatMatch.unwrapOptionTerm (DB.deBruijnOption u)) ;;
+          t' <- tmEval all (typeConstrPatMatch.unwrap_option_term (DB.deBruijnOption u)) ;;
           tmPrint t' ;;
                f <- tmUnquote t';;
                tmPrint f ;;
