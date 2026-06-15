@@ -72,33 +72,61 @@ MetaRocq Run (animateInductive typing <?typing?> [("typing", ([0;1], [2])); ("lo
 (* --- Typing tests --- *)
 
 (* A constant has type TBool *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tcon 5)).
+Example test_typing_con :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tcon 5))
+  = Success ty TBool.
+Proof. reflexivity. Qed.
 
 (* Lambda abstraction: \x:TBool. con 5 has type TBool -> TBool *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tabs TBool (tcon 5))).
+Example test_typing_tabs_tcon :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tabs TBool (tcon 5)))
+  = Success ty (TArrow TBool TBool).
+Proof. reflexivity. Qed.
 
 (* Addition of two constants *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tadd (tcon 1) (tcon 2))).
+Example test_typing_tadd :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tadd (tcon 1) (tcon 2)))
+  = Success ty TBool.
+Proof. reflexivity. Qed.
 
 (* Lambda with variable reference: \x:TBool. x has type TBool -> TBool *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tabs TBool (tvar 0))).
+Example test_typing_tabs_tvar :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tabs TBool (tvar 0)))
+  = Success ty (TArrow TBool TBool).
+Proof. reflexivity. Qed.
 
 (* Application: (\x:TBool. x) (con 3) has type TBool *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tapp (tabs TBool (tvar 0)) (tcon 3))).
+Example test_typing_tapp :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tapp (tabs TBool (tvar 0)) (tcon 3)))
+  = Success ty TBool.
+Proof. reflexivity. Qed.
 
 (* Nested abstraction: \f:TBool->TBool. \x:TBool. f x *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tabs (TArrow TBool TBool)
-                                       (tabs TBool (tapp (tvar 1) (tvar 0))))).
+Example test_typing_nested_tabs :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tabs (TArrow TBool TBool)
+                                         (tabs TBool (tapp (tvar 1) (tvar 0)))))
+  = Success ty (TArrow (TArrow TBool TBool) (TArrow TBool TBool)).
+Proof. reflexivity. Qed.
 
-(* Ill-typed: adding a lambda and a constant - should fail *)
-Compute typingAnimatedTopFn 50
-  (Success (list ty * tm) ([], tadd (tabs TBool (tcon 1)) (tcon 2))).
+(* Ill-typed: adding a lambda and a constant should fail *)
+Example test_typing_ill_typed_tadd :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tadd (tabs TBool (tcon 1)) (tcon 2)))
+  = NoMatch ty.
+Proof. reflexivity. Qed.
+
+(* Type mismatch in application: (\f:TBool->TBool. f) applied to a constant *)
+Example test_typing_ill_typed_tapp :
+  typingAnimatedTopFn 50
+    (Success (list ty * tm) ([], tapp (tabs (TArrow TBool TBool) (tvar 0)) (tcon 5)))
+  = NoMatch ty.
+Proof. reflexivity. Qed.
 
 End STLCTyping.
 
@@ -162,31 +190,52 @@ MetaRocq Run (animateInductive step <?step?> [("step", ([0], [1]))] 100).
 (* --- Step tests --- *)
 
 (* Beta reduction: (\x:Bool. x) true --> true *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tapp (tabs "x" TBool (tvar "x")) ttrue)).
+Example test_step_app_abs_true :
+  stepAnimatedTopFn 50
+    (Success tm (tapp (tabs "x" TBool (tvar "x")) ttrue))
+  = Success tm ttrue.
+Proof. reflexivity. Qed.
 
 (* Beta reduction: (\x:Bool. x) false --> false *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tapp (tabs "x" TBool (tvar "x")) tfalse)).
+Example test_step_app_abs_false :
+  stepAnimatedTopFn 50
+    (Success tm (tapp (tabs "x" TBool (tvar "x")) tfalse))
+  = Success tm tfalse.
+Proof. reflexivity. Qed.
 
 (* If-true: if true then t else f --> t *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tif ttrue ttrue tfalse)).
+Example test_step_if_true :
+  stepAnimatedTopFn 50
+    (Success tm (tif ttrue ttrue tfalse))
+  = Success tm ttrue.
+Proof. reflexivity. Qed.
 
 (* If-false: if false then t else f --> f *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tif tfalse ttrue tfalse)).
+Example test_step_if_false :
+  stepAnimatedTopFn 50
+    (Success tm (tif tfalse ttrue tfalse))
+  = Success tm tfalse.
+Proof. reflexivity. Qed.
 
 (* Step under application: ((\x. x) true) false --> true false *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tapp (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse)).
+Example test_step_app1 :
+  stepAnimatedTopFn 50
+    (Success tm (tapp (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse))
+  = Success tm (tapp ttrue tfalse).
+Proof. reflexivity. Qed.
 
 (* Value: true cannot step *)
-Compute stepAnimatedTopFn 50
-  (Success tm ttrue).
+Example test_step_value_no_step :
+  stepAnimatedTopFn 50
+    (Success tm ttrue)
+  = NoMatch tm.
+Proof. reflexivity. Qed.
 
-(* Step under if: if ((\x. x) true) then t else f --> if true then t else f *)
-Compute stepAnimatedTopFn 50
-  (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue)).
+(* Step under if: if ((\x. x) true) then f else t --> if true then f else t *)
+Example test_step_if_cond :
+  stepAnimatedTopFn 50
+    (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue))
+  = Success tm (tif ttrue tfalse ttrue).
+Proof. reflexivity. Qed.
 
 End STLCStep.

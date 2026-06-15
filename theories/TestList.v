@@ -115,6 +115,18 @@ Example test_suffix_full :
   = Success (list nat) [].
 Proof. reflexivity. Qed.
 
+(* Head mismatch: prefix [1] vs full list starting with 2 *)
+Example test_suffix_head_mismatch :
+  suffixAnimatedTopFn 50 (Success (list nat * list nat) ([1], [2;3]))
+  = NoMatch (list nat).
+Proof. reflexivity. Qed.
+
+(* Prefix longer than full list: no suffix exists *)
+Example test_suffix_prefix_too_long :
+  suffixAnimatedTopFn 50 (Success (list nat * list nat) ([1;2;3], [1;2]))
+  = NoMatch (list nat).
+Proof. reflexivity. Qed.
+
 End Suffix.
 
 
