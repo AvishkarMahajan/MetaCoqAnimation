@@ -549,53 +549,14 @@ Fixpoint mk_lhs_prod_tm (lhsIndPre : list (term * term)) : TemplateMonad term :=
 Definition fuel_error_poly_cst_fn (inputType : Type) (outputType' : Type) : (inputType -> (animation_result outputType') ) :=
  fun x : inputType => FuelError outputType'.
 
-(** Test whether nat [a] occurs in list [l]. *)
-Fixpoint in_nat_lst (a : nat) (l : list nat) : bool :=
-  match l with
-  | nil => false
-  | (h :: t) => if (Nat.eqb h a) then true else (in_nat_lst a t)
-  end.
-
-(** Test whether every element of [l1] occurs in [l2] (multiset subset). *)
-Fixpoint is_list_sub (l1 l2 : list nat) : bool :=
-  match l1 with
-  | [] => true
-  | h :: t => in_nat_lst h l2 && is_list_sub t l2
-  end.
-
-(** Test whether string [s] occurs in list [l1]. *)
-Fixpoint in_str_lst (s : string) (l1 : list string) : bool :=
-  match l1 with
-  | [] => false
-  | h :: t => if String.eqb s h then true else in_str_lst s t
-  end.
+(** Test whether string [s] occurs in list [l]. *)
+Definition in_str_lst (s : string) (l : list string) : bool :=
+  existsb (String.eqb s) l.
 
 (** Test whether every element of string list [l1] occurs in [l2]. *)
-Fixpoint is_list_sub_str (l1 l2 : list string) : bool :=
-  match l1 with
-  | [] => true
-  | h :: t => in_str_lst h l2 && is_list_sub_str t l2
-  end.
+Definition is_list_sub_str (l1 l2 : list string) : bool :=
+  forallb (fun s => existsb (String.eqb s) l2) l1.
 
-(** Return [true] iff every element of [lst] is [true] (conjunction). *)
-Fixpoint check_bool (lst : list bool) : bool :=
-  match lst with
-  | [] => true
-  | h :: t => andb h (check_bool t)
-  end.
-
-(** Decide pointwise equality of two [nat] lists. *)
-Fixpoint eq_lst_nat (l1 : list nat) (l2 : list nat) : bool :=
-  match l1 with
-  | [] => match l2 with
-          | [] => true
-          | _ => false
-          end
-  | (h :: t) => match l2 with
-                 | [] => false
-                 | (h' :: t') => if (Nat.eqb h h') then eq_lst_nat t t' else false
-                end
-  end.
 
 (** Adapt a function returning [animation_result (option B)] into one returning
     [animation_result B]: [Some v] becomes [Success v], [None] becomes [NoMatch]. *)
@@ -789,16 +750,6 @@ Fixpoint get_pred_tp (indNm : string) (predTypeInf : list (string * (list term))
   match predTypeInf with
   | [] => []
   | h :: t => if String.eqb indNm (fst h) then snd h else get_pred_tp indNm t
-  end.
-
-(** Zip two lists into a list of pairs, stopping at the shorter one. *)
-Fixpoint cross_list {A : Type} {B : Type} (lst1 : list A) (lst2 : list B) : list (A * B) :=
-  match lst1 with
-  | [] => []
-  | (h :: t) => match lst2 with
-                | [] => []
-                | h' :: t' => (h,h') :: cross_list t t'
-               end
   end.
 
 (** Build the right-nested product type of a list of types, using [bool] as the

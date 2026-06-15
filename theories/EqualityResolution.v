@@ -325,7 +325,7 @@ ret u.
     Fails with an error if any equality has an unsupported type. *)
 Definition gen_fun_animate_eq_partial_let_clause' {A : Type} (induct : A) (kn : kername) (fooTerm : named_term)  (inputTm : term) (inputTp : term)  (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
 
-  if check_bool (filter_list_conj fooTerm) then
+  if forallb id (filter_list_conj fooTerm) then
   (let postOut' := (constr_fn_body outputTm outputTp
     (animate_list_conj
        (get_list_conj_let_bind fooTerm) nil (inputVars) fuel (fun t : term => t))
@@ -368,8 +368,8 @@ let conjunct := fst conjunct' in
                      let predOutArgsTp := get_out_args' mode predTp in
                      let inputVars := extract_ordered_vars_fm_lst predInArgsTm in
                      let inputVarsTmTp := mk_lst_tm (look_up_vars inputVars allVarTpInf) in
-                     let predInArgs := cross_list predInArgsTm predInArgsTp in
-                     let predOutArgs := cross_list predOutArgsTm predOutArgsTp in
+                     let predInArgs := combine predInArgsTm predInArgsTp in
+                     let predOutArgs := combine predOutArgsTm predOutArgsTp in
 
                      inputVarProdTp <- mk_lhs_prod_type inputVarsTmTp ;;
                      inputVarProdTm <- mk_lhs_prod_tm inputVarsTmTp ;;
@@ -432,8 +432,8 @@ let conjunct := fst conjunct' in
                      let predOutArgsTp := get_out_args' mode predTp in
                      let inputVars := extract_ordered_vars_fm_lst predInArgsTm in
                      let inputVarsTmTp := mk_lst_tm (look_up_vars inputVars allVarTpInf) in
-                     let predInArgs := cross_list predInArgsTm predInArgsTp in
-                     let predOutArgs := cross_list predOutArgsTm predOutArgsTp in
+                     let predInArgs := combine predInArgsTm predInArgsTp in
+                     let predOutArgs := combine predOutArgsTm predOutArgsTp in
 
                      inputVarProdTp <- mk_lhs_prod_type2 inputVarsTmTp ;;
                      inputVarProdTm <- mk_lhs_prod_tm2 inputVarsTmTp ;;

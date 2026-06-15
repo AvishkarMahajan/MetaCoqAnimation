@@ -273,12 +273,6 @@ Definition get_type_nm (s : (string * term) * list string) : string :=
   | _ => sentinel_string
   end.
 
-(** Check if a string is a member of a list of strings. *)
-Fixpoint chk_member_str (s : string) (lStr : list string) : bool :=
-  match lStr with
-  | [] => false
-  | (h :: t) => if (String.eqb s h) then true else chk_member_str s t
-  end.
 
 (** Filter out terms that don't correspond to valid type constructors.
     Checks against the list of mutual inductive bodies. *)
@@ -289,7 +283,7 @@ Fixpoint filter_type_con' (ls : list ((string * term) * list string)) (mut : lis
     | h :: t => match h with
                  | (str,
                     tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
-                    k ls, lsStr) => if (chk_member_str nmStr (map fst (extract_type_cs_ar_lst mut))) then h :: (filter_type_con' t mut) else (filter_type_con' t mut)
+                    k ls, lsStr) => if (in_str_lst nmStr (map fst (extract_type_cs_ar_lst mut))) then h :: (filter_type_con' t mut) else (filter_type_con' t mut)
                  | _ => (filter_type_con' t mut)
                 end
    end.
@@ -327,33 +321,13 @@ Definition mk_some_branch (l : list string) (t : term) : branch term :=
     bbody := t
   |}.
 
-(** Return the first n elements of a list. *)
-Fixpoint until_lst (n : nat) (l : list nat) : list nat :=
-  match n with
-  | 0 => []
-  | S m => match l with
-            | [] => []
-            | h :: t => (h :: until_lst m t)
-           end
-  end.
-
-(** Return the list starting after index n. *)
-Fixpoint rest_lst (n : nat) (l : list nat) : list nat :=
-  match n with
-  | 0 => tl l
-  | S m => match l with
-            | [] => []
-            | h :: t => rest_lst m t
-           end
-  end.
-
 (** Create the list of branches for a pattern match:
     None branches before the matching constructor, a Some branch for the match,
     and None branches after. *)
 Definition mk_br_lst (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) : list (branch term) :=
   let csArlst := (get_cstr_arity_lst (get_type_nm s) l) in
   let index := get_cstr_index s in
-  map mk_none_branch (until_lst index csArlst) ++ [mk_some_branch (rev (snd s)) t] ++ map mk_none_branch (rest_lst index csArlst).
+  map mk_none_branch (firstn index csArlst) ++ [mk_some_branch (rev (snd s)) t] ++ map mk_none_branch (skipn (S index) csArlst).
 
 (** Create a case expression (pattern match) term.
     Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
@@ -430,7 +404,7 @@ Definition mk_none_branch2 (wildCardRet : term) (n : nat)  : branch term :=
 Definition mk_br_lst2 (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
  let csArlst := (typeConstrPatMatch.get_cstr_arity_lst (typeConstrPatMatch.get_type_nm s) l) in
   let index := typeConstrPatMatch.get_cstr_index s in
-  map (mk_none_branch2 wildCardRet) (typeConstrPatMatch.until_lst index csArlst) ++ [typeConstrPatMatch.mk_some_branch (rev (snd s)) t] ++ map (mk_none_branch2 wildCardRet) (typeConstrPatMatch.rest_lst index csArlst).
+  map (mk_none_branch2 wildCardRet) (firstn index csArlst) ++ [typeConstrPatMatch.mk_some_branch (rev (snd s)) t] ++ map (mk_none_branch2 wildCardRet) (skipn (S index) csArlst).
 
 (** Create a case expression with custom output type and wildcard return value. *)
 Definition mk_case2'  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term) (outputType : term) (wildCardRet : term)
@@ -466,7 +440,7 @@ Fixpoint collect_var_sets (l : list ((string * term) * list string)) : list stri
 Fixpoint no_repeat (l1 : list string) (l2 : list string) : bool :=
   match l1 with
   | [] => true
-  | (h :: t) => negb (typeConstrPatMatch.chk_member_str h (l2)) && (no_repeat t l2)
+  | (h :: t) => negb (in_str_lst h (l2)) && (no_repeat t l2)
   end.
 
 (** Extract a mapping from original variable names to their tVar references. *)
