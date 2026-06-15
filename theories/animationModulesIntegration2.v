@@ -541,7 +541,7 @@ match predTypeInf with
 | [] => []
 | h :: rest => if String.eqb indNm (fst h) then (snd h) else getPredTpFmLst indNm rest
 end.
-         
+(*         
 Definition rewritePredConj (conj' : term) (modes : list (string * (list nat * list nat))) (predTypeInf : list (string * (list term))) : term :=
 match conj' with
 | tApp <%eq%> [typeVar; t1; t2] => conj'
@@ -582,7 +582,9 @@ match conj' with
 
 | _ => conj'
 end.                                                                                                                          
-                                 
+*)  
+Definition rewritePredConj (conj' : term) (modes : list (string * (list nat * list nat))) (predTypeInf : list (string * (list term))) : term := conj'.
+                               
 
 Fixpoint getSortedOrientedConjs (modes : list (string * ((list nat) * (list nat)))) (currentConjs : list term) (remConjs : list term) (sortedConjs : list term) (guardConjs : list term) (kv : (list string)) (fuel : nat) : TemplateMonad (prod (list term) (list term)) :=
 match fuel with

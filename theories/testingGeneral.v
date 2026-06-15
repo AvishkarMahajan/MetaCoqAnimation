@@ -71,16 +71,18 @@ match n with
 | 0 => hdPoly s
 | S n => StmN n (tlPoly s)
 end.
-
+(*
 Inductive isGood' : nat -> list nat  -> Prop :=
 | isG' :  forall w l, isGood w l -> isGood' w l
-
-with isGood : nat -> list nat -> Prop :=
+*)
+Inductive isGood : nat -> list nat -> Prop :=
 |isG : isGood 0 [].
 
-(*
-MetaRocq Run (animAllCl isGood' <? isGood' ?> [("isGood'", ([], [0;1]));("isGood", ([], [0;1]))] 500).
-*)
+
+
+
+MetaRocq Run (animAllCl isGood <? isGood ?> [("isGood", ([0;1], []))] 500).
+
 
 
 
