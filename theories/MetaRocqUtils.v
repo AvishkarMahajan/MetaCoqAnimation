@@ -394,63 +394,92 @@ Module Substitution.
     | tLetIn (mkBindAnn (nNamed id) rel) b ty b' =>
       if ident_eq x id
       then tLetIn (mkBindAnn (nNamed id) rel) (named_subst t x b) (named_subst t x ty) b'
-      else tLetIn (mkBindAnn (nNamed id) rel) (named_subst t x b) (named_subst t x ty) (named_subst t x b')
-    | tLetIn na b ty b' => tLetIn na (named_subst t x b) (named_subst t x ty) (named_subst t x b')
-    | tApp u0 v => mkApps (named_subst t x u0) (map (named_subst t x) v)
+      else
+        tLetIn (mkBindAnn (nNamed id) rel)
+          (named_subst t x b)
+          (named_subst t x ty)
+          (named_subst t x b')
+    | tLetIn na b ty b' =>
+      tLetIn na (named_subst t x b)
+        (named_subst t x ty) (named_subst t x b')
+    | tApp u0 v =>
+      mkApps (named_subst t x u0) (map (named_subst t x) v)
     | tCase ind p c brs =>
-        let p' := {| puinst := puinst p
-                   ; pparams := map (named_subst t x) (pparams p)
-                   ; pcontext := pcontext p
-                   ; preturn := named_subst t x (preturn p)
-                   |} in
-        let brs' := map (fun br => {| bcontext := bcontext br ; bbody := named_subst t x (bbody br) |} ) brs in
+        let p' :=
+          {| puinst := puinst p
+           ; pparams := map (named_subst t x) (pparams p)
+           ; pcontext := pcontext p
+           ; preturn := named_subst t x (preturn p)
+           |} in
+        let brs' :=
+          map (fun br =>
+            {| bcontext := bcontext br
+             ; bbody := named_subst t x (bbody br)
+             |}) brs in
         tCase ind p' (named_subst t x c) brs'
     | tProj p c => tProj p (named_subst t x c)
-    | tFix mfix idx => (* FIXME *)
-      let mfix' := map (map_def (named_subst t x) (named_subst t x)) mfix in
-      tFix mfix' idx
+    | tFix mfix idx =>
+      let mfix' :=
+        map (map_def (named_subst t x) (named_subst t x)) mfix
+      in tFix mfix' idx
     | tCoFix mfix idx =>
-      let mfix' := map (map_def (named_subst t x) (named_subst t x)) mfix in
-      tCoFix mfix' idx
+      let mfix' :=
+        map (map_def (named_subst t x) (named_subst t x)) mfix
+      in tCoFix mfix' idx
     | _ => u
     end.
 
-  (** Apply a list of [(identifier, replacement)] substitutions to [u] in order. *)
-  Fixpoint named_subst_all (l : list (ident * named_term)) (u : named_term) : named_term :=
+  Fixpoint named_subst_all
+    (l : list (ident * named_term))
+    (u : named_term) : named_term :=
     match l with
     | nil => u
     | (id, t) :: l' => named_subst_all l' (named_subst t id u)
     end.
 End Substitution.
 
-(** ** Constant Substitution
-
-    Substitution of a [global_term] for all references to a specific [kername]. *)
 Module ConstSubstitution.
-  (** Replace all [tConst kn _] references matching [x] with [t]. *)
-  Fixpoint named_subst (t : global_term) (x : kername) (u : named_term) {struct u} : named_term :=
+  Fixpoint named_subst (t : global_term) (x : kername)
+    (u : named_term) {struct u} : named_term :=
     match u with
     | tConst kn _ => if eq_kername x kn then t else u
     | tVar id => u
-    | tEvar ev args => tEvar ev (map (named_subst t x) args)
-    | tCast c kind ty => tCast (named_subst t x c) kind (named_subst t x ty)
+    | tEvar ev args =>
+      tEvar ev (map (named_subst t x) args)
+    | tCast c kind ty =>
+      tCast (named_subst t x c) kind (named_subst t x ty)
     | tProd (mkBindAnn (nNamed id) rel) A B =>
-      tProd (mkBindAnn (nNamed id) rel) (named_subst t x A) (named_subst t x B)
-    | tProd na A B => tProd na (named_subst t x A) (named_subst t x B)
+      tProd (mkBindAnn (nNamed id) rel)
+        (named_subst t x A) (named_subst t x B)
+    | tProd na A B =>
+      tProd na (named_subst t x A) (named_subst t x B)
     | tLambda (mkBindAnn (nNamed id) rel) T M =>
-      tLambda (mkBindAnn (nNamed id) rel) (named_subst t x T) (named_subst t x M)
-    | tLambda na T M => tLambda na (named_subst t x T) (named_subst t x M)
+      tLambda (mkBindAnn (nNamed id) rel)
+        (named_subst t x T) (named_subst t x M)
+    | tLambda na T M =>
+      tLambda na (named_subst t x T) (named_subst t x M)
     | tLetIn (mkBindAnn (nNamed id) rel) b ty b' =>
-      tLetIn (mkBindAnn (nNamed id) rel) (named_subst t x b) (named_subst t x ty) (named_subst t x b')
-    | tLetIn na b ty b' => tLetIn na (named_subst t x b) (named_subst t x ty) (named_subst t x b')
-    | tApp u0 v => mkApps (named_subst t x u0) (map (named_subst t x) v)
+      tLetIn (mkBindAnn (nNamed id) rel)
+        (named_subst t x b)
+        (named_subst t x ty)
+        (named_subst t x b')
+    | tLetIn na b ty b' =>
+      tLetIn na (named_subst t x b)
+        (named_subst t x ty) (named_subst t x b')
+    | tApp u0 v =>
+      mkApps (named_subst t x u0) (map (named_subst t x) v)
     | tCase ind p c brs =>
-        let p' := {| puinst := puinst p
-                   ; pparams := map (named_subst t x) (pparams p)
-                   ; pcontext := pcontext p
-                   ; preturn := named_subst t x (preturn p)
-                   |} in
-        let brs' := map (fun br => {| bcontext := bcontext br ; bbody := named_subst t x (bbody br) |} ) brs in
+        let p' :=
+          {| puinst := puinst p
+           ; pparams := map (named_subst t x) (pparams p)
+           ; pcontext := pcontext p
+           ; preturn := named_subst t x (preturn p)
+           |} in
+        let brs' :=
+          map (fun br =>
+            {| bcontext := bcontext br
+             ; bbody := named_subst t x (bbody br)
+             |}) brs in
         tCase ind p' (named_subst t x c) brs'
     | tProj p c => tProj p (named_subst t x c)
     | tFix mfix idx => (* FIXME *)
@@ -470,7 +499,8 @@ Module ConstSubstitution.
     end.
 End ConstSubstitution.
 
-(** Result type for animated functions: success with a value, fuel exhaustion, or no matching clause. *)
+(** Result type for animated functions: success with a value,
+    fuel exhaustion, or no matching clause. *)
 Inductive animation_result (A : Type) : Type :=
 | FuelError : animation_result A
 | Success : A -> animation_result A
@@ -480,6 +510,34 @@ Inductive animation_result (A : Type) : Type :=
     Used to distinguish inductive values in animation result types. *)
 Inductive ind_tp (A : Type) : Type :=
 | indWrap : A -> ind_tp A.
+
+(** ** Type Aliases and Records for Common Data Shapes *)
+
+(** Mode specification: maps each predicate name to its
+    (input_positions, output_positions). *)
+Definition mode_map :=
+  list (string * (list nat * list nat))%type.
+
+(** Maps predicate names to their argument type lists. *)
+Definition pred_type_map := list (string * list term)%type.
+
+(** Maps variable names to their types. *)
+Definition var_type_map := list (string * term)%type.
+
+(** Per-inductive clause data: [(name, in_types, out_types, constructors)].
+    Transparent alias for the nested tuple used throughout the pipeline. *)
+Definition clause_data :=
+  (((string * list term) * list term) * list (string * term))%type.
+
+(** Per-inductive type environment entry:
+    [(pred_name, pred_type, [(cstr_name, [(var_name, var_type)])])]. *)
+Definition type_env_entry :=
+  ((string * term) * list (string * list (string * term)))%type.
+
+(** Per-inductive fixpoint entry after [prod_in_out]:
+    [(name, in_type, out_type, [(cstr_name, [pred_names])])]. *)
+Definition fixpoint_entry :=
+  (((string * term) * term) * list (string * list string))%type.
 
 (** Build a product type from a list of output variable specs.
     Returns bool for empty list, single type for singleton, nested products otherwise. *)
@@ -509,13 +567,17 @@ Fixpoint tele_to_prod_tm  (outputData : list (string * term )) : term :=
 
 (** Kleisli composition for animated functions: run [f] on the input, then feed
     its [Success] result into [f'], propagating [FuelError] and [NoMatch]. *)
-Definition compose_outcome (A : Type) (B : Type) (C : Type) (f : nat -> animation_result A -> animation_result B) (f' : nat -> animation_result B -> animation_result C)
-                                   : (nat -> animation_result A -> animation_result C) :=
- fun fuel input => match f fuel input with
-                    | Success res => f' fuel  (Success B res)
-                    | FuelError => (FuelError C)
-                    | _ =>  (NoMatch C)
-                   end.
+Definition compose_outcome
+  (A B C : Type)
+  (f : nat -> animation_result A -> animation_result B)
+  (f' : nat -> animation_result B -> animation_result C)
+  : nat -> animation_result A -> animation_result C :=
+  fun fuel input =>
+    match f fuel input with
+    | Success res => f' fuel (Success B res)
+    | FuelError => FuelError C
+    | _ => NoMatch C
+    end.
 
 Open Scope bs.
 
@@ -546,8 +608,10 @@ Fixpoint mk_lhs_term (lhsIndPre : list (term * term)) : TemplateMonad term :=
 
 (** Constant function that always returns fuel error.
     Used as a fallback when fuel is exhausted. *)
-Definition fuel_error_fn (inputType : Type) (outputType' : Type) : (inputType -> (animation_result outputType') ) :=
- fun x : inputType => FuelError outputType'.
+Definition fuel_error_fn (inputType : Type)
+  (outputType' : Type)
+  : inputType -> animation_result outputType' :=
+  fun x : inputType => FuelError outputType'.
 
 (** Test whether string [s] occurs in list [l]. *)
 Definition in_strings (s : string) (l : list string) : bool :=
@@ -560,13 +624,17 @@ Definition is_subset_strings (l1 l2 : list string) : bool :=
 
 (** Adapt a function returning [animation_result (option B)] into one returning
     [animation_result B]: [Some v] becomes [Success v], [None] becomes [NoMatch]. *)
-Definition option_to_result (A : Type) (B : Type) (f : nat -> animation_result A -> animation_result (option B)) : (nat -> animation_result A -> animation_result B) :=
-fun k k' => match f k k' with
-             | Success (Some res) => Success B res
-             | Success None => NoMatch B
-             | FuelError => FuelError B
-             | _ => NoMatch B
-            end.
+Definition option_to_result (A B : Type)
+  (f : nat -> animation_result A ->
+       animation_result (option B))
+  : nat -> animation_result A -> animation_result B :=
+  fun k k' =>
+    match f k k' with
+    | Success (Some res) => Success B res
+    | Success None => NoMatch B
+    | FuelError => FuelError B
+    | _ => NoMatch B
+    end.
 
 (** Return [true] iff [lst] is empty. *)
 Definition is_nil {A : Type} (lst : list A) : bool :=
@@ -604,11 +672,15 @@ Fixpoint dispatch_clauses (inT : Type) (outT : Type)
           end .
 
 (** Provide a default value for an option-returning function. *)
-Definition with_default (inputType : Type) (outputType : Type) (default : outputType) (f : inputType -> option (outputType)) : (inputType -> outputType) :=
- fun x => match f x with
-           | Some y => y
-           | None => default
-          end.
+Definition with_default (inputType outputType : Type)
+  (default : outputType)
+  (f : inputType -> option outputType)
+  : inputType -> outputType :=
+  fun x =>
+    match f x with
+    | Some y => y
+    | None => default
+    end.
 
 (** Quote each element of [l] into a MetaRocq term using [tmQuote]. *)
 Fixpoint quote_list {A : Type} (l : list A) : TemplateMonad (list term) :=
@@ -692,22 +764,31 @@ Fixpoint select_by_indices {A : Type} (indLst : list nat) (l : list A) : list A 
   end.
 
 (** Select the input arguments of predicate [indNm] from [lstArgs] according to its mode. *)
-Fixpoint select_in_args (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+Fixpoint select_in_args (indNm : string) (modes : mode_map) (lstArgs : list term) : list term :=
   match modes with
   | [] => []
-  | h :: t => if String.eqb indNm (fst h) then select_by_indices (fst (snd h)) lstArgs else select_in_args indNm t lstArgs
+  | h :: t =>
+    if String.eqb indNm (fst h)
+    then select_by_indices (fst (snd h)) lstArgs
+    else select_in_args indNm t lstArgs
   end.
 
-(** Select the output arguments of predicate [indNm] from [lstArgs] according to its mode. *)
-Fixpoint select_out_args (indNm : string) (modes : list (string * ((list nat) * (list nat)))) (lstArgs : list term) : list term :=
+(** Select the output arguments of predicate [indNm]
+    from [lstArgs] according to its mode. *)
+Fixpoint select_out_args (indNm : string)
+  (modes : mode_map) (lstArgs : list term)
+  : list term :=
   match modes with
   | [] => []
-  | h :: t => if String.eqb indNm (fst h) then select_by_indices (snd (snd h)) lstArgs else select_out_args indNm t lstArgs
+  | h :: t =>
+    if String.eqb indNm (fst h)
+    then select_by_indices (snd (snd h)) lstArgs
+    else select_out_args indNm t lstArgs
   end.
 
-(** Return the singleton entry for variable [varNm] in the type environment,
-    or [[]] if not found. *)
-Fixpoint lookup_one_var (varNm: string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+Fixpoint lookup_one_var (varNm : string)
+  (allVarTpInf : list (prod string term))
+  : list (prod string term) :=
   match allVarTpInf with
   | [] => []
   | h :: t => if String.eqb varNm (fst h) then [h] else lookup_one_var varNm t
@@ -720,7 +801,9 @@ Fixpoint pairs_to_terms (lst : list (prod string term)) : list (prod term term) 
   | (str,tp) :: t => (tVar str, tp) :: pairs_to_terms t
   end.
 (** Look up each variable name in [lst] in the type environment, dropping missing entries. *)
-Fixpoint lookup_vars (lst : list string) (allVarTpInf : list (prod string term)) : list (prod string term) :=
+Fixpoint lookup_vars (lst : list string)
+  (allVarTpInf : list (prod string term))
+  : list (prod string term) :=
   match lst with
   | [] => []
   | h :: t => match lookup_one_var h allVarTpInf with
@@ -731,7 +814,7 @@ Fixpoint lookup_vars (lst : list string) (allVarTpInf : list (prod string term))
 
 (** Look up the mode (input-position list, output-position list) for [indNm],
     returning ([],[]) if not found. *)
-Fixpoint lookup_mode (indNm : string) (modes : list (string * ((list nat) * (list nat)))) : (list nat) * (list nat) :=
+Fixpoint lookup_mode (indNm : string) (modes : mode_map) : (list nat) * (list nat) :=
   match modes with
   | [] => ([],[])
   | h :: t => if String.eqb indNm (fst h) then (snd h) else lookup_mode indNm t
@@ -746,7 +829,7 @@ Definition select_out_by_mode  (mode : (list nat) * (list nat)) (lstArgs : list 
 select_by_indices (snd mode) lstArgs.
 
 (** Look up the argument types for predicate [indNm] in a type-info table. *)
-Fixpoint lookup_pred_type (indNm : string) (predTypeInf : list (string * (list term))) : list term :=
+Fixpoint lookup_pred_type (indNm : string) (predTypeInf : pred_type_map) : list term :=
   match predTypeInf with
   | [] => []
   | h :: t => if String.eqb indNm (fst h) then snd h else lookup_pred_type indNm t
@@ -772,7 +855,9 @@ x.
 
 (** Applicative product of two animation results: succeeds with a pair iff both
     succeed; propagates [FuelError] over [NoMatch]. *)
-Definition join_pair (A : Type) (B : Type) (x : animation_result A) (y : animation_result B) : animation_result (prod A B) :=
+Definition join_pair (A B : Type)
+  (x : animation_result A) (y : animation_result B)
+  : animation_result (prod A B) :=
   match x with
   | NoMatch => NoMatch (prod A B)
   | FuelError => FuelError (prod A B)
@@ -789,16 +874,31 @@ Fixpoint mk_join_body (lstTypes : list term) (n : nat) : term :=
   match lstTypes with
   | [] => <%Success bool true%>
   | [h] => tApp <%join_unit%> [h; tVar (String.append "o" (string_of_nat n))]
-  | [h ; h1] => tApp <%join_pair%> [h; h1; tVar (String.append "o" (string_of_nat n)); tVar (String.append "o" (string_of_nat (S n)))]
-  | h :: t => tApp <%join_pair%> [h; (nested_prod_type t); tVar (String.append "o" (string_of_nat n)); mk_join_body t (S n)]
+  | [h ; h1] =>
+    tApp <%join_pair%>
+      [h; h1;
+       tVar (String.append "o" (string_of_nat n));
+       tVar (String.append "o" (string_of_nat (S n)))]
+  | h :: t =>
+    tApp <%join_pair%>
+      [h; nested_prod_type t;
+       tVar (String.append "o" (string_of_nat n));
+       mk_join_body t (S n)]
   end.
 
-(** Wrap [fnBody] in lambdas "o0 : animation_result T0", "o1 : …", etc. for each type in [lstTypes]. *)
-Fixpoint mk_join_lam (lstTypes : list term) (n : nat) (fnBody : term) : term :=
+(** Wrap [fnBody] in lambdas "o0 : animation_result T0",
+    "o1 : ...", etc. for each type in [lstTypes]. *)
+Fixpoint mk_join_lam (lstTypes : list term)
+  (n : nat) (fnBody : term) : term :=
   match lstTypes with
   | [] => fnBody
-  | [h] => tLam (String.append "o" (string_of_nat n)) (tApp <%animation_result%> [h]) fnBody
-  | h :: t => tLam (String.append "o" (string_of_nat n)) (tApp <%animation_result%> [h]) (mk_join_lam t (S n) fnBody)
+  | [h] =>
+    tLam (String.append "o" (string_of_nat n))
+      (tApp <%animation_result%> [h]) fnBody
+  | h :: t =>
+    tLam (String.append "o" (string_of_nat n))
+      (tApp <%animation_result%> [h])
+      (mk_join_lam t (S n) fnBody)
   end.
 
 (** Build a quoted function that joins multiple [animation_result] values into one
@@ -810,7 +910,10 @@ mk_join_lam lstTypes 0 fnBody.
 (** Compare two [animation_result] values with [eqfn]: returns [Success true] if
     both succeed and are equal, [NoMatch] if unequal or one is [NoMatch],
     [FuelError] if either is a fuel error. *)
-Definition eq_outcome (A : Type) (eqfn : A -> A -> bool) (x: animation_result A) (y : animation_result A) : animation_result bool :=
+Definition eq_outcome (A : Type)
+  (eqfn : A -> A -> bool)
+  (x y : animation_result A)
+  : animation_result bool :=
   match x with
   | Success j => match y with
                     | Success k => if eqfn j k then (Success bool true) else (NoMatch bool)
@@ -826,11 +929,15 @@ Definition eq_outcome (A : Type) (eqfn : A -> A -> bool) (x: animation_result A)
 
 (** Build a quoted term [eq_outcome tpTm tpEqFn]: the equality function on
     [animation_result tpTm] using the boolean equality [tpEqFn] on the base type. *)
-Definition mk_eq_outcome_tm (tpTm : term) (tpEqFn : term) : term := tApp <%eq_outcome%> [tpTm; tpEqFn].
+Definition mk_eq_outcome_tm (tpTm tpEqFn : term)
+  : term :=
+  tApp <%eq_outcome%> [tpTm; tpEqFn].
 
 (** Short-circuit conjunction of two boolean animation results: [Success true]
     only if both succeed with [true]; [FuelError] takes priority over [NoMatch]. *)
-Definition and_outcome_bool (x : animation_result bool) (y : animation_result bool) : animation_result bool :=
+Definition and_outcome_bool
+  (x y : animation_result bool)
+  : animation_result bool :=
   match x with
   | FuelError  => FuelError bool
   | NoMatch => match y with
@@ -886,7 +993,9 @@ Fixpoint mk_animated_names (l : list (string * term)) : list (string * term) :=
 
 (** Project the first component of a paired [animation_result]: discards the second
     component on [Success], preserves [FuelError] and [NoMatch]. *)
-Definition split_outcome_fst (A : Type) (B : Type) (x : animation_result (A * B)) : animation_result A :=
+Definition split_outcome_fst (A B : Type)
+  (x : animation_result (A * B))
+  : animation_result A :=
   match x with
   | Success (a,b) => Success A a
   | NoMatch => NoMatch A
@@ -895,7 +1004,9 @@ Definition split_outcome_fst (A : Type) (B : Type) (x : animation_result (A * B)
 
 (** Project the second component of a paired [animation_result]: discards the first
     component on [Success], preserves [FuelError] and [NoMatch]. *)
-Definition split_outcome_snd (A : Type) (B : Type) (x : animation_result (A * B)) : animation_result B :=
+Definition split_outcome_snd (A B : Type)
+  (x : animation_result (A * B))
+  : animation_result B :=
   match x with
   | Success (a,b) => Success B b
   | NoMatch => NoMatch B

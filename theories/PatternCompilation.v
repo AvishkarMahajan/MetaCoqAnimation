@@ -61,7 +61,10 @@ Definition unfold_cons
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
  | (str, tApp (tConstruct typeInfo cstrInd ls') args) :: t =>
-     (i + (length args), t, (str, (tConstruct typeInfo cstrInd ls'), map fst (gen_var_list i args)) :: resolvedTs, (app (gen_var_list i args)  remTs))
+     (i + (length args), t,
+      (str, (tConstruct typeInfo cstrInd ls'),
+       map fst (gen_var_list i args)) :: resolvedTs,
+      (app (gen_var_list i args) remTs))
  | (str, tRel k) :: t =>
      (i, t, (str, (tRel k), nil) :: resolvedTs, remTs)
  | (str, tVar varStr) :: t =>
@@ -69,7 +72,10 @@ Definition unfold_cons
  | (str, tConstruct typeInfo k lst) :: t =>
      (i, t, (str, (tConstruct typeInfo k lst), nil) :: resolvedTs, remTs)
  | (str, tApp <%eq%> args) :: t =>
-     (i + length args, t, (str, <%eq%>, map fst (gen_var_list i args)) :: resolvedTs, app (gen_var_list i args) remTs)
+     (i + length args, t,
+      (str, <%eq%>,
+       map fst (gen_var_list i args)) :: resolvedTs,
+      app (gen_var_list i args) remTs)
 
  | (str, tApp func args) :: t =>
      (i, t, (str, tApp func args, nil) :: resolvedTs, remTs)
@@ -79,7 +85,11 @@ Definition unfold_cons
  | (str, tConst indType ls') :: t =>
      (i, t, (str, tConst indType ls', nil) :: resolvedTs, remTs)
  | (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) :: t =>
-     (i, t, (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2, nil) :: resolvedTs, remTs)
+     (i, t,
+      (str, tProd
+        {| binder_name := nAnon;
+           binder_relevance := Relevant |}
+        tp1 tp2, nil) :: resolvedTs, remTs)
 
  | (str, _) :: t =>
      (i, t, resolvedTs, remTs)
@@ -91,7 +101,9 @@ Fixpoint unfold_cons_iter
   (fuel : nat)
   (st : (((nat *  list (string * term)) *
             list ((string * term) * list string)) * list (string * term)))
-  : (((nat *  list (string * term)) * list ((string * term) * list string)) * list (string * term)) :=
+  : (((nat * list (string * term)) *
+      list ((string * term) * list string)) *
+     list (string * term)) :=
   match fuel with
   | 0 => st
   | S m => unfold_cons_iter m
@@ -127,13 +139,27 @@ Fixpoint lookup_one_var
             | tConstruct typeInfo k js => ([str], [])
             | tApp (tInd typeInfo js) args => ([], [tApp (tInd typeInfo js) args])
             | tApp (tConst typeInfo lst) args => ([], [tApp (tConst typeInfo lst) args])
-            | tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args => ([], [tApp (tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) args])
+            | tApp (tProd
+                {| binder_name := nAnon;
+                   binder_relevance := Relevant |}
+                tp1 tp2) args =>
+              ([], [tApp (tProd
+                {| binder_name := nAnon;
+                   binder_relevance := Relevant |}
+                tp1 tp2) args])
 
             | tRel k => ([str], [])
             | tVar str'' => ([str], [])
             | tInd typeInfo js => ([], [(tInd typeInfo js)])
             | tConst typeInfo lst => ([], [(tConst typeInfo lst)])
-            | tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2 => ([], [(tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2)])
+            | tProd
+                {| binder_name := nAnon;
+                   binder_relevance := Relevant |}
+                tp1 tp2 =>
+              ([], [(tProd
+                {| binder_name := nAnon;
+                   binder_relevance := Relevant |}
+                tp1 tp2)])
             | _ => ([], [])
             end)
       else lookup_one_var str t
@@ -165,7 +191,10 @@ Fixpoint preprocess_type_var
   | [] => []
   | (str1, <%eq%>, lstStr) :: t => preprocess_type_var ls t
   | (str1, (tConstruct typeInfo k js), lstStr) :: t =>
-    (str1, (tConstruct typeInfo k js), fst (lookup_vars lstStr ls), snd (lookup_vars lstStr ls)) :: preprocess_type_var ls t
+    (str1, (tConstruct typeInfo k js),
+     fst (lookup_vars lstStr ls),
+     snd (lookup_vars lstStr ls))
+      :: preprocess_type_var ls t
   | (_ :: t) => preprocess_type_var ls t
   end.
 
@@ -173,7 +202,12 @@ Fixpoint preprocess_type_var
 Fixpoint gen_binder_names (n : nat) : list (binder_annot name) :=
   match n with
   | 0 => []
-  | S m => {| binder_name := nNamed (String.append "n" (string_of_nat (S m))) ; binder_relevance := Relevant |} :: gen_binder_names m
+  | S m =>
+    {| binder_name :=
+         nNamed (String.append "n"
+                   (string_of_nat (S m)));
+       binder_relevance := Relevant |}
+      :: gen_binder_names m
   end.
 
 (** Convert a list of string names into binder annotations. *)
@@ -197,7 +231,10 @@ Definition decl_name_at (i : nat) (cxt : list context_decl) : option (binder_ann
   end.
 
 (** Generate binder annotations from a list of De Bruijn indices and a context. *)
-Fixpoint gen_binder_annots (ind : list term) (cxt : list context_decl) : option (list (binder_annot name)) :=
+Fixpoint gen_binder_annots
+  (ind : list term)
+  (cxt : list context_decl)
+  : option (list (binder_annot name)) :=
   match ind with
   | [] => Some ([])
   | tRel j :: t =>
@@ -247,7 +284,10 @@ Fixpoint sort_binders_one
   end.
 
 (** Sort all binders according to a list of output variables. *)
-Definition sort_binders (outputVars : list string) (lst : list ((string * term) * list string)) : ((list string)) :=
+Definition sort_binders
+  (outputVars : list string)
+  (lst : list ((string * term) * list string))
+  : ((list string)) :=
   concat (map (fun x : string => sort_binders_one x lst) outputVars).
 
 (** Get the constructor index from a resolved term structure. *)
@@ -276,14 +316,21 @@ Definition get_type_name (s : (string * term) * list string) : string :=
 
 (** Filter out terms that don't correspond to valid type constructors.
     Checks against the list of mutual inductive bodies. *)
-Fixpoint filter_type_cstrs (ls : list ((string * term) * list string)) (mut : list mutual_inductive_body) :
-                         list ((string * term) * list string) :=
+Fixpoint filter_type_cstrs
+  (ls : list ((string * term) * list string))
+  (mut : list mutual_inductive_body)
+  : list ((string * term) * list string) :=
    match ls with
     | [] => []
     | h :: t => match h with
                  | (str,
                     tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
-                    k ls, lsStr) => if (in_strings nmStr (map fst (collect_cstr_arities mut))) then h :: (filter_type_cstrs t mut) else (filter_type_cstrs t mut)
+                    k ls, lsStr) =>
+                   if (in_strings nmStr
+                         (map fst
+                           (collect_cstr_arities mut)))
+                   then h :: (filter_type_cstrs t mut)
+                   else (filter_type_cstrs t mut)
                  | _ => (filter_type_cstrs t mut)
                 end
    end.
@@ -324,15 +371,23 @@ Definition mk_option_some_branch (l : list string) (t : term) : branch term :=
 (** Create the list of branches for a pattern match:
     None branches before the matching constructor, a Some branch for the match,
     and None branches after. *)
-Definition mk_branch_list (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) : list (branch term) :=
+Definition mk_branch_list
+  (s : (string * term) * list string)
+  (l : list mutual_inductive_body)
+  (t : term) : list (branch term) :=
   let csArlst := (get_arity_list (get_type_name s) l) in
   let index := cstr_match_index s in
-  map mk_option_none_branch (firstn index csArlst) ++ [mk_option_some_branch (rev (snd s)) t] ++ map mk_option_none_branch (skipn (S index) csArlst).
+  map mk_option_none_branch (firstn index csArlst)
+    ++ [mk_option_some_branch (rev (snd s)) t]
+    ++ map mk_option_none_branch
+         (skipn (S index) csArlst).
 
 (** Create a case expression (pattern match) term.
     Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
-Definition mk_case'  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term)
-                      : term :=
+Definition mk_case'
+  (s' : ((string * term) * list string) * list term)
+  (l : list mutual_inductive_body)
+  (t : term) : term :=
   let s := fst s' in
   (tCase
      {|
@@ -365,8 +420,11 @@ Definition id_term := <%(fun A : Type => (fun x : A => x))%>.
 
 (** Create nested pattern matches recursively.
     Base case returns identity, single case returns value, multiple cases nest. *)
-Fixpoint mk_nested_match_aux (ls : list (((string * term) * list string) * list term)) (ls' : list (((string * term) * list string))) (outputVars : list (string))
-            (mut : list mutual_inductive_body) : term :=
+Fixpoint mk_nested_match_aux
+  (ls : list (((string * term) * list string) * list term))
+  (ls' : list (((string * term) * list string)))
+  (outputVars : list (string))
+  (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => id_term
   | (h :: nil) => mk_case' h mut (return_var_tuple (sort_binders outputVars (ls')))
@@ -401,14 +459,26 @@ Definition mk_wildcard_ret_branch (wildCardRet : term) (n : nat)  : branch term 
   typeConstrPatMatch.mk_wildcard_branch n wildCardRet.
 
 (** Create branch list with custom wildcard return value for non-matching cases. *)
-Definition mk_branch_list_wild (s : (string * term) * list string) (l : list mutual_inductive_body) (t : term) (wildCardRet : term) : list (branch term) :=
+Definition mk_branch_list_wild
+  (s : (string * term) * list string)
+  (l : list mutual_inductive_body)
+  (t : term) (wildCardRet : term)
+  : list (branch term) :=
  let csArlst := (typeConstrPatMatch.get_arity_list (typeConstrPatMatch.get_type_name s) l) in
   let index := typeConstrPatMatch.cstr_match_index s in
-  map (mk_wildcard_ret_branch wildCardRet) (firstn index csArlst) ++ [typeConstrPatMatch.mk_option_some_branch (rev (snd s)) t] ++ map (mk_wildcard_ret_branch wildCardRet) (skipn (S index) csArlst).
+  map (mk_wildcard_ret_branch wildCardRet)
+    (firstn index csArlst)
+    ++ [typeConstrPatMatch.mk_option_some_branch
+          (rev (snd s)) t]
+    ++ map (mk_wildcard_ret_branch wildCardRet)
+         (skipn (S index) csArlst).
 
 (** Create a case expression with custom output type and wildcard return value. *)
-Definition mk_case_wild  (s' : ((string * term) * list string) * list term ) (l : list mutual_inductive_body) (t : term) (outputType : term) (wildCardRet : term)
-                      : term :=
+Definition mk_case_wild
+  (s' : ((string * term) * list string) * list term)
+  (l : list mutual_inductive_body)
+  (t : term) (outputType : term)
+  (wildCardRet : term) : term :=
   let s := fst s' in
   (tCase
      {|
@@ -431,8 +501,16 @@ Fixpoint collect_var_sets (l : list ((string * term) * list string)) : list stri
   match l with
   | [] => ([], [])
   | h :: t => match snd (fst h) with
-              | tVar str => (str :: (fst (collect_var_sets t)), (app (snd h) (fst (fst h) :: snd (collect_var_sets t))))
-              | _ => ((fst (collect_var_sets t)), (app (snd h) (fst (fst h) :: snd (collect_var_sets t))))
+              | tVar str =>
+                (str :: (fst (collect_var_sets t)),
+                 (app (snd h)
+                   (fst (fst h)
+                     :: snd (collect_var_sets t))))
+              | _ =>
+                ((fst (collect_var_sets t)),
+                 (app (snd h)
+                   (fst (fst h)
+                     :: snd (collect_var_sets t))))
              end
   end.
 
@@ -459,7 +537,10 @@ Fixpoint switch_one_var (s : string) (map : list (string * string)) : string :=
   end.
 
 (** Apply variable name switching to a term structure. *)
-Definition switch_vars  (d : list (string * string)) (o : ((string * term) * list string)) : ((string * term) * list string) :=
+Definition switch_vars
+  (d : list (string * string))
+  (o : ((string * term) * list string))
+  : ((string * term) * list string) :=
   match o with
   | (s, t, l) => ((switch_one_var s d), t, (map (fun s => switch_one_var s d) l))
   end.
@@ -469,46 +550,93 @@ Definition switch_vars' (d : list (string * string))  (l : list ((string * term)
  (map (switch_vars d) l).
 
 (** Change all variables in a structure to their canonical names. *)
-Definition change_vars (l : list ((string * term) * list string)) : list ((string * term) * list string) :=
+Definition change_vars
+  (l : list ((string * term) * list string))
+  : list ((string * term) * list string) :=
  switch_vars' (original_var_map l) l.
 
 (** Create nested pattern matches with custom output term, type, and wildcard.
     Version 2 with more flexibility than mk_nested_match. *)
-Fixpoint mk_nested_match_wild_aux (ls : list (((string * term) * list string) * list term)) (ls' : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
-            (mut : list mutual_inductive_body)  : term :=
+Fixpoint mk_nested_match_wild_aux
+  (ls : list (((string * term) * list string) *
+              list term))
+  (ls' : list (((string * term) * list string)))
+  (outputTerm : term) (outputType : term)
+  (wildCardRet : term)
+  (mut : list mutual_inductive_body) : term :=
  match ls with
   | [] => typeConstrPatMatch.id_term
   | (h :: nil) => mk_case_wild h mut (outputTerm) outputType wildCardRet
-  | (h :: t) => mk_case_wild h mut (mk_nested_match_wild_aux t ls' outputTerm outputType wildCardRet mut) outputType wildCardRet
+  | (h :: t) =>
+    mk_case_wild h mut
+      (mk_nested_match_wild_aux t ls'
+         outputTerm outputType wildCardRet mut)
+      outputType wildCardRet
  end.
 
 (** Wrapper for mk_nested_match_wild_aux that pre-processes constructor type variables. *)
-Definition mk_nested_match_wild (ls' : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term)
-            (mut : list mutual_inductive_body)  : term :=
-            mk_nested_match_wild_aux (typeConstrPatMatch.preprocess_type_var ls' ls') ls' outputTerm outputType wildCardRet mut.
+Definition mk_nested_match_wild
+  (ls' : list (((string * term) * list string)))
+  (outputTerm : term) (outputType : term)
+  (wildCardRet : term)
+  (mut : list mutual_inductive_body) : term :=
+  mk_nested_match_wild_aux
+    (typeConstrPatMatch.preprocess_type_var ls' ls')
+    ls' outputTerm outputType wildCardRet mut.
 
 (** Build a lambda abstraction that pattern-matches the outermost constructor,
     using [mk_nested_match_wild] for the body.  Returns [None] if the structure is empty
     or lacks a two-variable binding form. *)
-Definition mk_lam_wild_unwrap (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list mutual_inductive_body)  : option term :=
+Definition mk_lam_wild_unwrap
+  (ls : list (((string * term) * list string)))
+  (outputTerm : term) (outputType : term)
+  (wildCardRet : term)
+  (mut : list mutual_inductive_body)
+  : option term :=
   match ls with
   | [] => None
-  | (h :: ((str, typeInfo, []) :: ((str2, t', l') :: rest)))  => Some (tLambda {| binder_name := nNamed str2; binder_relevance := Relevant |}
-                                 (typeInfo) (mk_nested_match_wild ls outputTerm outputType wildCardRet mut))
+  | (h :: ((str, typeInfo, []) ::
+          ((str2, t', l') :: rest))) =>
+    Some (tLambda
+      {| binder_name := nNamed str2;
+         binder_relevance := Relevant |}
+      (typeInfo)
+      (mk_nested_match_wild ls
+         outputTerm outputType
+         wildCardRet mut))
   | _ => None
   end.
 
 (** Wrapper for [mk_lam_wild_unwrap] that filters [None] entries from the mutual inductive list. *)
-Definition mk_lam_wild (ls : list (((string * term) * list string))) (outputTerm : term) (outputType : term) (wildCardRet : term) (mut : list (option mutual_inductive_body))  : option term :=
+Definition mk_lam_wild
+  (ls : list (((string * term) * list string)))
+  (outputTerm : term) (outputType : term)
+  (wildCardRet : term)
+  (mut : list (option mutual_inductive_body))
+  : option term :=
   mk_lam_wild_unwrap ls outputTerm outputType wildCardRet (typeConstrPatMatch.remove_opt mut).
 
 (** Compile an inductive constructor pattern [conjTm] from quoted programs [lstP]
     into a lambda that pattern-matches [conjTm] and returns [outputTerm].
     Returns [None] if the constructor cannot be fully unfolded within [fuel] steps. *)
-Definition mk_lam_from_ind (conjTm : term) (lstP : list program) (outputTerm : term) (outputType : term) (wildCardRet : term) (fuel : nat) : option term :=
- let td := concat (map (typeConstrPatMatch.get_type_data) lstP) in
+Definition mk_lam_from_ind
+  (conjTm : term) (lstP : list program)
+  (outputTerm : term) (outputType : term)
+  (wildCardRet : term) (fuel : nat)
+  : option term :=
+  let td :=
+    concat (map (typeConstrPatMatch.get_type_data)
+              lstP) in
   let pmd := conjTm in
-   if (typeConstrPatMatch.preprocess_remainder fuel pmd) then (mk_lam_wild (change_vars (typeConstrPatMatch.preprocess_cons fuel pmd)) outputTerm outputType wildCardRet td) else None.
+  if (typeConstrPatMatch.preprocess_remainder
+        fuel pmd)
+  then
+    (mk_lam_wild
+       (change_vars
+          (typeConstrPatMatch.preprocess_cons
+             fuel pmd))
+       outputTerm outputType wildCardRet td)
+  else None.
 
 (** Compile a single constructor pattern [inputTerm'] against an existing
     [animation_result inputType] into a function returning [animation_result outputType].
@@ -573,7 +701,9 @@ Fixpoint animate_patterns
 
 (** Construct a dispatch function from a list of animated branch functions.
     Wraps with with_default to provide a fallback for unmatched inputs. *)
-Definition mk_pattern_fn_core (fns : list term) (wildCardRet : term) (inputType : term) (outputType : term)  : term :=
+Definition mk_pattern_fn_core
+  (fns : list term) (wildCardRet : term)
+  (inputType : term) (outputType : term) : term :=
  let fnType := tProd {| binder_name := nAnon; binder_relevance := Relevant |} inputType
          (tApp
             (tInd
@@ -582,7 +712,11 @@ Definition mk_pattern_fn_core (fns : list term) (wildCardRet : term) (inputType 
                  inductive_ind := 0
                |} [])
             [outputType]) in
- (tApp <%with_default%> [inputType; outputType; wildCardRet; (tApp <%dispatch_clauses%> [inputType; outputType; (build_coq_list fns fnType)])]).
+ (tApp <%with_default%>
+   [inputType; outputType; wildCardRet;
+    (tApp <%dispatch_clauses%>
+       [inputType; outputType;
+        (build_coq_list fns fnType)])]).
 
 (** Create a multi-branch pattern match function with dispatch mechanism. *)
 Definition mk_pattern_match_fn
@@ -599,9 +733,12 @@ Definition mk_pattern_match_fn
 
 (** Fuel-aware join without LHS predicates (base case).
     Simpler version for constructors with no recursive premises. *)
-Definition join_pattern_fueled {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term) (nmCon : string)
-                        (fuel : nat) : TemplateMonad term :=
+Definition join_pattern_fueled
+  {A : Type} (induct : A)
+  (postIn' : term) (postInType' : term)
+  (postOut' : term) (postOutType' : term)
+  (nmCon : string) (fuel : nat)
+  : TemplateMonad term :=
 (* Wrap raw terms in Success/animation_result for the pattern match fn *)
 let postIn := tApp <%Success%> [postInType'; postIn'] in
 let postInType := tApp <%animation_result%> [postInType'] in
@@ -609,7 +746,13 @@ let postInType := tApp <%animation_result%> [postInType'] in
 let postOut := tApp <%Success%> [postOutType'; postOut'] in
 let postOutType := tApp <%animation_result%> [postOutType'] in
 (* Build a dispatch fn: Success input -> Success output, FuelError -> FuelError *)
-tBody' <-  mk_pattern_match_fn (induct) ([(postIn, (postOut)); ((tApp <%FuelError%> [postInType']),(tApp <%FuelError%> [postOutType'])) ]) postInType postOutType (tApp <%NoMatch%> [postOutType']) fuel ;;
+tBody' <-
+  mk_pattern_match_fn (induct)
+    ([(postIn, (postOut));
+      ((tApp <%FuelError%> [postInType']),
+       (tApp <%FuelError%> [postOutType']))])
+    postInType postOutType
+    (tApp <%NoMatch%> [postOutType']) fuel ;;
 (* Wrap in a fuel-decrementing case: 0 -> fuel_error, S n -> dispatch *)
 let u :=
  (tLam "fuel" <%nat%>
@@ -623,7 +766,11 @@ let u :=
                  puinst := [];
                  pparams := [];
                  pcontext := [{| binder_name := nNamed "fuel"; binder_relevance := Relevant |}];
-                 preturn := (tProd {| binder_name := nAnon; binder_relevance := Relevant |} postInType postOutType)
+                 preturn :=
+                   (tProd
+                     {| binder_name := nAnon;
+                        binder_relevance := Relevant |}
+                     postInType postOutType)
 
                |} (tVar "fuel")
                [{|
@@ -646,11 +793,22 @@ tmReturn t'.
     [animation_result] function: first match the input against [t_expr] to get
     the pattern variables, then match those against [t_pattern] to produce the output.
     The [rhsTerm] is the right-hand side of the equality (either a [tApp] or [tVar]). *)
-Definition compile_eq_binders {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (fuel : nat) : TemplateMonad term :=
+Definition compile_eq_binders
+  {A : Type} (induct : A) (kn : kername)
+  (conjunct : named_term)
+  (inputTm : term) (inputTp : term)
+  (outputTm : term) (outputTp : term)
+  (fuel : nat) : TemplateMonad term :=
   match conjunct with
   | tApp <%eq%> [typeVar; patMatTerm; rhsTerm] =>
-      tIn <- join_pattern_fueled induct inputTm inputTp rhsTerm typeVar (String.append (snd kn) "IN") fuel ;;
-      tOut <- join_pattern_fueled induct patMatTerm typeVar outputTm outputTp (String.append (snd kn) "OUT") fuel ;;
+      tIn <- join_pattern_fueled induct
+               inputTm inputTp rhsTerm typeVar
+               (String.append (snd kn) "IN")
+               fuel ;;
+      tOut <- join_pattern_fueled induct
+                patMatTerm typeVar outputTm outputTp
+                (String.append (snd kn) "OUT")
+                fuel ;;
       let u := tApp <%compose_outcome%> [inputTp; typeVar; outputTp; tIn; tOut] in
       u' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
       tmReturn u'
@@ -659,11 +817,28 @@ Definition compile_eq_binders {A : Type} (induct : A) (kn : kername) (conjunct :
 
 (** Orient a constructor-pattern equality so the known-variable side is on the
     right, then delegate to [compile_eq_binders]. *)
-Definition compile_eq_binders_with_vars {A : Type} (induct : A) (kn : kername) (conjunct : named_term) (inputTm : term) (inputTp : term) (outputTm : term) (outputTp : term) (inputVars : list string) (fuel : nat) : TemplateMonad term :=
+Definition compile_eq_binders_with_vars
+  {A : Type} (induct : A) (kn : kername)
+  (conjunct : named_term)
+  (inputTm : term) (inputTp : term)
+  (outputTm : term) (outputTp : term)
+  (inputVars : list string) (fuel : nat)
+  : TemplateMonad term :=
   match conjunct with
-  | tApp <%eq%> [typeVar; t1; t2] => if is_subset_strings (ordered_vars t1) inputVars then
-                                   compile_eq_binders induct kn (tApp <%eq%> [typeVar; t2; t1]) inputTm inputTp outputTm outputTp fuel else (if is_subset_strings (ordered_vars t2) inputVars then
-                                   compile_eq_binders induct kn conjunct inputTm inputTp outputTm outputTp fuel else tmFail "incorrect inductive shape")
+  | tApp <%eq%> [typeVar; t1; t2] =>
+    if is_subset_strings (ordered_vars t1)
+         inputVars
+    then
+      compile_eq_binders induct kn
+        (tApp <%eq%> [typeVar; t2; t1])
+        inputTm inputTp outputTm outputTp fuel
+    else
+      (if is_subset_strings (ordered_vars t2)
+            inputVars
+       then
+         compile_eq_binders induct kn conjunct
+           inputTm inputTp outputTm outputTp fuel
+       else tmFail "incorrect inductive shape")
   | _ => tmFail "incorrect inductive shape"
   end.
 
