@@ -56,12 +56,6 @@ Import monad_utils.MRMonadNotation
        ListNotations
        MetaRocqNotations.
 
-(** Alias for [term] values that use named variables rather than de Bruijn indices. *)
-Definition named_term : Type := term.
-(** Alias for [term] values that contain no local variables, safe to embed in
-    either named or de Bruijn contexts. *)
-Definition global_term : Type := term.
-
 (** Decision procedure for identifier equality, returning a [bool]. *)
 Definition ident_eq (x y : ident) : bool :=
   match compare_ident x y with

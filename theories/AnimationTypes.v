@@ -11,6 +11,19 @@ From Stdlib Require Import List.
 
 Open Scope bs.
 
+(** ** Term Representation Aliases
+
+    The animation pipeline distinguishes three uses of [term]:
+    - [named_term]: local variables use [tVar id] (named representation).
+      Produced by [DB.un_de_bruijn], consumed by substitution and clause manipulation.
+    - [global_term]: contains no local variables at all (type constructors, quoted constants).
+      Safe to embed in either named or de Bruijn contexts.
+    - [term] (unqualified): local variables use [tRel n] (de Bruijn representation).
+      Produced by [tmQuote], consumed by [tmUnquote]. *)
+
+Definition named_term : Type := term.
+Definition global_term : Type := term.
+
 (** ** Simple Type Aliases
 
     These three aliases are just [list (string * _)] tables; they are aliases
@@ -32,12 +45,12 @@ Definition var_type_map := list (string * term)%type.
 (** A conjunct annotated with the output variable it produces.
     Built by [attach_var_to_conj] and consumed by [animate_let_binding] and friends. *)
 Record tagged_conjunct := {
-  (** The premise term: an equality, predicate application, or guard condition. *)
-  tc_conjunct : term;
+  (** The premise (named representation): an equality, predicate application, or guard condition. *)
+  tc_conjunct : named_term;
   (** Name of the output variable this conjunct binds. *)
   tc_out_var  : string;
-  (** Type of [tc_out_var], used to annotate the generated let-binding. *)
-  tc_out_type : term
+  (** Type of [tc_out_var] (named representation), used to annotate the generated let-binding. *)
+  tc_out_type : named_term
 }.
 
 (** One constructor argument after unfolding in pattern compilation.
@@ -45,8 +58,8 @@ Record tagged_conjunct := {
 Record resolved_var := {
   (** Variable name assigned to this argument position. *)
   rv_name  : string;
-  (** The constructor or term this variable was matched against. *)
-  rv_term  : term;
+  (** The constructor or [tVar] this variable was matched against (named representation). *)
+  rv_term  : named_term;
   (** Names of the fresh sub-variables bound by this constructor's own arguments. *)
   rv_bound : list string
 }.
@@ -56,12 +69,12 @@ Record resolved_var := {
 Record clause_data := {
   (** Name of the inductive predicate. *)
   cd_ind_name  : string;
-  (** Types of the input arguments, selected by the mode. *)
+  (** Types of the input arguments (de Bruijn), selected by the mode. *)
   cd_in_types  : list term;
-  (** Types of the output arguments, selected by the mode. *)
+  (** Types of the output arguments (de Bruijn), selected by the mode. *)
   cd_out_types : list term;
-  (** Constructor clauses as [(constructor_name, clause_term)] pairs. *)
-  cd_clauses   : list (string * term)
+  (** Constructor clauses as [(constructor_name, clause_body)] pairs (named representation). *)
+  cd_clauses   : list (string * named_term)
 }.
 
 (** Type information for one inductive predicate:
@@ -69,9 +82,10 @@ Record clause_data := {
 Record type_env_entry := {
   (** Name of the inductive predicate. *)
   te_pred_name : string;
-  (** Full type of the predicate, used to extract its argument types. *)
+  (** Full type of the predicate (de Bruijn), used to extract its argument types. *)
   te_pred_type : term;
-  (** Per-constructor variable environments: [(cstr_name, [(var_name, var_type)])]. *)
+  (** Per-constructor variable environments: [(cstr_name, [(var_name, var_type)])].
+      Types are de Bruijn. *)
   te_cstr_vars : list (string * list (string * term))
 }.
 
@@ -80,10 +94,10 @@ Record type_env_entry := {
 Record fixpoint_entry := {
   (** Name of the inductive predicate this fixpoint arm implements. *)
   fe_ind_name   : string;
-  (** Right-nested product type of all input arguments. *)
-  fe_in_type    : term;
-  (** Right-nested product type of all output arguments. *)
-  fe_out_type   : term;
+  (** Right-nested product type of all input arguments (global — no local variables). *)
+  fe_in_type    : global_term;
+  (** Right-nested product type of all output arguments (global — no local variables). *)
+  fe_out_type   : global_term;
   (** Per-constructor lists of recursive predicate calls: [(cstr_name, [pred_name])]. *)
   fe_cstr_preds : list (string * list string)
 }.

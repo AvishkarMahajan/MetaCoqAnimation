@@ -40,10 +40,10 @@ Definition eqb_ind_tp (A : Type) (eqFnA : A -> A -> bool) (a1 : ind_tp A) (a2 : 
 (** Prefix prepended to an inductive name to form its boolean equality function name. *)
 Definition eq_fn_prefix : string := "eqFn".
 
-(** Map a type term to its corresponding boolean equality function term.
+(** Map a type term (global) to its corresponding boolean equality function term (global).
     Handles [nat], [bool], [string], user-defined inductives, [list], [prod],
     and [ind_tp]; returns [false] (the trivially failing function) for unsupported types. *)
-Fixpoint type_to_eq_fn (t : term) : term :=
+Fixpoint type_to_eq_fn (t : global_term) : global_term :=
   match t with
   | <%nat%> => <%Nat.eqb%>
   | <%bool%> => <%Bool.eqb%>
@@ -69,9 +69,9 @@ Fixpoint type_to_eq_fn (t : term) : term :=
   | _ => <% (false) %>
   end.
 
-(** Check whether a type has a supported boolean equality function.
+(** Check whether a type (global) has a supported boolean equality function.
     Returns [true] for all types handled by [type_to_eq_fn]. *)
-Fixpoint has_eq_fn (t : term) : bool :=
+Fixpoint has_eq_fn (t : global_term) : bool :=
   match t with
   | <%nat%> => true
   | <%bool%> => true
@@ -92,18 +92,18 @@ Fixpoint has_eq_fn (t : term) : bool :=
   | _ => true
   end.
 
-(** Flatten a conjunction into a list, keeping only equality conjuncts
-    (those that will generate let-bindings). *)
-Fixpoint collect_let_conjs (bigConj : term) : list term :=
+(** Flatten a conjunction (named) into a list of equality conjuncts (named)
+    that will generate let-bindings. *)
+Fixpoint collect_let_conjs (bigConj : named_term) : list named_term :=
   match bigConj with
   | tApp <%and%> ls => concat (map collect_let_conjs ls)
   | tApp <%eq%> [_; _; _] => [bigConj]
   | _ => []
   end.
 
-(** Extract the inductive name and argument list from a term that is either
+(** Extract the inductive name and argument list from a named term that is either
     a quoted [tInd] application or a [tVar] application; returns [None] otherwise. *)
-Definition get_ind_name (conjunct : term) : option (string * list term) :=
+Definition get_ind_name (conjunct : named_term) : option (string * list named_term) :=
   match conjunct with
   | tApp (tInd {| inductive_mind := (_path, indNm);
                   inductive_ind := 0 |} [])
@@ -112,9 +112,9 @@ Definition get_ind_name (conjunct : term) : option (string * list term) :=
   | _ => None
   end.
 
-(** Flatten a conjunction into a list of guard conjuncts: equalities and
-    inductive predicate applications (used for boolean guard generation). *)
-Fixpoint collect_guard_conjs (bigConj : term) : list term :=
+(** Flatten a conjunction (named) into a list of guard conjuncts (named):
+    equalities and inductive predicate applications (used for boolean guard generation). *)
+Fixpoint collect_guard_conjs (bigConj : named_term) : list named_term :=
   match bigConj with
   | tApp <%and%> ls => concat (map collect_guard_conjs ls)
   | tApp <%eq%> [_; _; _] => [bigConj]
@@ -127,18 +127,18 @@ Fixpoint collect_guard_conjs (bigConj : term) : list term :=
 (** Alias for [collect_guard_conjs]: extract all conjuncts (equalities and predicates). *)
 Definition collect_all_conjs := collect_guard_conjs.
 
-(** For each conjunct in [bigConj], return whether its equality type is supported
+(** For each conjunct in [bigConj] (named), return whether its equality type is supported
     by [has_eq_fn] (used to decide if the whole clause can be animated). *)
-Fixpoint classify_conj_types (bigConj : term) : list bool :=
+Fixpoint classify_conj_types (bigConj : named_term) : list bool :=
   match bigConj with
   | tApp <%and%> ls => concat (map classify_conj_types ls)
   | tApp <%eq%> [typeT; _; _] => [has_eq_fn typeT]
   | _ => [false]
   end.
 
-(** Extract variable names from a term in the order they appear,
+(** Extract variable names from a named term in the order they appear,
     with the equation's LHS variables listed before RHS variables. *)
-Fixpoint ordered_vars (t : term) : list string :=
+Fixpoint ordered_vars (t : named_term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [typeT; tVar str1; tApp fn lst] =>
@@ -153,9 +153,9 @@ Fixpoint ordered_vars (t : term) : list string :=
   | _ => []
   end.
 
-(** Wrap one equality conjunct [conj] into a [tLetIn], extending [partialLetfn].
+(** Wrap one equality conjunct [conj] (named) into a [tLetIn], extending [partialLetfn].
     Returns [Some f] if [conj] has a pattern we can orient, [None] otherwise. *)
-Definition animate_conj_let (conj : term) (partialLetfn : term -> term) : option (term -> term) :=
+Definition animate_conj_let (conj : named_term) (partialLetfn : named_term -> named_term) : option (named_term -> named_term) :=
   match conj with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] =>
     Some (fun t => partialLetfn
@@ -190,9 +190,9 @@ Definition animate_conj_let (conj : term) (partialLetfn : term -> term) : option
   | _ => None
   end.
 
-(** Swap the two sides of an equality conjunct so the output variable is on the
+(** Swap the two sides of an equality conjunct (named) so the output variable is on the
     left, enabling [animate_conj_let] to orient it correctly. *)
-Definition flip_conj (conj : term) : term :=
+Definition flip_conj (conj : named_term) : named_term :=
   match conj with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => tApp <%eq%> [typeT; tVar str2; tVar str1]
   | tApp <%eq%> [typeT; tApp fn lstTerm; tVar str1] =>
@@ -204,9 +204,9 @@ Definition flip_conj (conj : term) : term :=
   | t' => t'
   end.
 
-(** Extend a boolean guard [partialGuard] with a boolean equality check for
-    the equality conjunct [conj], producing [partialGuard && eqFn t1 t2]. *)
-Definition animate_conj_guard (conj : term) (partialGuard : term)  :  term :=
+(** Extend a boolean guard [partialGuard] (named) with a boolean equality check for
+    the equality conjunct [conj] (named), producing [partialGuard && eqFn t1 t2]. *)
+Definition animate_conj_guard (conj : named_term) (partialGuard : named_term)  :  named_term :=
   match conj with
   | tApp <%eq%> [typeT; t1; t2] =>
     tApp (tConst <? andb ?> [])
@@ -217,13 +217,13 @@ Definition animate_conj_guard (conj : term) (partialGuard : term)  :  term :=
   | _ => <% false %>
   end.
 
-(** Try to orient and animate a single equality conjunct given the currently
+(** Try to orient and animate a single equality conjunct (named) given the currently
     known variables [knownVar].  Returns the extended known-variable set and
     the updated partial program if successful, or [None] if deferred. *)
-Definition animate_one_conj (conj : term)
+Definition animate_one_conj (conj : named_term)
   (knownVar : list string)
-  (partialProg : term -> term)
-  : option (list string * (term -> term)) :=
+  (partialProg : named_term -> named_term)
+  : option (list string * (named_term -> named_term)) :=
   match conj with
   | tApp <%eq%> [typeT; t1; t2] =>
     if andb (is_subset_strings (ordered_vars t2) knownVar)
@@ -252,11 +252,11 @@ Definition animate_one_conj (conj : term)
   | _ => None
   end.
 
-(** Repeatedly attempt to animate a list of equality conjuncts, deferring
+(** Repeatedly attempt to animate a list of equality conjuncts (named), deferring
     those whose variables are not yet known and retrying on each pass.
     [fuel] bounds the number of retry rounds. *)
-Fixpoint animate_conj_list (conjs : (list term)) (remConjs : (list term)) (knownVar : list string)
-                         (fuel : nat) (partialProg : term -> term) : term -> term :=
+Fixpoint animate_conj_list (conjs : (list named_term)) (remConjs : (list named_term)) (knownVar : list string)
+                         (fuel : nat) (partialProg : named_term -> named_term) : named_term -> named_term :=
   match fuel with
   | 0 => partialProg
   | S n =>
@@ -275,14 +275,14 @@ Fixpoint animate_conj_list (conjs : (list term)) (remConjs : (list term)) (known
     end
   end.
 
-(** Build [Some outputTm] as the success branch of a generated case expression. *)
-Definition build_return_body (outputTm : term) (outputTp : term) : term :=
+(** Build [Some outputTm] as the success branch of a generated case expression (global). *)
+Definition build_return_body (outputTm : global_term) (outputTp : global_term) : global_term :=
  tApp <% @Some %> [outputTp; outputTm].
 
-(** Construct the body of an animated clause function: wrap [outputTm] in
-    [letBind] and a [if true then Some outputTm else None] case expression.
-    The case on [true] is a guard placeholder filled in by pattern compilation. *)
-Definition build_fn_body  (outputTm : term) (outputTp : term) (letBind : term -> term)  : term :=
+(** Construct the body of an animated clause function: wrap [outputTm] (global) in
+    [letBind] (named) and a [if true then Some outputTm else None] case expression.
+    Returns a de Bruijn term (the case expression uses tRel internally). *)
+Definition build_fn_body  (outputTm : global_term) (outputTp : global_term) (letBind : named_term -> named_term)  : term :=
  (letBind (tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
                 ; ci_npar := 0; ci_relevance := Relevant |}
                {| puinst := []
@@ -301,9 +301,9 @@ Definition build_fn_body  (outputTm : term) (outputTp : term) (letBind : term ->
                        tApp <% @None %> [outputTp]
                    |}])).
 
-(** Like [build_fn_body] but with an explicit boolean guard term [guardCon]
-    instead of the let-binding wrapper. *)
-Definition build_guarded_body  (outputTm : term) (outputTp : term) (guardCon : term) : term :=
+(** Like [build_fn_body] but with an explicit boolean guard term [guardCon] (named)
+    instead of the let-binding wrapper.  Returns a de Bruijn term. *)
+Definition build_guarded_body  (outputTm : global_term) (outputTp : global_term) (guardCon : named_term) : term :=
  ((tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |}
                 ; ci_npar := 0; ci_relevance := Relevant |}
                {| puinst := []
@@ -322,9 +322,10 @@ Definition build_guarded_body  (outputTm : term) (outputTp : term) (guardCon : t
                        tApp <% @None %> [outputTp]
                    |}])).
 
-(** Generate a boolean equality function for a type and define it in the environment. *)
+(** Generate a boolean equality function for a type and define it in the environment.
+    Type parameters are global terms; returns a de Bruijn term. *)
 Definition compile_equality_clause {A : Type} (induct : A)
-                      (postIn' : term) (postInType' : term) (postOut' : term) (postOutType' : term)
+                      (postIn' : global_term) (postInType' : global_term) (postOut' : global_term) (postOutType' : global_term)
                         (fuel : nat) : TemplateMonad term :=
 
 let postIn := tApp <%Success%> [postInType'; postIn'] in
@@ -372,21 +373,22 @@ let u :=
 
 ret u.
 
-(** Animate a single equality clause: animate the let-bindings in [fooTerm]
-    into a pattern-matching function from [inputTp] to [option outputTp].
-    Fails with an error if any equality has an unsupported type. *)
+(** Animate a single equality clause: animate the let-bindings in [fooTerm] (named)
+    into a pattern-matching function from [inputTp] (global) to [option outputTp] (global).
+    Fails with an error if any equality has an unsupported type.
+    Returns a de Bruijn term. *)
 Definition compile_let_clause {A : Type}
   (induct : A) (kn : kername)
   (fooTerm : named_term)
-  (inputTm : term) (inputTp : term)
-  (outputTm : term) (outputTp : term)
+  (inputTm : global_term) (inputTp : global_term)
+  (outputTm : global_term) (outputTp : global_term)
   (inputVars : list string) (fuel : nat)
   : TemplateMonad term :=
 
   if forallb id (classify_conj_types fooTerm) then
   (let postOut' := (build_fn_body outputTm outputTp
     (animate_conj_list
-       (collect_let_conjs fooTerm) nil (inputVars) fuel (fun t : term => t))
+       (collect_let_conjs fooTerm) nil (inputVars) fuel (fun t : named_term => t))
      ) in
 
     let postOutType' := tApp <% @option %> [outputTp] in
@@ -413,12 +415,14 @@ Definition compile_let_clause {A : Type}
      else tmFail "no boolean equality over some type".
 
 (** Compile a single clause of an inductive relation into executable code,
-    resolving equality premises and generating pattern matching. *)
+    resolving equality premises and generating pattern matching.
+    Type parameters in [predTypeInf] and [allVarTpInf] are global terms.
+    Returns a de Bruijn term. *)
 Definition compile_clause {A : Type}
   (induct : A) (kn : kername)
   (conjunct' : tagged_conjunct)
   (modes : mode_map) (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (allVarTpInf : list (string * global_term))
   (fuel : nat) : TemplateMonad term :=
 
 outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
@@ -483,7 +487,7 @@ let conjunct := conjunct'.(tc_conjunct) in
   | None => tmFail "incorrect inductive shape"
   end.
 
-(** Build the product type of a list of [(term, type)] pairs, using [bool] as
+(** Build the product type (de Bruijn) of a list of [(term, type)] pairs, using [bool] as
     the base case.  Used for the empty-input mode where there are no inputs. *)
 Fixpoint mk_lhs_type_monadic (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
@@ -495,7 +499,7 @@ Fixpoint mk_lhs_type_monadic (lhsIndPre : list (term * term)) : TemplateMonad te
                      [snd h; res])
   end.
 
-(** Build the product term of a list of [(term, type)] pairs, using [true] as
+(** Build the product term (de Bruijn) of a list of [(term, type)] pairs, using [true] as
     the base case.  Companion to [mk_lhs_type_monadic]. *)
 Fixpoint mk_lhs_term_monadic (lhsIndPre : list (term * term)) : TemplateMonad term :=
   match lhsIndPre with
@@ -510,12 +514,14 @@ Fixpoint mk_lhs_term_monadic (lhsIndPre : list (term * term)) : TemplateMonad te
 
 (** Compile a single relation clause whose predicate has no input arguments
     (empty-input mode), using [mk_lhs_type_monadic]/[mk_lhs_term_monadic] as the product
-    builders so that the trivial [bool] base case is inserted correctly. *)
+    builders so that the trivial [bool] base case is inserted correctly.
+    Type parameters in [predTypeInf] and [allVarTpInf] are global terms.
+    Returns a de Bruijn term. *)
 Definition animate_no_input {A : Type}
   (induct : A) (kn : kername)
   (conjunct' : tagged_conjunct)
   (modes : mode_map) (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (allVarTpInf : list (string * global_term))
   (fuel : nat) : TemplateMonad term :=
 
 outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;

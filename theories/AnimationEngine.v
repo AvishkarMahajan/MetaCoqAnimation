@@ -29,10 +29,10 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-(** Replace any variable appearing in a function-position in [conjRHS] with
+(** Replace any variable appearing in a function-position in [conjRHS] (named) with
     an [id_fn] application, so that the variable is treated as data rather
     than as a function call during pattern compilation. *)
-Fixpoint strip_fn_position_vars (conjRHS : term)  (allVarTpInf : list (string * term)) :=
+Fixpoint strip_fn_position_vars (conjRHS : named_term)  (allVarTpInf : list (string * term)) : named_term :=
   match conjRHS with
   | tApp (tVar str) lstArgs =>
       match lookup_one_var str allVarTpInf with
@@ -92,7 +92,7 @@ map (fun o => ind_name o) l.
 Definition gen_cxt (l : list one_inductive_body) :=
 (map (fun s => nNamed s) (rev (ind_body_names l))).
 
-(** Extract all argument types from an inductive type. *)
+(** Extract all argument types from an inductive type (de Bruijn). *)
 Fixpoint get_type (o : term) : option (list term) :=
   match o with
        | (tProd {| binder_name := nAnon; binder_relevance := Relevant |} t (tSort sProp)) => Some [t]
@@ -124,14 +124,14 @@ Definition input_types (inMode : list nat) (o : one_inductive_body) : option (li
   | None => None
   end.
 
-(** Strip all top-level foralls/products from a term to get to the body. *)
+(** Strip all top-level foralls/products from a de Bruijn term to get to the body. *)
 Fixpoint reduce_clause (t : term) :=
   match t with
   | (tPro str typ t') => reduce_clause t'
   | t'' => t''
   end.
 
-(** Extract preconditions (hypotheses) from a constructor clause. *)
+(** Extract preconditions (hypotheses) from a constructor clause (de Bruijn). *)
 Definition get_preconditions (t : term) :=
   match t with
   | (tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2) => [t1]
@@ -147,11 +147,11 @@ Definition process_preconditions (l : list term) :=
   | _ :: (h' :: _) => []
   end.
 
-(** Get the body (recursive premises) of a constructor clause. *)
+(** Get the body (recursive premises) of a constructor clause (de Bruijn). *)
 Definition clause_body_raw (t : term) : list term :=
 process_preconditions (get_preconditions (reduce_clause t)).
 
-(** Get the head (conclusion) of a constructor clause. *)
+(** Get the head (conclusion) of a constructor clause (de Bruijn). *)
 Definition clause_head_raw (t : term) : term :=
   match reduce_clause t with
   | (tProd {| binder_name := nAnon; binder_relevance := Relevant |} t1 t2) => t2
@@ -167,7 +167,7 @@ Definition clause_head (c : constructor_body) :  term :=
  clause_head_raw (cstr_type c).
 
 (** Extract names of inductive predicates applied in a list of terms. *)
-Fixpoint ind_occurrences (l : list term) (indNames : list string) : list string :=
+Fixpoint ind_occurrences (l : list named_term) (indNames : list string) : list string :=
   match l with
   | [] => []
   | h :: t => match h with
@@ -181,7 +181,7 @@ Fixpoint ind_occurrences (l : list term) (indNames : list string) : list string 
 
 (** Annotate each clause with the inductive predicate names it applies. *)
 Fixpoint ind_occurrences_named
-  (l : list (string * term))
+  (l : list (string * named_term))
   (indNames : list string)
   : list (string * (list string)) :=
   match l with
@@ -223,11 +223,11 @@ Fixpoint in_out_types (modes : mode_map)
     end
   end.
 
-(** Convert constructor bodies to named terms by unquoting from de Bruijn into
-    the named context [l], returning [(constructor_name, clause_term)] pairs. *)
+(** Convert constructor bodies from de Bruijn to named terms by unquoting into
+    the named context [l], returning [(constructor_name, named_clause)] pairs. *)
 Fixpoint mk_nm_tm (c : list constructor_body)
   (l : list name)
-  : TemplateMonad (list (string * term)) :=
+  : TemplateMonad (list (string * named_term)) :=
   match c with
   | [] => tmReturn []
   | (h :: t) =>
@@ -264,9 +264,9 @@ Fixpoint get_data
 (** Replace non-variable subterms in [l] with fresh variables (prefixed by
     [varPfix]), emitting equality constraints to bind the originals.
     Returns triples [(replacement_vars, equality_constraints, new_var_bindings)]. *)
-Fixpoint subst_pattern_vars (l : list term)
+Fixpoint subst_pattern_vars (l : list named_term)
   (varPfix : string) (n : nat) (argTps : list term)
-  : list ((list term * list term)
+  : list ((list named_term * list named_term)
           * list (string * term)) :=
   match l with
   | [] => []
@@ -294,10 +294,10 @@ Fixpoint find_tp (s : string) (allPredArgTps : pred_type_map) : list term :=
 (** For each conjunct in [l], replace non-variable arguments of predicates with
     fresh variables and collect the resulting equality side-conditions and
     new variable bindings.  Equality conjuncts are passed through unchanged. *)
-Fixpoint resolve_conj_inputs (l : list term)
+Fixpoint resolve_conj_inputs (l : list named_term)
   (varPfix : string) (n : nat)
   (allPredArgTps : pred_type_map)
-  : list ((term * list term) * list (string * term)) :=
+  : list ((named_term * list named_term) * list (string * term)) :=
   match l with
   | [] => []
   | (tApp <%eq%> lstArgs) :: rest =>
@@ -336,7 +336,7 @@ Fixpoint resolve_conj_inputs (l : list term)
 
 (** Collect variable and inductive names from a term, with arguments listed
     before the function (used for computing fresh-variable prefix lengths). *)
-Fixpoint ordered_vars_from_clause (t : term) : list string :=
+Fixpoint ordered_vars_from_clause (t : named_term) : list string :=
   match t with
   | tVar str  => [str]
   | (tInd {| inductive_mind := (_path, str); inductive_ind := k |} []) => [str]
@@ -369,8 +369,8 @@ Definition pred_arg_types (allTpInf : list type_env_entry) : list (string * list
     | Some tps => [(fst y, tps)]
     | None => []
     end) (pred_arg_types_raw allTpInf).
-(** Flatten a right-nested [and] tree into a list of conjuncts. *)
-Fixpoint flatten_and (t : term) : list term :=
+(** Flatten a right-nested [and] tree into a list of conjuncts (named). *)
+Fixpoint flatten_and (t : named_term) : list named_term :=
   match t with
   | tApp <%and%> [h;h1] => h :: (flatten_and h1)
   | t' => [t']
@@ -378,7 +378,7 @@ Fixpoint flatten_and (t : term) : list term :=
 
 (** Split a clause of the form [P1 /\ P2 /\ ... -> conclusion] into the list
     [P1, P2, ..., conclusion]; handles a conjunction in the premise position. *)
-Definition flatten_clause (t : term) : list term :=
+Definition flatten_clause (t : named_term) : list named_term :=
   match t with
   | tProd {| binder_name := nAnon;
              binder_relevance := Relevant |}
@@ -387,8 +387,8 @@ Definition flatten_clause (t : term) : list term :=
   | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t'' t' =>  [t''; t']
   | t''' => [t''']
   end.
-(** Rebuild a right-nested [and] term from a flat list of conjuncts. *)
-Fixpoint build_and (l : list term) : option term :=
+(** Rebuild a right-nested [and] term from a flat list of conjuncts (named). *)
+Fixpoint build_and (l : list named_term) : option named_term :=
   match l with
   | [] => None
   | [h] => Some h
@@ -400,7 +400,7 @@ Fixpoint build_and (l : list term) : option term :=
   end.
 (** Inverse of [flatten_clause]: reassemble a flat list [P1, ..., Pn, conclusion]
     back into a single clause term. *)
-Definition build_clause (ts : list term) : option term :=
+Definition build_clause (ts : list named_term) : option named_term :=
   match rev ts with
   | [] => None
   | [h] => Some h
@@ -414,7 +414,7 @@ Definition build_clause (ts : list term) : option term :=
 
 (** Rewrite a clause by substituting non-variable predicate arguments with fresh
     variables and splicing in the resulting equality side-conditions. *)
-Definition rewrite_cl (t : term) (allTpInf : list type_env_entry) : option term :=
+Definition rewrite_cl (t : named_term) (allTpInf : list type_env_entry) : option named_term :=
 let prefix := fresh_var_prefix (S (list_max (map String.length (ordered_vars_from_clause t)))) in
 let lstTm := flatten_clause t in
 let allPredArgTp := pred_arg_types allTpInf in
@@ -424,18 +424,18 @@ build_clause
    map (fun y => fst (fst y)) resolved).
 
 (** Collect the new variable-type bindings introduced by rewriting clause [t]. *)
-Definition extra_type_info (t : term) (allTpInf : list type_env_entry) : list (string * term) :=
+Definition extra_type_info (t : named_term) (allTpInf : list type_env_entry) : list (string * term) :=
 
 let prefix := fresh_var_prefix (S (list_max (map String.length (ordered_vars_from_clause t)))) in
 let lstTm := flatten_clause t in
 let allPredArgTp := pred_arg_types allTpInf in
 (concat (map (fun y => (snd (y))) (resolve_conj_inputs lstTm prefix 0 allPredArgTp))).
 
-(** Rewrite all clause terms in a flat [(constructor_name, clause)] list. *)
+(** Rewrite all clause terms in a flat [(constructor_name, named_clause)] list. *)
 Fixpoint rewrite_cl_all1
-  (allClauseData1 : list (string × term))
+  (allClauseData1 : list (string × named_term))
   (allTpInf : list type_env_entry)
-  : option (list (string × term)) :=
+  : option (list (string × named_term)) :=
   match allClauseData1 with
   | [] => Some []
   | (cstrNm,t) :: rest =>
@@ -458,7 +458,7 @@ Definition rewrite_cl_all1'
   | None => None
   end.
 
-(** Rewrite all clause data blocks across all inductives. *)
+(** Rewrite all clause data blocks across all inductives (named terms throughout). *)
 Fixpoint rewrite_cl_all
   (allClauseData : list clause_data)
   (allTpInf : list type_env_entry)
@@ -474,7 +474,7 @@ Fixpoint rewrite_cl_all
 
 (** Collect new variable-type bindings for each clause in a flat clause list. *)
 Fixpoint extra_type_info_list
-  (allClauseData1 : list (string × term))
+  (allClauseData1 : list (string × named_term))
   (allTpInf : list type_env_entry)
   : list (string * list (string * term)) :=
   match allClauseData1 with
@@ -587,7 +587,7 @@ tConst (fst kn, nm) [].
 (** For each clause, build the quoted reference to its compiled [Animated]
     definition, applied to the animated top-level functions of any predicates
     it calls recursively. *)
-Fixpoint apply_top_fn (kn : kername) (clauseData : list (string * (list string))) : list term :=
+Fixpoint apply_top_fn (kn : kername) (clauseData : list (string * (list string))) : list global_term :=
   match clauseData with
   | [] => []
   | (postConCons, preConInd) :: t => match preConInd with
@@ -614,7 +614,7 @@ Fixpoint lookup_mode_input (indNm : string) (modes : mode_map) :=
   end.
 (** Shared base for building one fixpoint definition for a top-level animated inductive.
     Parameterized by the zero-fuel branch, dispatch construction, and whether input is explicit. *)
-Definition mk_ind_top_base (indNm : string) (inputType outputType : term)
+Definition mk_ind_top_base (indNm : string) (inputType outputType : global_term)
   (clauseData : list (string * (list string))) (kn : kername)
   (zeroBranch : term) (mkDispatchBody : term -> term)
   (hasInput : bool) : def term :=
@@ -647,7 +647,7 @@ let tp :=
    dtype := tp; dbody := body; rarg := 0 |}.
 
 (** Build a top-level fixpoint definition for an inductive with explicit input. *)
-Definition mk_ind_top_body (indNm : string) (inputType outputType : term)
+Definition mk_ind_top_body (indNm : string) (inputType outputType : global_term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
 mk_ind_top_base indNm inputType outputType clauseData kn
   (tApp <%FuelError%> [outputType])
@@ -657,7 +657,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
 
 (** Build a top-level fixpoint definition for an inductive with no input
     (empty-input mode: the argument is always [Success bool true]). *)
-Definition mk_ind_top_no_input (indNm : string) (inputType outputType : term)
+Definition mk_ind_top_no_input (indNm : string) (inputType outputType : global_term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
 mk_ind_top_base indNm inputType outputType clauseData kn
   (tApp <%FuelError%> [outputType])
@@ -667,7 +667,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
 
 (** Build a top-level fixpoint definition for a coinductive with explicit input,
     using [map_outcome Rest] as the zero-fuel branch. *)
-Definition mk_coind_top_body (indNm : string) (inputType outputType : term)
+Definition mk_coind_top_body (indNm : string) (inputType outputType : global_term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
 let restFn := quote_const' kn ((indNm ++ "Rest")) in
 mk_ind_top_base indNm inputType outputType clauseData kn
@@ -678,7 +678,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
 
 (** Build a top-level fixpoint definition for a coinductive with no input,
     using [map_outcome Rest] as the zero-fuel branch. *)
-Definition mk_coind_top_no_input (indNm : string) (inputType outputType : term)
+Definition mk_coind_top_no_input (indNm : string) (inputType outputType : global_term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
 let restFn := quote_const' kn ((indNm ++ "Rest")) in
 mk_ind_top_base indNm inputType outputType clauseData kn
@@ -689,7 +689,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
 
 (** Dispatch to [mk_ind_top_body] or [mk_ind_top_no_input] based on the mode for [indNm]. *)
 Definition mk_ind_fixpoint (indNm : string)
-  (inputType : term) (outputType : term)
+  (inputType : global_term) (outputType : global_term)
   (clauseData : list (string * (list string)))
   (kn : kername) (modes : mode_map) : def term :=
   match lookup_mode_input indNm modes with
@@ -699,7 +699,7 @@ Definition mk_ind_fixpoint (indNm : string)
 
 (** Dispatch to [mk_coind_top_body] or [mk_coind_top_no_input] based on mode. *)
 Definition mk_coind_fixpoint (indNm : string)
-  (inputType : term) (outputType : term)
+  (inputType : global_term) (outputType : global_term)
   (clauseData : list (string * (list string)))
   (kn : kername) (modes : mode_map) : def term :=
   match lookup_mode_input indNm modes with
@@ -820,10 +820,10 @@ Fixpoint mk_ind_data
 
 Unset Universe Checking.
 
-(** Compile a constructor clause: classify premises, animate let-bindings and guard predicates,
-    then assemble into a single executable term. *)
+(** Compile a constructor clause (named input -> de Bruijn output): classify premises,
+    animate let-bindings and guard predicates, then assemble into a single executable term. *)
 Definition compile_clause_body {A : Type}
-  (ind : A) (kn : kername) (bigConj : term)
+  (ind : A) (kn : kername) (bigConj : named_term)
   (cstrNm : string)
   (inVars : list (prod string term))
   (outVars : list (prod string term))
@@ -1178,12 +1178,12 @@ Definition search_out_tp := search_type_by_proj (fun h => h.(fe_out_type)).
 
 Unset Universe Checking.
 
-(** Compile a single clause [oneClause] of inductive [kn]: extract type and
-    clause data, rewrite non-variable arguments, then call
-    [compile_clause_body] to produce the compiled term. *)
+(** Compile a single clause [oneClause] of inductive [kn] (named input -> de Bruijn output):
+    extract type and clause data, rewrite non-variable arguments, then call
+    [compile_clause_body] to produce the compiled de Bruijn term. *)
 Definition animate_one_clause {A : Type}
   (ind : A) (kn : kername)
-  (oneClause : ((string * string) * term))
+  (oneClause : ((string * string) * named_term))
   (modes : mode_map) (fuel : nat)
   : TemplateMonad term :=
 (* Step 1: gather clause data and type info from the inductive definition *)

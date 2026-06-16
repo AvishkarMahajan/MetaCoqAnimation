@@ -44,23 +44,23 @@ Definition get_type_data (p : program) : list (option mutual_inductive_body) :=
 Definition gen_var (n : nat) : string :=
   "v" ++ string_of_nat n.
 
-(** Generate a list of fresh variables paired with terms, starting from index s. *)
-Fixpoint gen_var_list (s : nat) (ls : list term) : list (string * term) :=
+(** Generate a list of fresh variables paired with terms (named), starting from index s. *)
+Fixpoint gen_var_list (s : nat) (ls : list named_term) : list (string * named_term) :=
   match ls with
   | [] => []
   | h :: t => (gen_var (s + 1), h) :: gen_var_list (s + 1) t
   end.
 
-(** Unfold one step of constructor applications in pattern matching.
-    Takes an index counter, current terms to process, resolved terms, and remaining terms.
+(** Unfold one step of constructor applications in pattern matching (named).
+    Takes an index counter, current named terms to process, resolved terms, and remaining terms.
     Returns updated counter, unprocessed terms, resolved terms, and new remaining terms. *)
 Definition unfold_cons
   (i : nat)
-  (currTs : list (string * term))
+  (currTs : list (string * named_term))
   (resolvedTs : list resolved_var)
-  (remTs : list (string * term))
-  : (((nat *  list (string * term)) *
-      list resolved_var) * list (string * term)) :=
+  (remTs : list (string * named_term))
+  : (((nat *  list (string * named_term)) *
+      list resolved_var) * list (string * named_term)) :=
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
  | (str, tApp (tConstruct typeInfo cstrInd ls') args) :: t =>
@@ -97,15 +97,15 @@ Definition unfold_cons
      (i, t, resolvedTs, remTs)
  end.
 
-(** Iterate the constructor unfolding step for a given amount of fuel.
-    Processes terms by repeatedly applying unfold_cons. *)
+(** Iterate the constructor unfolding step (named) for a given amount of fuel.
+    Processes named terms by repeatedly applying unfold_cons. *)
 Fixpoint unfold_cons_iter
   (fuel : nat)
-  (st : (((nat *  list (string * term)) *
-            list resolved_var) * list (string * term)))
-  : (((nat * list (string * term)) *
+  (st : (((nat *  list (string * named_term)) *
+            list resolved_var) * list (string * named_term)))
+  : (((nat * list (string * named_term)) *
       list resolved_var) *
-     list (string * term)) :=
+     list (string * named_term)) :=
   match fuel with
   | 0 => st
   | S m => unfold_cons_iter m
@@ -113,12 +113,12 @@ Fixpoint unfold_cons_iter
                 (fst (fst (fst st))) (snd (fst (fst st))) (snd (fst st)) (snd st))
   end.
 
-(** Pre-process a constructor term by unfolding it into a list of variable-term pairs. *)
-Definition preprocess_cons (fuel : nat) (t : term) : list resolved_var :=
+(** Pre-process a constructor term (named) by unfolding it into a list of variable-term pairs. *)
+Definition preprocess_cons (fuel : nat) (t : named_term) : list resolved_var :=
   rev (snd (fst (unfold_cons_iter fuel (0, [("x"%bs, t)], [], [])))).
 
-(** Check if all terms have been processed (no remaining terms). *)
-Definition preprocess_remainder (fuel : nat) (t : term) : bool :=
+(** Check if all terms have been processed (no remaining named terms). *)
+Definition preprocess_remainder (fuel : nat) (t : named_term) : bool :=
   let st := unfold_cons_iter fuel (0, [("x"%bs, t)], [], []) in
   let r := app (snd st) (snd (fst (fst st))) in
   match r with
@@ -362,20 +362,20 @@ Definition mk_option_none_branch (n : nat) : branch term :=
                      |} [])
                   [<%nat%>]]).
 
-(** Create a branch that returns Some with the given body. *)
-Definition mk_option_some_branch (l : list string) (t : term) : branch term :=
+(** Create a branch that returns Some with the given body (named). *)
+Definition mk_option_some_branch (l : list string) (t : named_term) : branch term :=
   {|
     bcontext := binders_from_strings l;
     bbody := t
   |}.
 
-(** Create the list of branches for a pattern match:
+(** Create the list of branches for a pattern match (named):
     None branches before the matching constructor, a Some branch for the match,
     and None branches after. *)
 Definition mk_branch_list
   (s : resolved_var)
   (l : list mutual_inductive_body)
-  (t : term) : option (list (branch term)) :=
+  (t : named_term) : option (list (branch term)) :=
   match get_type_name s, cstr_match_index s return option (list (branch term)) with
   | Some tn, Some index =>
     let csArlst := get_arity_list tn l in
@@ -386,12 +386,12 @@ Definition mk_branch_list
   | _, _ => None
   end.
 
-(** Create a case expression (pattern match) term.
-    Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
+(** Create a case expression (named pattern match term).
+    Takes a scrutinee with type parameters, inductive bodies, and a body term (named). *)
 Definition mk_case'
   (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
-  (t : term) : option term :=
+  (t : named_term) : option named_term :=
   let s := fst s' in
   match get_type s, mk_branch_list s l t with
   | Some ind, Some branches =>
@@ -426,13 +426,13 @@ Definition mk_case'
 (** The identity function as a quoted term. *)
 Definition id_term := <%(fun A : Type => (fun x : A => x))%>.
 
-(** Create nested pattern matches recursively.
+(** Create nested pattern matches recursively (named).
     Base case returns identity, single case returns value, multiple cases nest. *)
 Fixpoint mk_nested_match_aux
   (ls : list (resolved_var * list term))
   (ls' : list resolved_var)
   (outputVars : list (string))
-  (mut : list mutual_inductive_body) : option term :=
+  (mut : list mutual_inductive_body) : option named_term :=
  match ls with
   | [] => Some id_term
   | (h :: nil) => mk_case' h mut (return_var_tuple (sort_binders outputVars (ls')))
@@ -443,9 +443,9 @@ Fixpoint mk_nested_match_aux
     end
  end.
 
-(** Create a nested pattern match structure from a list of constructor patterns. *)
+(** Create a nested pattern match structure (named) from a list of constructor patterns. *)
 Definition mk_nested_match (ls' : list resolved_var) (outputVars : list string)
-            (mut : list mutual_inductive_body) : option term :=
+            (mut : list mutual_inductive_body) : option named_term :=
             mk_nested_match_aux (preprocess_type_var ls' ls') ls' outputVars mut.
 
 (** Remove None values from a list of options. *)
@@ -458,16 +458,16 @@ Fixpoint remove_opt {A : Type} (optls : list (option A)) : list A :=
 
 End typeConstrPatMatch.
 
-(** Like [typeConstrPatMatch.mk_wildcard_branch] but with a custom wildcard return term
+(** Like [typeConstrPatMatch.mk_wildcard_branch] but with a custom wildcard return term (named)
     instead of the default [None]. *)
-Definition mk_wildcard_ret_branch (wildCardRet : term) (n : nat)  : branch term :=
+Definition mk_wildcard_ret_branch (wildCardRet : named_term) (n : nat)  : branch term :=
   typeConstrPatMatch.mk_wildcard_branch n wildCardRet.
 
-(** Create branch list with custom wildcard return value for non-matching cases. *)
+(** Create branch list (named) with custom wildcard return value for non-matching cases. *)
 Definition mk_branch_list_wild
   (s : resolved_var)
   (l : list mutual_inductive_body)
-  (t : term) (wildCardRet : term)
+  (t : named_term) (wildCardRet : named_term)
   : option (list (branch term)) :=
   match typeConstrPatMatch.get_type_name s, typeConstrPatMatch.cstr_match_index s with
   | Some tn, Some index =>
@@ -479,12 +479,12 @@ Definition mk_branch_list_wild
   | _, _ => None
   end.
 
-(** Create a case expression with custom output type and wildcard return value. *)
+(** Create a case expression (named) with custom output type (global) and wildcard return value (named). *)
 Definition mk_case_wild
   (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
-  (t : term) (outputType : term)
-  (wildCardRet : term) : option term :=
+  (t : named_term) (outputType : global_term)
+  (wildCardRet : named_term) : option named_term :=
   let s := fst s' in
   match typeConstrPatMatch.get_type s, mk_branch_list_wild s l t wildCardRet with
   | Some ind, Some branches =>
@@ -566,14 +566,13 @@ Definition change_vars
   : list resolved_var :=
  switch_vars' (original_var_map l) l.
 
-(** Create nested pattern matches with custom output term, type, and wildcard.
-    Version 2 with more flexibility than mk_nested_match. *)
+(** Create nested pattern matches (named) with custom output term (named), type (global), and wildcard (named). *)
 Fixpoint mk_nested_match_wild_aux
   (ls : list (resolved_var * list term))
   (ls' : list resolved_var)
-  (outputTerm : term) (outputType : term)
-  (wildCardRet : term)
-  (mut : list mutual_inductive_body) : option term :=
+  (outputTerm : named_term) (outputType : global_term)
+  (wildCardRet : named_term)
+  (mut : list mutual_inductive_body) : option named_term :=
  match ls with
   | [] => Some typeConstrPatMatch.id_term
   | (h :: nil) => mk_case_wild h mut (outputTerm) outputType wildCardRet
@@ -584,25 +583,25 @@ Fixpoint mk_nested_match_wild_aux
     end
  end.
 
-(** Wrapper for mk_nested_match_wild_aux that pre-processes constructor type variables. *)
+(** Wrapper for mk_nested_match_wild_aux that pre-processes constructor type variables (named). *)
 Definition mk_nested_match_wild
   (ls' : list resolved_var)
-  (outputTerm : term) (outputType : term)
-  (wildCardRet : term)
-  (mut : list mutual_inductive_body) : option term :=
+  (outputTerm : named_term) (outputType : global_term)
+  (wildCardRet : named_term)
+  (mut : list mutual_inductive_body) : option named_term :=
   mk_nested_match_wild_aux
     (typeConstrPatMatch.preprocess_type_var ls' ls')
     ls' outputTerm outputType wildCardRet mut.
 
-(** Build a lambda abstraction that pattern-matches the outermost constructor,
+(** Build a lambda abstraction (named) that pattern-matches the outermost constructor,
     using [mk_nested_match_wild] for the body.  Returns [None] if the structure is empty
     or lacks a two-variable binding form. *)
 Definition mk_lam_wild_unwrap
   (ls : list resolved_var)
-  (outputTerm : term) (outputType : term)
-  (wildCardRet : term)
+  (outputTerm : named_term) (outputType : global_term)
+  (wildCardRet : named_term)
   (mut : list mutual_inductive_body)
-  : option term :=
+  : option named_term :=
   match ls with
   | [] => None
   | (h :: ({| rv_name := str; rv_term := typeInfo; rv_bound := [] |} ::
@@ -619,23 +618,23 @@ Definition mk_lam_wild_unwrap
   | _ => None
   end.
 
-(** Wrapper for [mk_lam_wild_unwrap] that filters [None] entries from the mutual inductive list. *)
+(** Wrapper for [mk_lam_wild_unwrap] (named) that filters [None] entries from the mutual inductive list. *)
 Definition mk_lam_wild
   (ls : list resolved_var)
-  (outputTerm : term) (outputType : term)
-  (wildCardRet : term)
+  (outputTerm : named_term) (outputType : global_term)
+  (wildCardRet : named_term)
   (mut : list (option mutual_inductive_body))
-  : option term :=
+  : option named_term :=
   mk_lam_wild_unwrap ls outputTerm outputType wildCardRet (typeConstrPatMatch.remove_opt mut).
 
-(** Compile an inductive constructor pattern [conjTm] from quoted programs [lstP]
-    into a lambda that pattern-matches [conjTm] and returns [outputTerm].
+(** Compile an inductive constructor pattern [conjTm] (named) from quoted programs [lstP]
+    into a lambda (named) that pattern-matches [conjTm] and returns [outputTerm] (named).
     Returns [None] if the constructor cannot be fully unfolded within [fuel] steps. *)
 Definition mk_lam_from_ind
-  (conjTm : term) (lstP : list program)
-  (outputTerm : term) (outputType : term)
-  (wildCardRet : term) (fuel : nat)
-  : option term :=
+  (conjTm : named_term) (lstP : list program)
+  (outputTerm : named_term) (outputType : global_term)
+  (wildCardRet : named_term) (fuel : nat)
+  : option named_term :=
   let td :=
     concat (map (typeConstrPatMatch.get_type_data)
               lstP) in
@@ -650,18 +649,18 @@ Definition mk_lam_from_ind
        outputTerm outputType wildCardRet td)
   else None.
 
-(** Compile a single constructor pattern [inputTerm'] against an existing
-    [animation_result inputType] into a function returning [animation_result outputType].
+(** Compile a single constructor pattern [inputTerm'] (named) against an existing
+    [animation_result inputType] (global) into a function returning [animation_result outputType] (global).
     Quotes the inductive type, builds nested pattern matches, and converts to de Bruijn.
     Fails if constructor variables clash or fuel is insufficient. *)
 Definition animate_one_pattern
            {A : Type}
            (induct : A)
-           (inputTerm' : term)
-           (inputType : term)
-           (outputTerm : term)
-           (outputType : term)
-           (wildCardRet : term)
+           (inputTerm' : named_term)
+           (inputType : global_term)
+           (outputTerm : named_term)
+           (outputType : global_term)
+           (wildCardRet : named_term)
            (fuel : nat)
   : TemplateMonad term :=
   termFull <- tmQuoteRecTransp induct false ;;
@@ -687,13 +686,14 @@ Definition animate_one_pattern
   else
     tmFail "found clashing variables or insufficient fuel".
 
-(** Animate multiple pattern branches for a single inductive predicate. *)
+(** Animate multiple pattern branches (named inputs) for a single inductive predicate.
+    Returns de Bruijn terms after conversion. *)
 Fixpoint animate_patterns
          {A : Type}
          (induct : A)
-         (branchData : list (prod term term))
-         (inputType : term)
-         (outputType : term)
+         (branchData : list (prod named_term named_term))
+         (inputType : global_term)
+         (outputType : global_term)
          (fuel : nat)
   : TemplateMonad (list term) :=
   match branchData with
@@ -713,11 +713,11 @@ Fixpoint animate_patterns
       tmReturn (t :: lstT)
   end.
 
-(** Construct a dispatch function from a list of animated branch functions.
+(** Construct a dispatch function (de Bruijn) from a list of animated branch functions (de Bruijn).
     Wraps with with_default to provide a fallback for unmatched inputs. *)
 Definition mk_pattern_fn_core
-  (fns : list term) (wildCardRet : term)
-  (inputType : term) (outputType : term) : term :=
+  (fns : list term) (wildCardRet : named_term)
+  (inputType : global_term) (outputType : global_term) : term :=
  let fnType := tProd {| binder_name := nAnon; binder_relevance := Relevant |} inputType
          (tApp
             (tInd
@@ -732,25 +732,25 @@ Definition mk_pattern_fn_core
        [inputType; outputType;
         (build_coq_list fns fnType)])]).
 
-(** Create a multi-branch pattern match function with dispatch mechanism. *)
+(** Create a multi-branch pattern match function (named inputs, de Bruijn output) with dispatch mechanism. *)
 Definition mk_pattern_match_fn
            {A : Type}
            (induct : A)
-           (branchData : list (prod term term))
-           (inputType : term)
-           (outputType : term)
-           (wildCardRet : term)
+           (branchData : list (prod named_term named_term))
+           (inputType : global_term)
+           (outputType : global_term)
+           (wildCardRet : named_term)
            (fuel : nat)
   : TemplateMonad term :=
   subfns <- animate_patterns induct branchData inputType outputType fuel ;;
   tmReturn (mk_pattern_fn_core subfns wildCardRet inputType outputType).
 
 (** Fuel-aware join without LHS predicates (base case).
-    Simpler version for constructors with no recursive premises. *)
+    Named inputs, returns de Bruijn after conversion. *)
 Definition join_pattern_fueled
   {A : Type} (induct : A)
-  (postIn' : term) (postInType' : term)
-  (postOut' : term) (postOutType' : term)
+  (postIn' : named_term) (postInType' : global_term)
+  (postOut' : named_term) (postOutType' : global_term)
   (nmCon : string) (fuel : nat)
   : TemplateMonad term :=
 (* Wrap raw terms in Success/animation_result for the pattern match fn *)
@@ -806,15 +806,15 @@ match DB.de_bruijn_option u with
 | None => tmFail "de Bruijn conversion failed in join_pattern_fueled"
 end.
 
-(** Compile a constructor-pattern equality [t_pattern = t_expr] into a composed
-    [animation_result] function: first match the input against [t_expr] to get
+(** Compile a constructor-pattern equality [t_pattern = t_expr] (named) into a composed
+    [animation_result] function (de Bruijn): first match the input against [t_expr] to get
     the pattern variables, then match those against [t_pattern] to produce the output.
     The [rhsTerm] is the right-hand side of the equality (either a [tApp] or [tVar]). *)
 Definition compile_eq_binders
   {A : Type} (induct : A) (kn : kername)
   (conjunct : named_term)
-  (inputTm : term) (inputTp : term)
-  (outputTm : term) (outputTp : term)
+  (inputTm : named_term) (inputTp : global_term)
+  (outputTm : named_term) (outputTp : global_term)
   (fuel : nat) : TemplateMonad term :=
   match conjunct with
   | tApp <%eq%> [typeVar; patMatTerm; rhsTerm] =>
@@ -836,13 +836,13 @@ Definition compile_eq_binders
   | _ => tmFail "incorrect inductive shape"
   end.
 
-(** Orient a constructor-pattern equality so the known-variable side is on the
-    right, then delegate to [compile_eq_binders]. *)
+(** Orient a constructor-pattern equality (named) so the known-variable side is on the
+    right, then delegate to [compile_eq_binders]. Returns de Bruijn. *)
 Definition compile_eq_binders_with_vars
   {A : Type} (induct : A) (kn : kername)
   (conjunct : named_term)
-  (inputTm : term) (inputTp : term)
-  (outputTm : term) (outputTp : term)
+  (inputTm : named_term) (inputTp : global_term)
+  (outputTm : named_term) (outputTp : global_term)
   (inputVars : list string) (fuel : nat)
   : TemplateMonad term :=
   match conjunct with

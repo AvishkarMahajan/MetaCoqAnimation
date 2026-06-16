@@ -51,7 +51,7 @@ Fixpoint tele_to_prod_tp (outputData : list (string * term)) :  term :=
 
 (** Build a product term from a list of output variables.
     Constructs nested pairs of variables. *)
-Fixpoint tele_to_prod_tm  (outputData : list (string * term )) : term :=
+Fixpoint tele_to_prod_tm  (outputData : list (string * term )) : named_term :=
   match outputData with
   | [] => <%true%>
   | [h] => (tVar (fst h))
@@ -105,7 +105,7 @@ Definition is_nil {A : Type} (lst : list A) : bool :=
   end.
 
 (** Build a quoted [list term] literal from [lst], with element type [typeofTm]. *)
-Fixpoint build_coq_list (lst : list term) (typeofTm : term) : term :=
+Fixpoint build_coq_list (lst : list global_term) (typeofTm : global_term) : global_term :=
   match lst with
   | [] => tApp
            (tConstruct
@@ -153,7 +153,7 @@ Fixpoint quote_list {A : Type} (l : list A) : TemplateMonad (list term) :=
   end.
 
 (** Extract variable names from a flat list of terms (non-[tVar] terms are dropped). *)
-Fixpoint ordered_vars_aux (ls : list term) : list string :=
+Fixpoint ordered_vars_aux (ls : list named_term) : list string :=
   match ls with
   | [] => []
   | (tVar str) :: t => str :: (ordered_vars_aux t)
@@ -162,7 +162,7 @@ Fixpoint ordered_vars_aux (ls : list term) : list string :=
 
 (** Extract variable names from a term in declaration order.
     For equality terms, lists known-side variables before unknown-side variables. *)
-Fixpoint ordered_vars (t : term) : list string :=
+Fixpoint ordered_vars (t : named_term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: ordered_vars_aux (lst)
@@ -176,7 +176,7 @@ Fixpoint ordered_vars (t : term) : list string :=
   end.
 
 (** Apply [ordered_vars] to each element of [l] and concatenate the results. *)
-Fixpoint ordered_vars_of_list (l : list term) : list string :=
+Fixpoint ordered_vars_of_list (l : list named_term) : list string :=
   match l with
   | [] => []
   | h :: t => ordered_vars h ++ ordered_vars_of_list t
@@ -231,7 +231,7 @@ Fixpoint lookup_one_var (varNm : string)
   end.
 
 (** Convert a [(variable_name, type)] list to a [(tVar name, type)] list. *)
-Fixpoint pairs_to_terms (lst : list (prod string term)) : list (prod term term) :=
+Fixpoint pairs_to_terms (lst : list (prod string term)) : list (prod named_term term) :=
   match lst with
   | [] => []
   | (str,tp) :: t => (tVar str, tp) :: pairs_to_terms t
@@ -274,7 +274,7 @@ Fixpoint lookup_pred_type (indNm : string) (predTypeInf : pred_type_map) : list 
 
 (** Build the right-nested product type of a list of types, using [bool] as the
     empty-list base case. *)
-Fixpoint nested_prod_type (lstTypes : list term) : term :=
+Fixpoint nested_prod_type (lstTypes : list term) : global_term :=
   match lstTypes with
   | [] => <%bool%>
   | [h] => h
@@ -288,7 +288,7 @@ Fixpoint nested_prod_type (lstTypes : list term) : term :=
 
 (** Build the body of a join function for [lstTypes]: folds [join_pair] over
     variables named "o0", "o1", …, starting at index [n]. *)
-Fixpoint mk_join_body (lstTypes : list term) (n : nat) : term :=
+Fixpoint mk_join_body (lstTypes : list term) (n : nat) : named_term :=
   match lstTypes with
   | [] => <%Success bool true%>
   | [h] => tApp <%join_unit%> [h; tVar ("o" ++ string_of_nat n)]
@@ -307,7 +307,7 @@ Fixpoint mk_join_body (lstTypes : list term) (n : nat) : term :=
 (** Wrap [fnBody] in lambdas "o0 : animation_result T0",
     "o1 : ...", etc. for each type in [lstTypes]. *)
 Fixpoint mk_join_lam (lstTypes : list term)
-  (n : nat) (fnBody : term) : term :=
+  (n : nat) (fnBody : term) : named_term :=
   match lstTypes with
   | [] => fnBody
   | [h] =>
@@ -321,24 +321,24 @@ Fixpoint mk_join_lam (lstTypes : list term)
 
 (** Build a quoted function that joins multiple [animation_result] values into one
     product result, combining [mk_join_body] and [mk_join_lam]. *)
-Definition mk_join_tm (lstTypes : list term) : term :=
+Definition mk_join_tm (lstTypes : list term) : named_term :=
 let fnBody := mk_join_body lstTypes 0 in
 mk_join_lam lstTypes 0 fnBody.
 
 (** Build a quoted term [eq_outcome tpTm tpEqFn]: the equality function on
     [animation_result tpTm] using the boolean equality [tpEqFn] on the base type. *)
-Definition mk_eq_outcome_tm (tpTm tpEqFn : term)
-  : term :=
+Definition mk_eq_outcome_tm (tpTm tpEqFn : global_term)
+  : global_term :=
   tApp <%eq_outcome%> [tpTm; tpEqFn].
 
 (** Build a quoted term that joins the [animation_result] values of all output
     variables [outVars] into a single product result using [mk_join_tm]. *)
-Definition mk_output_prod_tm (outVars : list (prod string term)) : term :=
+Definition mk_output_prod_tm (outVars : list (prod string term)) : named_term :=
 tApp (mk_join_tm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
 
 (** Wrap [fnBody] in a sequence of lambda abstractions, one for each [(name, type)]
     pair in [inVars], building innermost-first. *)
-Fixpoint mk_lam_chain (inVars : list (prod string term)) (fnBody : term) :=
+Fixpoint mk_lam_chain (inVars : list (prod string term)) (fnBody : term) : term :=
   match inVars with
   | [] => fnBody
 
