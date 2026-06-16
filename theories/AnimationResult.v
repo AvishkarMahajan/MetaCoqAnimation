@@ -39,10 +39,10 @@ Definition compose_outcome
 
 (** Constant function that always returns fuel error.
     Used as a fallback when fuel is exhausted. *)
-Definition fuel_error_fn (inputType : Type)
-  (outputType' : Type)
-  : inputType -> animation_result outputType' :=
-  fun x : inputType => FuelError outputType'.
+Definition fuel_error_fn (in_tp : Type)
+  (out_tp' : Type)
+  : in_tp -> animation_result out_tp' :=
+  fun x : in_tp => FuelError out_tp'.
 
 (** Adapt a function returning [animation_result (option B)] into one returning
     [animation_result B]: [Some v] becomes [Success v], [None] becomes [NoMatch]. *)

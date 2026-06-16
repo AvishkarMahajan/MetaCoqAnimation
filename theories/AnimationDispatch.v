@@ -34,155 +34,155 @@ Definition id_fn (A : Type) (x : A) := x.
 Definition animate_let_binding {A : Type}
   (ind : A) (kn : kername)
   (conjunct' : tagged_conjunct)
-  (inputTm : term) (inputTp : term)
-  (inputVars : list string)
+  (in_tm : term) (in_tp : term)
+  (in_vars : list string)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad term :=
 
-outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
-outputTp <- tmEval all (conjunct'.(tc_out_type)) ;;
+out_tm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
+out_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
 let conjunct := conjunct'.(tc_conjunct) in
 
 match conjunct with
  | tApp <%eq%> [typeVar; t1; t2] => match t1 with
-                                    | tVar str =>  match inputVars with
+                                    | tVar str =>  match in_vars with
                                                     | [] => tmReturn (tApp <%Success%> [typeVar;t2])
                                                     | h :: rest =>
                                                       compile_let_clause ind kn conjunct
-                                                        inputTm inputTp outputTm
-                                                        outputTp inputVars fuel
+                                                        in_tm in_tp out_tm
+                                                        out_tp in_vars fuel
                                                    end
                                     | tApp (tConstruct ind_type k lst) lstArgs =>
                                       compile_eq_binders_with_vars ind kn
-                                        conjunct inputTm inputTp
-                                        outputTm outputTp inputVars fuel
+                                        conjunct in_tm in_tp
+                                        out_tm out_tp in_vars fuel
                                     | _ => tmFail "incorrect Conj shape"
                                     end
 
  | _ => match get_ind_name conjunct with
-        | Some (indNm, _lstArgs) =>
-            match fst (lookup_mode indNm modes) with
-            | [] => animate_no_input ind kn conjunct' modes predTypeInf allVarTpInf fuel
-            | _ => compile_clause ind kn conjunct' modes predTypeInf allVarTpInf fuel
+        | Some (ind_nm, _lstArgs) =>
+            match fst (lookup_mode ind_nm modes) with
+            | [] => animate_no_input ind kn conjunct' modes pred_types var_env fuel
+            | _ => compile_clause ind kn conjunct' modes pred_types var_env fuel
             end
         | None => tmFail "incorrect Conj shape"
         end
 end.
 
 (** Wrap an animation function call in a [tLetIn] that binds the output variable,
-    extending [partialLetfn].  Handles three cases: no inputs (direct value),
+    extending [partial_fn].  Handles three cases: no inputs (direct value),
     a single input (apply with fuel + input), or multiple inputs (join first). *)
 Definition build_let_chain_step
-  (outputVarNm : string) (outputVarTp : term)
-  (inputVarsLst : list (prod term term))
-  (animationFn : term)
-  (partialLetfn : term -> term) : (term -> term) :=
-  match inputVarsLst with
+  (out_var_nm : string) (out_var_tp : term)
+  (in_vars_lst : list (prod term term))
+  (anim_fn : term)
+  (partial_fn : term -> term) : (term -> term) :=
+  match in_vars_lst with
   | [] =>
-    (fun t => partialLetfn
+    (fun t => partial_fn
       ((tLetIn
-        {| binder_name := nNamed outputVarNm;
+        {| binder_name := nNamed out_var_nm;
            binder_relevance := Relevant |}
-        (animationFn)
-        (tApp <%animation_result%> [outputVarTp]))
+        (anim_fn)
+        (tApp <%animation_result%> [out_var_tp]))
         t))
   | [h] =>
-    (fun t => partialLetfn
+    (fun t => partial_fn
       ((tLetIn
-        {| binder_name := nNamed outputVarNm;
+        {| binder_name := nNamed out_var_nm;
            binder_relevance := Relevant |}
-        (tApp animationFn [(tVar "fuel"); fst h])
-        (tApp <%animation_result%> [outputVarTp]))
+        (tApp anim_fn [(tVar "fuel"); fst h])
+        (tApp <%animation_result%> [out_var_tp]))
         t))
   | _ =>
-    (fun t => partialLetfn
+    (fun t => partial_fn
       ((tLetIn
-        {| binder_name := nNamed outputVarNm;
+        {| binder_name := nNamed out_var_nm;
            binder_relevance := Relevant |}
-        (tApp animationFn
+        (tApp anim_fn
           [(tVar "fuel");
-           (tApp (mk_join_tm (map snd inputVarsLst))
-              (map fst inputVarsLst))])
-        (tApp <%animation_result%> [outputVarTp]))
+           (tApp (mk_join_tm (map snd in_vars_lst))
+              (map fst in_vars_lst))])
+        (tApp <%animation_result%> [out_var_tp]))
         t))
   end.
 
 (** Animate one conjunction as a let-binding step: compile [conjunct'] into
-    a function and wrap it in a let that extends [partialLetfn]. *)
+    a function and wrap it in a let that extends [partial_fn]. *)
 Definition animate_one_let {A : Type}
   (ind : A) (kn : kername)
   (conjunct' : tagged_conjunct)
-  (inputVarsLst : list (prod string term))
-  (partialLetfn : term -> term)
+  (in_vars_lst : list (prod string term))
+  (partial_fn : term -> term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term -> term) :=
-let inputTm := tele_to_prod_tm inputVarsLst in
-let inputTp := tele_to_prod_tp inputVarsLst in
-let inputVarsLstTm := pairs_to_terms inputVarsLst in
-outputVarNm <- tmEval all (conjunct'.(tc_out_var)) ;;
-outputVarTp <- tmEval all (conjunct'.(tc_out_type)) ;;
-animationFn <- animate_let_binding (ind) (kn) (conjunct')
-  (inputTm) (inputTp) (map fst inputVarsLst)
-  (modes) (predTypeInf) (allVarTpInf) fuel ;;
-tmReturn (build_let_chain_step (outputVarNm) (outputVarTp)
-  (inputVarsLstTm) (animationFn) (partialLetfn)).
+let in_tm := tele_to_prod_tm in_vars_lst in
+let in_tp := tele_to_prod_tp in_vars_lst in
+let inputVarsLstTm := pairs_to_terms in_vars_lst in
+out_var_nm <- tmEval all (conjunct'.(tc_out_var)) ;;
+out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
+anim_fn <- animate_let_binding (ind) (kn) (conjunct')
+  (in_tm) (in_tp) (map fst in_vars_lst)
+  (modes) (pred_types) (var_env) fuel ;;
+tmReturn (build_let_chain_step (out_var_nm) (out_var_tp)
+  (inputVarsLstTm) (anim_fn) (partial_fn)).
 
 (** Animate one conjunction as a boolean predicate guard: compile [conjunct'] and
-    produce a [and_outcome_bool] expression that extends [partialGuard]. *)
+    produce a [and_outcome_bool] expression that extends [guard_acc]. *)
 Definition animate_one_guard {A : Type}
   (ind : A) (kn : kername)
   (conjunct' : tagged_conjunct)
-  (inputVarsLst : list (prod string term))
-  (partialGuard : term)
+  (in_vars_lst : list (prod string term))
+  (guard_acc : term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad term :=
-let inputTm := tele_to_prod_tm inputVarsLst in
-let inputTp := tele_to_prod_tp inputVarsLst in
-let inputVarsLstTm := pairs_to_terms inputVarsLst in
-inputTm' <- tmEval all inputTm;;
-inputTp' <- tmEval all inputTp;;
-outputVarNm <- tmEval all (conjunct'.(tc_out_var)) ;;
-outputVarTp <- tmEval all (conjunct'.(tc_out_type)) ;;
+let in_tm := tele_to_prod_tm in_vars_lst in
+let in_tp := tele_to_prod_tp in_vars_lst in
+let inputVarsLstTm := pairs_to_terms in_vars_lst in
+in_tm' <- tmEval all in_tm;;
+in_tp' <- tmEval all in_tp;;
+out_var_nm <- tmEval all (conjunct'.(tc_out_var)) ;;
+out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
 
-animationFn <- animate_let_binding (ind) (kn) (conjunct') (inputTm) (inputTp)
-                                 (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
+anim_fn <- animate_let_binding (ind) (kn) (conjunct') (in_tm) (in_tp)
+                                 (map fst in_vars_lst) (modes) (pred_types) (var_env) fuel ;;
 
 tmReturn (tApp <%and_outcome_bool%>
-  [partialGuard ;
-   tApp (mk_eq_outcome_tm outputVarTp
-     (type_to_eq_fn outputVarTp))
-     [tVar outputVarNm ;
-      (tApp animationFn
+  [guard_acc ;
+   tApp (mk_eq_outcome_tm out_var_tp
+     (type_to_eq_fn out_var_tp))
+     [tVar out_var_nm ;
+      (tApp anim_fn
         [(tVar "fuel");
-         (tApp (mk_join_tm (map snd inputVarsLst))
+         (tApp (mk_join_tm (map snd in_vars_lst))
             (map fst inputVarsLstTm))])] ]).
 
-(** Extract input or output variables from a conjunct (named) using [eqProj]
-    for equalities and [modeProj] for inductive predicate applications. *)
+(** Extract input or output variables from a conjunct (named) using [eq_proj]
+    for equalities and [mode_proj] for inductive predicate applications. *)
 Definition conj_vars_by_role
-  (eqProj : named_term -> named_term -> list string)
-  (modeProj : (list nat * list nat) ->
+  (eq_proj : named_term -> named_term -> list string)
+  (mode_proj : (list nat * list nat) ->
     list term -> list term)
   (conjunct' : tagged_conjunct)
-  (allVarTpInf : list (prod string term))
+  (var_env : list (prod string term))
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
+  (pred_types : pred_type_map)
   : list (prod string term) :=
 let conjunct := conjunct'.(tc_conjunct) in
   match conjunct with
-  | tApp <%eq%> [typeVar; t1; t2] => lookup_vars (eqProj t1 t2) allVarTpInf
-  | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs =>
-     let mode := lookup_mode indNm modes in
-     lookup_vars (ordered_vars_of_list (modeProj mode lstArgs)) allVarTpInf
-  | tApp (tVar indNm) lstArgs =>
-     let mode := lookup_mode indNm modes in
-     lookup_vars (ordered_vars_of_list (modeProj mode lstArgs)) allVarTpInf
+  | tApp <%eq%> [typeVar; t1; t2] => lookup_vars (eq_proj t1 t2) var_env
+  | tApp (tInd {| inductive_mind := (_path, ind_nm); inductive_ind := 0 |} []) lstArgs =>
+     let mode := lookup_mode ind_nm modes in
+     lookup_vars (ordered_vars_of_list (mode_proj mode lstArgs)) var_env
+  | tApp (tVar ind_nm) lstArgs =>
+     let mode := lookup_mode ind_nm modes in
+     lookup_vars (ordered_vars_of_list (mode_proj mode lstArgs)) var_env
   | _ => []
   end.
 
@@ -200,13 +200,13 @@ Definition conj_input_vars :=
 Definition animate_let_with_ctx {A : Type}
   (ind : A) (kn : kername)
   (conjunct' : tagged_conjunct)
-  (partialLetfn : term -> term)
+  (partial_fn : term -> term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term -> term) :=
-let  inputVarsLst := conj_input_vars conjunct' allVarTpInf (modes) (predTypeInf) in
-animate_one_let ind kn conjunct' inputVarsLst partialLetfn (modes) (predTypeInf) (allVarTpInf) fuel.
+let  in_vars_lst := conj_input_vars conjunct' var_env (modes) (pred_types) in
+animate_one_let ind kn conjunct' in_vars_lst partial_fn (modes) (pred_types) (var_env) fuel.
 
 (** Animate one guard-predicate clause by first computing its input variable
     list (named) from context, then delegating to [animate_one_guard].
@@ -214,54 +214,54 @@ animate_one_let ind kn conjunct' inputVarsLst partialLetfn (modes) (predTypeInf)
 Definition animate_guard_with_ctx {A : Type}
   (ind : A) (kn : kername)
   (conjunct' : tagged_conjunct)
-  (partialGuard : term)
+  (guard_acc : term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term) :=
 
-let  inputVarsLst := conj_input_vars conjunct' allVarTpInf (modes) (predTypeInf) in
-animate_one_guard ind kn conjunct' inputVarsLst
-  partialGuard (modes) (predTypeInf) (allVarTpInf) fuel.
+let  in_vars_lst := conj_input_vars conjunct' var_env (modes) (pred_types) in
+animate_one_guard ind kn conjunct' in_vars_lst
+  guard_acc (modes) (pred_types) (var_env) fuel.
 
 (** Animate a list of let-binding conjuncts left-to-right, threading the
-    accumulated let-binding function [partialLetfn] through each step. *)
+    accumulated let-binding function [partial_fn] through each step. *)
 Fixpoint animate_let_list {A : Type}
   (ind : A) (kn : kername)
   (conjs : list tagged_conjunct)
-  (partialLetfn : term -> term)
+  (partial_fn : term -> term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term -> term) :=
   match conjs with
-  | [] => tmReturn partialLetfn
+  | [] => tmReturn partial_fn
   | h :: t =>
     lFn' <- animate_let_with_ctx ind kn h
-      partialLetfn (modes) (predTypeInf)
-      (allVarTpInf) fuel ;;
+      partial_fn (modes) (pred_types)
+      (var_env) fuel ;;
     animate_let_list ind kn t lFn'
-      (modes) (predTypeInf) (allVarTpInf) fuel
+      (modes) (pred_types) (var_env) fuel
   end.
 
 (** Animate a list of predicate guard conjuncts, threading the accumulated
-    boolean guard [partialGuard] through each step. *)
+    boolean guard [guard_acc] through each step. *)
 Fixpoint animate_guard_list {A : Type}
   (ind : A) (kn : kername)
   (conjs : list tagged_conjunct)
-  (partialGuard : term)
+  (guard_acc : term)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term) :=
   match conjs with
-  | [] => tmReturn partialGuard
+  | [] => tmReturn guard_acc
   | h :: t =>
     pg <- animate_guard_with_ctx ind kn h
-      partialGuard (modes) (predTypeInf)
-      (allVarTpInf) fuel ;;
+      guard_acc (modes) (pred_types)
+      (var_env) fuel ;;
     animate_guard_list ind kn t pg
-      (modes) (predTypeInf) (allVarTpInf) fuel
+      (modes) (pred_types) (var_env) fuel
   end.
 
 (** Combine a list of equality conjuncts (named) into a single boolean guard
@@ -277,35 +277,35 @@ Fixpoint build_eq_guard_chain (conj : list named_term) : named_term :=
   end.
 
 (** Compile a guard-equality clause into an executable function (de Bruijn):
-    build a boolean guard from [gConjsEq] via [build_eq_guard_chain], wrap it
+    build a boolean guard from [g_conjs_eq] via [build_eq_guard_chain], wrap it
     in a [build_guarded_body] body, and generate a pattern-matching function.
-    Type params [inputTm], [inputTp], [outputTm], [outputTp] are global. *)
+    Type params [in_tm], [in_tp], [out_tm], [out_tp] are global. *)
 Definition compile_guard_clause {A : Type}
   (induct : A) (kn : kername)
-  (gConjsEq : list named_term)
-  (inputTm : global_term) (inputTp : global_term)
-  (outputTm : global_term) (outputTp : global_term)
+  (g_conjs_eq : list named_term)
+  (in_tm : global_term) (in_tp : global_term)
+  (out_tm : global_term) (out_tp : global_term)
   (fuel : nat) : TemplateMonad term :=
 
-  (let postOut' := (build_guarded_body outputTm outputTp
+  (let post_out' := (build_guarded_body out_tm out_tp
 
-    (build_eq_guard_chain (gConjsEq) )) in
+    (build_eq_guard_chain (g_conjs_eq) )) in
 
-    let postOutType' := tApp <% @option %> [outputTp] in
+    let post_out_tp' := tApp <% @option %> [out_tp] in
 
-    let postInType' := inputTp in
+    let post_in_tp' := in_tp in
 
-    let postIn' := inputTm in
+    let post_in' := in_tm in
 
-    let postIn := tApp <%Success%> [postInType'; postIn'] in
-    let postInType := tApp <%animation_result%> [postInType'] in
+    let post_in := tApp <%Success%> [post_in_tp'; post_in'] in
+    let post_in_tp := tApp <%animation_result%> [post_in_tp'] in
 
-    let postOut := tApp <%Success%> [postOutType'; postOut'] in
-    let postOutType := tApp <%animation_result%> [postOutType'] in
+    let post_out := tApp <%Success%> [post_out_tp'; post_out'] in
+    let post_out_tp := tApp <%animation_result%> [post_out_tp'] in
 
-     t0 <- compile_equality_clause induct postIn' postInType' postOut' postOutType'  fuel ;;
+     t0 <- compile_equality_clause induct post_in' post_in_tp' post_out' post_out_tp'  fuel ;;
 
-     let t1 := (tApp <%option_to_result%> [postInType'; outputTp; t0]) in
+     let t1 := (tApp <%option_to_result%> [post_in_tp'; out_tp; t0]) in
      match DB.de_bruijn_option t1 with
      | Some db_t1 =>
        t' <- tmEval all db_t1 ;;
@@ -314,27 +314,27 @@ Definition compile_guard_clause {A : Type}
      end).
 
 (** Lift [compile_guard_clause] to work directly with variable type lists by
-    computing the global product input/output types from [allVarTpInf] and
-    [outVars].  Returns a de Bruijn term. *)
+    computing the global product input/output types from [var_env] and
+    [out_vars].  Returns a de Bruijn term. *)
 Definition animate_guard_eq {A : Type}
   (induct : A) (kn : kername)
-  (gConjsEq : list named_term)
-  (allVarTpInf : list (prod string term))
-  (outVars : list (prod string term))
+  (g_conjs_eq : list named_term)
+  (var_env : list (prod string term))
+  (out_vars : list (prod string term))
   (fuel : nat) : TemplateMonad term :=
-compile_guard_clause induct kn gConjsEq
-  (tele_to_prod_tm allVarTpInf)
-  (tele_to_prod_tp allVarTpInf)
-  (tele_to_prod_tm outVars)
-  (tele_to_prod_tp outVars) fuel.
+compile_guard_clause induct kn g_conjs_eq
+  (tele_to_prod_tm var_env)
+  (tele_to_prod_tp var_env)
+  (tele_to_prod_tm out_vars)
+  (tele_to_prod_tp out_vars) fuel.
 
 (** Build a de Bruijn term that pattern-matches an [animation_result bool] guard
-    and dispatches to one of four continuations: [succTrueRetTm] (guard true),
-    [succFalseRetTm] (guard false), [noMatchRetTm], or [fuelErrorRetTm].
+    and dispatches to one of four continuations: [succ_true] (guard true),
+    [succ_false] (guard false), [no_match], or [fuel_error].
     Returns a de Bruijn case expression. *)
 Definition branch_on_bool
-  (retType succTrueRetTm succFalseRetTm
-   noMatchRetTm fuelErrorRetTm : term) : term :=
+  (ret_tp succ_true succ_false
+   no_match fuel_error : term) : term :=
 let splitSuccBinder := {| binder_name := nNamed "splitSuccCase"; binder_relevance := Relevant |} in
 let gcPredBinder := {| binder_name := nNamed "gcPred"; binder_relevance := Relevant |} in
 let boolCase :=
@@ -342,127 +342,127 @@ let boolCase :=
     {| ci_ind := {| inductive_mind := <?bool?>; inductive_ind := 0 |};
        ci_npar := 0; ci_relevance := Relevant |}
     {| puinst := []; pparams := [];
-       pcontext := [splitSuccBinder]; preturn := retType |}
+       pcontext := [splitSuccBinder]; preturn := ret_tp |}
     (tVar "splitSuccCase")
-    [{| bcontext := []; bbody := succTrueRetTm |};
-     {| bcontext := []; bbody := succFalseRetTm |}] in
+    [{| bcontext := []; bbody := succ_true |};
+     {| bcontext := []; bbody := succ_false |}] in
 tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
   (tCase
     {| ci_ind := {| inductive_mind := (MPfile ["AnimationResult"; "Animation"], "animation_result");
                      inductive_ind := 0 |};
        ci_npar := 1; ci_relevance := Relevant |}
     {| puinst := []; pparams := [<%bool%>];
-       pcontext := [gcPredBinder]; preturn := retType |}
+       pcontext := [gcPredBinder]; preturn := ret_tp |}
     (tVar "gcPred")
-    [{| bcontext := []; bbody := fuelErrorRetTm |};
+    [{| bcontext := []; bbody := fuel_error |};
      {| bcontext := [splitSuccBinder]; bbody := boolCase |};
-     {| bcontext := []; bbody := noMatchRetTm |}]).
+     {| bcontext := []; bbody := no_match |}]).
 
 (** Animate predicate guard conjuncts and branch on their boolean result:
-    passes [guardConEqAn] (the equality guard) as the [true] branch and
+    passes [guard_eq_an] (the equality guard) as the [true] branch and
     [NoMatch] as the [false] branch.  Type params are global.
     Returns a de Bruijn term. *)
 Definition animate_guard_bool_branch {A : Type}
   (ind : A) (kn : kername)
-  (predGuardConjs : list tagged_conjunct)
+  (pred_guard : list tagged_conjunct)
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * global_term))
-  (outVars : list (prod string global_term))
-  (guardConEqAn : term)
+  (pred_types : pred_type_map)
+  (var_env : list (string * global_term))
+  (out_vars : list (prod string global_term))
+  (guard_eq_an : term)
   (fuel : nat) : TemplateMonad (term) :=
 predGuardCon <- animate_guard_list (ind) (kn)
-  (predGuardConjs) <%Success bool true%>
-  (modes) (predTypeInf) (allVarTpInf) (fuel) ;;
-let brOutBool :=
+  (pred_guard) <%Success bool true%>
+  (modes) (pred_types) (var_env) (fuel) ;;
+let br_out_bool :=
   branch_on_bool
     (tApp <%animation_result%>
-      [tele_to_prod_tp outVars])
-    (guardConEqAn)
-    (tApp <%NoMatch%> [tele_to_prod_tp outVars])
-    (tApp <%NoMatch%> [tele_to_prod_tp outVars])
+      [tele_to_prod_tp out_vars])
+    (guard_eq_an)
+    (tApp <%NoMatch%> [tele_to_prod_tp out_vars])
+    (tApp <%NoMatch%> [tele_to_prod_tp out_vars])
     (tApp <%FuelError%>
-      [tele_to_prod_tp outVars]) in
-tmReturn (tApp brOutBool [predGuardCon]).
+      [tele_to_prod_tp out_vars]) in
+tmReturn (tApp br_out_bool [predGuardCon]).
 
-(** Insert [tLetIn] bindings that split a product [inTerm] (de Bruijn) into
-    individual variable names according to [inVars], using
+(** Insert [tLetIn] bindings that split a product [in_term] (de Bruijn) into
+    individual variable names according to [in_vars], using
     [split_outcome_fst]/[Snd].  Returns a de Bruijn term. *)
-Fixpoint split_inputs (inVars : list (string * term)) (inTerm : term) (fnBody : term) : term :=
-  match inVars with
-  | [] => fnBody
+Fixpoint split_inputs (in_vars : list (string * term)) (in_term : term) (body : term) : term :=
+  match in_vars with
+  | [] => body
   | [h] => (tLetIn {| binder_name := nNamed (fst h); binder_relevance := Relevant |}
-                                 inTerm (tApp <%animation_result%> [(snd h)])) fnBody
+                                 in_term (tApp <%animation_result%> [(snd h)])) body
   | h' :: rest' =>
     (tLetIn
       {| binder_name := nNamed (fst h');
          binder_relevance := Relevant |}
       (tApp <% split_outcome_fst %>
         [(snd h'); (tele_to_prod_tp rest');
-         inTerm])
+         in_term])
       (tApp <%animation_result%> [(snd h')]))
       (split_inputs rest'
         (tApp <% split_outcome_snd %>
           [(snd h'); (tele_to_prod_tp rest');
-           inTerm])
-        fnBody)
+           in_term])
+        body)
   end.
-(** Convenience wrapper: split the [input] variable into [inVars] bindings
-    (de Bruijn), or leave [fnBody] unchanged if [inVars] is empty. *)
-Definition split_inputs' (inVars : list (string * term)) (fnBody : term) : term :=
-  match inVars with
-  | [] => fnBody
-  | _ => split_inputs inVars (tVar "input") fnBody
+(** Convenience wrapper: split the [input] variable into [in_vars] bindings
+    (de Bruijn), or leave [body] unchanged if [in_vars] is empty. *)
+Definition split_inputs' (in_vars : list (string * term)) (body : term) : term :=
+  match in_vars with
+  | [] => body
+  | _ => split_inputs in_vars (tVar "input") body
   end.
 
 (** Assemble the full animated body of a constructor clause: animate the
-    let-binding conjuncts [lConjs''], combine the equality guard [gConjsEq'']
-    (named) and predicate guards [gConjsPred''] into a single branching guard,
+    let-binding conjuncts [l_conjs''], combine the equality guard [g_conjs_eq'']
+    (named) and predicate guards [g_conjs_pred''] into a single branching guard,
     and wrap everything in lambdas for the animated recursive functions and the
     input.  Returns a de Bruijn term. *)
 Definition animate_lets_and_guards {A : Type}
   (ind : A) (kn : kername)
-  (lConjs'' : list tagged_conjunct)
-  (gConjsEq'' : list named_term)
-  (gConjsPred'' : list tagged_conjunct)
-  (inVars : list (prod string term))
-  (outVars : list (prod string term))
+  (l_conjs'' : list tagged_conjunct)
+  (g_conjs_eq'' : list named_term)
+  (g_conjs_pred'' : list tagged_conjunct)
+  (in_vars : list (prod string term))
+  (out_vars : list (prod string term))
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
-  (allVarTpInf : list (string * term))
-  (lhsPreds : list (string * term))
+  (pred_types : pred_type_map)
+  (var_env : list (string * term))
+  (lhs_preds : list (string * term))
   (fuel : nat) : TemplateMonad term :=
-lConjs <- tmEval all lConjs'';;
-gConjsEq <- tmEval all gConjsEq'';;
-gConjsPred <- tmEval all gConjsPred'';;
+l_conjs <- tmEval all l_conjs'';;
+g_conjs_eq <- tmEval all g_conjs_eq'';;
+g_conjs_pred <- tmEval all g_conjs_pred'';;
 (* Animate let-binding conjuncts into a chain of let-in expressions *)
-letBind <- animate_let_list (ind) kn lConjs
-  (fun t : term => t) (modes) (predTypeInf)
-  (allVarTpInf) (fuel) ;;
+let_bind <- animate_let_list (ind) kn l_conjs
+  (fun t : term => t) (modes) (pred_types)
+  (var_env) (fuel) ;;
 (* Animate equality guards into a boolean function *)
-gFun <- animate_guard_eq ind kn gConjsEq allVarTpInf outVars fuel ;;
-let guardConEqAn := (tApp gFun [tVar "fuel"; mk_output_prod_tm (allVarTpInf)]) in
+g_fn <- animate_guard_eq ind kn g_conjs_eq var_env out_vars fuel ;;
+let guard_eq_an := (tApp g_fn [tVar "fuel"; mk_output_prod_tm (var_env)]) in
 (* Combine predicate guards with equality guard into a branching guard *)
-combineGuard <- animate_guard_bool_branch (ind) (kn)
-  (gConjsPred) (modes) (predTypeInf)
-  (allVarTpInf) (outVars) (guardConEqAn) (fuel);;
+combined <- animate_guard_bool_branch (ind) (kn)
+  (g_conjs_pred) (modes) (pred_types)
+  (var_env) (out_vars) (guard_eq_an) (fuel);;
   (* Wrap in lambdas for recursive function args, fuel, and input *)
-  match inVars with
+  match in_vars with
   | h :: rest =>
     tmReturn (mk_lam_chain
-      (mk_animated_names lhsPreds ++ [("fuel", <%nat%>)])
+      (mk_animated_names lhs_preds ++ [("fuel", <%nat%>)])
       (tLam "input"
         (tApp <%animation_result%>
-          [tele_to_prod_tp inVars])
-        (split_inputs' inVars
-          (letBind combineGuard))))
+          [tele_to_prod_tp in_vars])
+        (split_inputs' in_vars
+          (let_bind combined))))
   | [] =>
     tmReturn (mk_lam_chain
-      (mk_animated_names lhsPreds ++ [("fuel", <%nat%>)])
+      (mk_animated_names lhs_preds ++ [("fuel", <%nat%>)])
       (tLam "input"
         (tApp <%animation_result%> [<%bool%>])
-        (split_inputs' inVars
-          (letBind combineGuard))))
+        (split_inputs' in_vars
+          (let_bind combined))))
 
   end.
 
@@ -485,15 +485,15 @@ Fixpoint filter_conjs_pred (lst : list named_term) : list named_term :=
   | (tApp <%eq%> [typeVar; t1; t2]) :: rest =>  filter_conjs_pred rest
 
   | (tApp (tInd
-      {| inductive_mind := (path, indNm);
+      {| inductive_mind := (path, ind_nm);
          inductive_ind := 0 |} []) lstArgs)
       :: rest =>
     (tApp (tInd
-      {| inductive_mind := (path, indNm);
+      {| inductive_mind := (path, ind_nm);
          inductive_ind := 0 |} []) lstArgs)
       :: filter_conjs_pred rest
 
-  | (tApp (tVar indNm) lstArgs) :: rest => (tApp (tVar indNm) lstArgs) :: filter_conjs_pred rest
+  | (tApp (tVar ind_nm) lstArgs) :: rest => (tApp (tVar ind_nm) lstArgs) :: filter_conjs_pred rest
 
   | _h :: rest => filter_conjs_pred rest
   end.
@@ -509,8 +509,8 @@ Definition has_right_shape (t : named_term) : bool :=
 
 (** Build a de Bruijn product type from a list of (term * type) pairs;
     base case is [bool]. *)
-Fixpoint mk_lhs_type_pure (lhsIndPre : list (term * term)) : term :=
-  match lhsIndPre with
+Fixpoint mk_lhs_type_pure (lhs_preds : list (term * term)) : term :=
+  match lhs_preds with
   | []      => <%bool%>
   | [h]     => snd h
   | h :: t  => tApp (tInd {| inductive_mind := <?prod?>; inductive_ind := 0 |} [])
@@ -519,8 +519,8 @@ Fixpoint mk_lhs_type_pure (lhsIndPre : list (term * term)) : term :=
 
 (** Build a de Bruijn product term from a list of (term * type) pairs;
     base case is [true]. *)
-Fixpoint mk_lhs_term_pure (lhsIndPre : list (term * term)) : term :=
-  match lhsIndPre with
+Fixpoint mk_lhs_term_pure (lhs_preds : list (term * term)) : term :=
+  match lhs_preds with
   | []     => <%true%>
   | [h]    => fst h
   | h :: t => tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
@@ -528,30 +528,30 @@ Fixpoint mk_lhs_term_pure (lhsIndPre : list (term * term)) : term :=
   end.
 
 (** Topologically sort and orient conjuncts (named) by known variables [kv]:
-    equalities where one side is fully known go to [sortedConjs] (let-bindings);
-    equalities where both sides are known go to [guardConjs] (boolean guards);
-    predicate applications ready to evaluate go to [sortedConjs];
-    all others are deferred in [remConjs] for the next pass. *)
+    equalities where one side is fully known go to [sorted_conjs] (let-bindings);
+    equalities where both sides are known go to [guard_conjs] (boolean guards);
+    predicate applications ready to evaluate go to [sorted_conjs];
+    all others are deferred in [rem_conjs] for the next pass. *)
 Fixpoint classify_premises
   (modes : mode_map)
-  (currentConjs : list named_term)
-  (remConjs : list named_term)
-  (sortedConjs : list named_term)
-  (guardConjs : list named_term)
+  (curr_conjs : list named_term)
+  (rem_conjs : list named_term)
+  (sorted_conjs : list named_term)
+  (guard_conjs : list named_term)
   (kv : (list string))
   (fuel : nat)
   : TemplateMonad (prod (list named_term) (list named_term)) :=
   match fuel with
   | 0 =>
-    if andb (is_nil remConjs) (is_nil currentConjs)
-    then tmReturn (sortedConjs, guardConjs)
+    if andb (is_nil rem_conjs) (is_nil curr_conjs)
+    then tmReturn (sorted_conjs, guard_conjs)
     else tmFail "insufficient fuel to sort conjs"
   | S n =>
-    if (andb (is_nil remConjs) (is_nil currentConjs))
-    then tmReturn (sortedConjs, guardConjs)
+    if (andb (is_nil rem_conjs) (is_nil curr_conjs))
+    then tmReturn (sorted_conjs, guard_conjs)
     else
-           match currentConjs with
-            | [] => classify_premises modes remConjs [] sortedConjs guardConjs kv n
+           match curr_conjs with
+            | [] => classify_premises modes rem_conjs [] sorted_conjs guard_conjs kv n
             | conj' :: t =>
               match conj' with
               | tApp <%eq%> [typeVar; t1; t2] =>
@@ -559,59 +559,59 @@ Fixpoint classify_premises
                   (is_subset_strings (ordered_vars t1) kv)
                   (is_subset_strings (ordered_vars t2) kv)
                 then
-                  classify_premises modes t remConjs
-                    sortedConjs (conj' :: guardConjs)
+                  classify_premises modes t rem_conjs
+                    sorted_conjs (conj' :: guard_conjs)
                     kv n
                 else
                 (if (andb
                   (is_subset_strings (ordered_vars t1) kv)
                   (has_right_shape t2))
                 then
-                  classify_premises modes t remConjs
+                  classify_premises modes t rem_conjs
                     (tApp <%eq%>
-                      [typeVar; t2; t1] :: sortedConjs)
-                    (guardConjs)
+                      [typeVar; t2; t1] :: sorted_conjs)
+                    (guard_conjs)
                     (ordered_vars t2 ++ kv) n
                 else
                 (if (andb
                   (is_subset_strings (ordered_vars t2) kv)
                   (has_right_shape t1))
                 then
-                  classify_premises modes t remConjs
+                  classify_premises modes t rem_conjs
                     (tApp <%eq%>
-                      [typeVar; t1; t2] :: sortedConjs)
-                    (guardConjs)
+                      [typeVar; t1; t2] :: sorted_conjs)
+                    (guard_conjs)
                     (ordered_vars t1 ++ kv) n
                 else
                 (classify_premises modes t
-                  (conj' :: remConjs) (sortedConjs)
-                  (guardConjs) (kv) n)))
+                  (conj' :: rem_conjs) (sorted_conjs)
+                  (guard_conjs) (kv) n)))
               | _ =>
                 match get_ind_name conj' with
-                | Some (indNm, lstArgs) =>
+                | Some (ind_nm, lstArgs) =>
                   if is_subset_strings
                     (concat
                       (List.map ordered_vars lstArgs))
                     kv
                   then
-                    classify_premises modes t remConjs
-                      sortedConjs
-                      (conj' :: guardConjs) kv n
+                    classify_premises modes t rem_conjs
+                      sorted_conjs
+                      (conj' :: guard_conjs) kv n
                   else if is_subset_strings
                     (ordered_vars_of_list
-                      (select_in_args indNm
+                      (select_in_args ind_nm
                         modes lstArgs))
                     kv
                   then
-                    classify_premises modes t remConjs
-                      (conj' :: sortedConjs) guardConjs
+                    classify_premises modes t rem_conjs
+                      (conj' :: sorted_conjs) guard_conjs
                       (ordered_vars_of_list
-                        (select_out_args indNm
+                        (select_out_args ind_nm
                           modes lstArgs) ++ kv) n
                   else
                     classify_premises modes t
-                      (conj' :: remConjs) sortedConjs
-                      guardConjs kv n
+                      (conj' :: rem_conjs) sorted_conjs
+                      guard_conjs kv n
                 | None =>
                   tmFail "incorrect conj shape"
                 end
@@ -626,14 +626,14 @@ Definition get_classified
   (proj : list named_term * list named_term -> list named_term)
   (doReverse : bool)
   (modes : mode_map)
-  (currentConjs : list named_term)
-  (remConjs : list named_term)
-  (sortedConjs : list named_term)
-  (guardConjs : list named_term)
+  (curr_conjs : list named_term)
+  (rem_conjs : list named_term)
+  (sorted_conjs : list named_term)
+  (guard_conjs : list named_term)
   (kv : (list string))
   (fuel : nat) : TemplateMonad (list named_term) :=
-sConjs <- classify_premises modes (currentConjs)
-  (remConjs) (sortedConjs) (guardConjs)
+sConjs <- classify_premises modes (curr_conjs)
+  (rem_conjs) (sorted_conjs) (guard_conjs)
   (kv) (fuel) ;;
 result <- tmEval all (if doReverse then rev (proj sConjs) else proj sConjs) ;;
 tmReturn result.
@@ -647,42 +647,42 @@ Definition get_sorted_guards := get_classified snd false.
     equality, or out-mode arguments of a predicate). *)
 Definition conj_output_vars
   (conj : named_term)
-  (allVarTpInf : list (prod string term))
+  (var_env : list (prod string term))
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
+  (pred_types : pred_type_map)
   : list (prod string term) :=
 conj_vars_by_role
   (fun t1 _t2 => ordered_vars t1)
   (fun mode lstArgs =>
     select_out_by_mode mode lstArgs)
   {| tc_conjunct := conj; tc_out_var := ""%bs; tc_out_type := <%bool%> |}
-  allVarTpInf modes predTypeInf.
+  var_env modes pred_types.
 
 (** Pair each conjunct (named) in [lconjs] with the output variables it
     introduces. *)
 Fixpoint attach_output_vars
   (lconjs : list named_term)
-  (allVarTpInf : list (prod string term))
+  (var_env : list (prod string term))
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
+  (pred_types : pred_type_map)
   : (list (prod term (list (prod string term)))) :=
   match lconjs with
   | [] => []
   | h :: t =>
-    (h, conj_output_vars h allVarTpInf
-      modes predTypeInf)
-      :: attach_output_vars t allVarTpInf
-           modes predTypeInf
+    (h, conj_output_vars h var_env
+      modes pred_types)
+      :: attach_output_vars t var_env
+           modes pred_types
   end.
 
-(** Tag a single conjunct term [lconjt] (named) with each output variable in
-    [lconjV], producing one [(conjunct, output_var)] pair per variable. *)
-Fixpoint attach_var_to_conj (lconjt : named_term)
-  (lconjV : (((list (string * term)))))
+(** Tag a single conjunct term [lconj_t] (named) with each output variable in
+    [lconj_v], producing one [(conjunct, output_var)] pair per variable. *)
+Fixpoint attach_var_to_conj (lconj_t : named_term)
+  (lconj_v : (((list (string * term)))))
   : list tagged_conjunct :=
-  match (lconjV) with
+  match (lconj_v) with
   | [] => []
-  | (h :: rest) => {| tc_conjunct := lconjt; tc_out_var := fst h; tc_out_type := snd h |} :: attach_var_to_conj lconjt rest
+  | (h :: rest) => {| tc_conjunct := lconj_t; tc_out_var := fst h; tc_out_type := snd h |} :: attach_var_to_conj lconj_t rest
   end.
 
 (** Flatten a list of [(conjunct, output_vars)] pairs (named) into a flat list
@@ -699,11 +699,11 @@ Fixpoint attach_vars_to_conjs
     list. *)
 Definition attach_sorted_outputs
   (lconjs : list named_term)
-  (allVarTpInf : list (prod string term))
+  (var_env : list (prod string term))
   (modes : mode_map)
-  (predTypeInf : pred_type_map)
+  (pred_types : pred_type_map)
   : list tagged_conjunct :=
-attach_vars_to_conjs (attach_output_vars lconjs allVarTpInf modes predTypeInf).
+attach_vars_to_conjs (attach_output_vars lconjs var_env modes pred_types).
 
 (** Remove conjuncts whose output variable already appears in [kv] (already defined),
     adding newly seen output variables to [kv] as they are encountered. *)
@@ -744,10 +744,10 @@ Fixpoint filter_conjs_pred' (lst : list tagged_conjunct) : list tagged_conjunct 
     match h.(tc_conjunct) with
     | tApp <%eq%> [typeVar; t1; t2] => filter_conjs_pred' rest
     | tApp (tInd
-        {| inductive_mind := (path, indNm);
+        {| inductive_mind := (path, ind_nm);
            inductive_ind := 0 |} []) lstArgs =>
       h :: filter_conjs_pred' rest
-    | tApp (tVar indNm) lstArgs =>
+    | tApp (tVar ind_nm) lstArgs =>
       h :: filter_conjs_pred' rest
     | _ => filter_conjs_pred' rest
     end

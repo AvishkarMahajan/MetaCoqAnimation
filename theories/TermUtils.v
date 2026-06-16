@@ -38,8 +38,8 @@ Notation "<%bool%>" := (tInd {| inductive_mind := <?bool?>; inductive_ind := 0 |
 
 (** Build a product type from a list of output variable specs.
     Returns bool for empty list, single type for singleton, nested products otherwise. *)
-Fixpoint tele_to_prod_tp (outputData : list (string * term)) :  term :=
-  match outputData with
+Fixpoint tele_to_prod_tp (out_data : list (string * term)) :  term :=
+  match out_data with
   | [] => <%bool%>
   | [h] =>  (snd h)
   | h :: t => let res := tele_to_prod_tp t in  (tApp
@@ -51,8 +51,8 @@ Fixpoint tele_to_prod_tp (outputData : list (string * term)) :  term :=
 
 (** Build a product term from a list of output variables.
     Constructs nested pairs of variables. *)
-Fixpoint tele_to_prod_tm  (outputData : list (string * term )) : named_term :=
-  match outputData with
+Fixpoint tele_to_prod_tm  (out_data : list (string * term )) : named_term :=
+  match out_data with
   | [] => <%true%>
   | [h] => (tVar (fst h))
   | h :: t => let res := tele_to_prod_tm t in
@@ -66,8 +66,8 @@ Open Scope bs.
 
 (** Build the product type of a non-empty list of [(term, type)] pairs.
     Fails if the list is empty; returns a single type for singletons. *)
-Fixpoint mk_lhs_type (lhsIndPre : list (term * term)) : TemplateMonad term :=
-  match lhsIndPre with
+Fixpoint mk_lhs_type (lhs_preds : list (term * term)) : TemplateMonad term :=
+  match lhs_preds with
   | [] => tmFail "no predicates on LHS0"
   | [h] => tmReturn (snd h)
   | h :: t =>
@@ -78,8 +78,8 @@ Fixpoint mk_lhs_type (lhsIndPre : list (term * term)) : TemplateMonad term :=
 
 (** Build the product term of a non-empty list of [(term, type)] pairs.
     Companion to [mk_lhs_type]; fails on empty input. *)
-Fixpoint mk_lhs_term (lhsIndPre : list (term * term)) : TemplateMonad term :=
-  match lhsIndPre with
+Fixpoint mk_lhs_term (lhs_preds : list (term * term)) : TemplateMonad term :=
+  match lhs_preds with
   | [] => tmFail "no predicates on LHS1"
   | [h] => tmReturn (fst h)
   | h :: t =>
@@ -104,25 +104,25 @@ Definition is_nil {A : Type} (lst : list A) : bool :=
   | _ => false
   end.
 
-(** Build a quoted [list term] literal from [lst], with element type [typeofTm]. *)
-Fixpoint build_coq_list (lst : list global_term) (typeofTm : global_term) : global_term :=
+(** Build a quoted [list term] literal from [lst], with element type [elem_tp]. *)
+Fixpoint build_coq_list (lst : list global_term) (elem_tp : global_term) : global_term :=
   match lst with
   | [] => tApp
            (tConstruct
               {|
                 inductive_mind := <?list?>; inductive_ind := 0
-              |} 0 []) [typeofTm]
+              |} 0 []) [elem_tp]
   | h :: t =>  tApp
                (tConstruct
                {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
-               [typeofTm; h; (build_coq_list t typeofTm)]
+               [elem_tp; h; (build_coq_list t elem_tp)]
   end.
 
 (** Dispatch mechanism: try each function in the list until one returns Some.
     Returns None if all functions return None. *)
 Fixpoint dispatch_clauses (inT : Type) (outT : Type)
-                            (listFn : list (inT -> option (outT))) : (inT -> (option outT)) :=
- fun x => match listFn with
+                            (fns : list (inT -> option (outT))) : (inT -> (option outT)) :=
+ fun x => match fns with
            | [] => None
            | h :: t => let r := h x in
                        match r with
@@ -132,10 +132,10 @@ Fixpoint dispatch_clauses (inT : Type) (outT : Type)
           end .
 
 (** Provide a default value for an option-returning function. *)
-Definition with_default (inputType outputType : Type)
-  (default : outputType)
-  (f : inputType -> option outputType)
-  : inputType -> outputType :=
+Definition with_default (in_tp out_tp : Type)
+  (default : out_tp)
+  (f : in_tp -> option out_tp)
+  : in_tp -> out_tp :=
   fun x =>
     match f x with
     | Some y => y
@@ -199,35 +199,35 @@ Fixpoint select_by_indices {A : Type} (indLst : list nat) (l : list A) : list A 
   | h :: t => select_from_index h l ++ select_by_indices t l
   end.
 
-(** Select the input arguments of predicate [indNm] from [lstArgs] according to its mode. *)
-Fixpoint select_in_args (indNm : string) (modes : mode_map) (lstArgs : list term) : list term :=
+(** Select the input arguments of predicate [ind_nm] from [lstArgs] according to its mode. *)
+Fixpoint select_in_args (ind_nm : string) (modes : mode_map) (lstArgs : list term) : list term :=
   match modes with
   | [] => []
   | h :: t =>
-    if String.eqb indNm (fst h)
+    if String.eqb ind_nm (fst h)
     then select_by_indices (fst (snd h)) lstArgs
-    else select_in_args indNm t lstArgs
+    else select_in_args ind_nm t lstArgs
   end.
 
-(** Select the output arguments of predicate [indNm]
+(** Select the output arguments of predicate [ind_nm]
     from [lstArgs] according to its mode. *)
-Fixpoint select_out_args (indNm : string)
+Fixpoint select_out_args (ind_nm : string)
   (modes : mode_map) (lstArgs : list term)
   : list term :=
   match modes with
   | [] => []
   | h :: t =>
-    if String.eqb indNm (fst h)
+    if String.eqb ind_nm (fst h)
     then select_by_indices (snd (snd h)) lstArgs
-    else select_out_args indNm t lstArgs
+    else select_out_args ind_nm t lstArgs
   end.
 
-Fixpoint lookup_one_var (varNm : string)
-  (allVarTpInf : list (prod string term))
+Fixpoint lookup_one_var (var_nm : string)
+  (var_env : list (prod string term))
   : list (prod string term) :=
-  match allVarTpInf with
+  match var_env with
   | [] => []
-  | h :: t => if String.eqb varNm (fst h) then [h] else lookup_one_var varNm t
+  | h :: t => if String.eqb var_nm (fst h) then [h] else lookup_one_var var_nm t
   end.
 
 (** Convert a [(variable_name, type)] list to a [(tVar name, type)] list. *)
@@ -239,22 +239,22 @@ Fixpoint pairs_to_terms (lst : list (prod string term)) : list (prod named_term 
 
 (** Look up each variable name in [lst] in the type environment, dropping missing entries. *)
 Fixpoint lookup_vars (lst : list string)
-  (allVarTpInf : list (prod string term))
+  (var_env : list (prod string term))
   : list (prod string term) :=
   match lst with
   | [] => []
-  | h :: t => match lookup_one_var h allVarTpInf with
-             | [h'] => h' :: lookup_vars t allVarTpInf
-             | _ =>  lookup_vars t allVarTpInf
+  | h :: t => match lookup_one_var h var_env with
+             | [h'] => h' :: lookup_vars t var_env
+             | _ =>  lookup_vars t var_env
             end
   end.
 
-(** Look up the mode (input-position list, output-position list) for [indNm],
+(** Look up the mode (input-position list, output-position list) for [ind_nm],
     returning ([],[]) if not found. *)
-Fixpoint lookup_mode (indNm : string) (modes : mode_map) : (list nat) * (list nat) :=
+Fixpoint lookup_mode (ind_nm : string) (modes : mode_map) : (list nat) * (list nat) :=
   match modes with
   | [] => ([],[])
-  | h :: t => if String.eqb indNm (fst h) then (snd h) else lookup_mode indNm t
+  | h :: t => if String.eqb ind_nm (fst h) then (snd h) else lookup_mode ind_nm t
   end.
 
 (** Select the input arguments from [lstArgs] using a pre-looked-up [mode] pair. *)
@@ -265,17 +265,17 @@ select_by_indices (fst mode) lstArgs.
 Definition select_out_by_mode  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
 select_by_indices (snd mode) lstArgs.
 
-(** Look up the argument types for predicate [indNm] in a type-info table. *)
-Fixpoint lookup_pred_type (indNm : string) (predTypeInf : pred_type_map) : list term :=
-  match predTypeInf with
+(** Look up the argument types for predicate [ind_nm] in a type-info table. *)
+Fixpoint lookup_pred_type (ind_nm : string) (pred_types : pred_type_map) : list term :=
+  match pred_types with
   | [] => []
-  | h :: t => if String.eqb indNm (fst h) then snd h else lookup_pred_type indNm t
+  | h :: t => if String.eqb ind_nm (fst h) then snd h else lookup_pred_type ind_nm t
   end.
 
 (** Build the right-nested product type of a list of types, using [bool] as the
     empty-list base case. *)
-Fixpoint nested_prod_type (lstTypes : list term) : global_term :=
-  match lstTypes with
+Fixpoint nested_prod_type (types : list term) : global_term :=
+  match types with
   | [] => <%bool%>
   | [h] => h
   | h :: t => tApp
@@ -286,10 +286,10 @@ Fixpoint nested_prod_type (lstTypes : list term) : global_term :=
                         |} []) [h ; (nested_prod_type t)]
   end.
 
-(** Build the body of a join function for [lstTypes]: folds [join_pair] over
+(** Build the body of a join function for [types]: folds [join_pair] over
     variables named "o0", "o1", …, starting at index [n]. *)
-Fixpoint mk_join_body (lstTypes : list term) (n : nat) : named_term :=
-  match lstTypes with
+Fixpoint mk_join_body (types : list term) (n : nat) : named_term :=
+  match types with
   | [] => <%Success bool true%>
   | [h] => tApp <%join_unit%> [h; tVar ("o" ++ string_of_nat n)]
   | [h ; h1] =>
@@ -304,45 +304,45 @@ Fixpoint mk_join_body (lstTypes : list term) (n : nat) : named_term :=
        mk_join_body t (S n)]
   end.
 
-(** Wrap [fnBody] in lambdas "o0 : animation_result T0",
-    "o1 : ...", etc. for each type in [lstTypes]. *)
-Fixpoint mk_join_lam (lstTypes : list term)
-  (n : nat) (fnBody : term) : named_term :=
-  match lstTypes with
-  | [] => fnBody
+(** Wrap [body] in lambdas "o0 : animation_result T0",
+    "o1 : ...", etc. for each type in [types]. *)
+Fixpoint mk_join_lam (types : list term)
+  (n : nat) (body : term) : named_term :=
+  match types with
+  | [] => body
   | [h] =>
     tLam ("o" ++ string_of_nat n)
-      (tApp <%animation_result%> [h]) fnBody
+      (tApp <%animation_result%> [h]) body
   | h :: t =>
     tLam ("o" ++ string_of_nat n)
       (tApp <%animation_result%> [h])
-      (mk_join_lam t (S n) fnBody)
+      (mk_join_lam t (S n) body)
   end.
 
 (** Build a quoted function that joins multiple [animation_result] values into one
     product result, combining [mk_join_body] and [mk_join_lam]. *)
-Definition mk_join_tm (lstTypes : list term) : named_term :=
-let fnBody := mk_join_body lstTypes 0 in
-mk_join_lam lstTypes 0 fnBody.
+Definition mk_join_tm (types : list term) : named_term :=
+let body := mk_join_body types 0 in
+mk_join_lam types 0 body.
 
-(** Build a quoted term [eq_outcome tpTm tpEqFn]: the equality function on
-    [animation_result tpTm] using the boolean equality [tpEqFn] on the base type. *)
-Definition mk_eq_outcome_tm (tpTm tpEqFn : global_term)
+(** Build a quoted term [eq_outcome tpTm tp_eq_fn]: the equality function on
+    [animation_result tpTm] using the boolean equality [tp_eq_fn] on the base type. *)
+Definition mk_eq_outcome_tm (tpTm tp_eq_fn : global_term)
   : global_term :=
-  tApp <%eq_outcome%> [tpTm; tpEqFn].
+  tApp <%eq_outcome%> [tpTm; tp_eq_fn].
 
 (** Build a quoted term that joins the [animation_result] values of all output
-    variables [outVars] into a single product result using [mk_join_tm]. *)
-Definition mk_output_prod_tm (outVars : list (prod string term)) : named_term :=
-tApp (mk_join_tm (map snd outVars)) (map (fun e => tVar (fst e)) outVars).
+    variables [out_vars] into a single product result using [mk_join_tm]. *)
+Definition mk_output_prod_tm (out_vars : list (prod string term)) : named_term :=
+tApp (mk_join_tm (map snd out_vars)) (map (fun e => tVar (fst e)) out_vars).
 
-(** Wrap [fnBody] in a sequence of lambda abstractions, one for each [(name, type)]
-    pair in [inVars], building innermost-first. *)
-Fixpoint mk_lam_chain (inVars : list (prod string term)) (fnBody : term) : term :=
-  match inVars with
-  | [] => fnBody
+(** Wrap [body] in a sequence of lambda abstractions, one for each [(name, type)]
+    pair in [in_vars], building innermost-first. *)
+Fixpoint mk_lam_chain (in_vars : list (prod string term)) (body : term) : term :=
+  match in_vars with
+  | [] => body
 
-  | h :: t => tLam (fst h) (snd h) (mk_lam_chain t fnBody)
+  | h :: t => tLam (fst h) (snd h) (mk_lam_chain t body)
   end.
 
 
