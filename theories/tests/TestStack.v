@@ -3,6 +3,8 @@
     The machine executes a list of stack instructions over a state
     (variable environment) and a stack of natural numbers. *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

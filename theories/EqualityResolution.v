@@ -8,6 +8,9 @@
 
     Depends on: [MetaRocqUtils], [PatternCompilation]. *)
 
+Require Import Animation.AnimationTypes.
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 
@@ -59,7 +62,7 @@ Fixpoint type_to_eq_fn (t : term) : term :=
       [tp1; tp2; (type_to_eq_fn tp1); (type_to_eq_fn tp2)]
   | tApp
          (tInd {| inductive_mind :=
-           (MPfile ["MetaRocqUtils"; "Animation"],
+           (MPfile ["AnimationResult"; "Animation"],
             "ind_tp");
            inductive_ind := 0 |} [])
          [tp] => tApp <%eqb_ind_tp%> [tp; type_to_eq_fn tp]
@@ -82,7 +85,7 @@ Fixpoint has_eq_fn (t : term) : bool :=
   | tApp <%prod%> [tp1 ; tp2] => andb (has_eq_fn tp1) (has_eq_fn tp2)
   | tApp
          (tInd {| inductive_mind :=
-           (MPfile ["MetaRocqUtils"; "Animation"],
+           (MPfile ["AnimationResult"; "Animation"],
             "ind_tp");
            inductive_ind := 0 |} [])
          [tp] => has_eq_fn tp

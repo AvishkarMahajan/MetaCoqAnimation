@@ -8,6 +8,9 @@
     Depends on: [MetaRocqUtils], [PatternCompilation], [EqualityResolution],
     [AnimationDispatch]. *)
 
+Require Import Animation.AnimationTypes.
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 
 Require Import Animation.EqualityResolution.

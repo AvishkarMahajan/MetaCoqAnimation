@@ -3,6 +3,8 @@
     Demonstrates the animation of mutually defined relations and
     relations that call auxiliary Fixpoint functions (substitution). *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

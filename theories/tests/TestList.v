@@ -2,6 +2,8 @@
     Tests animation of inductive relations over lists.
     Covers list construction/deconstruction and multiple mode directions. *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

@@ -8,6 +8,9 @@
 
     Depends on: [MetaRocqUtils]. *)
 
+Require Import Animation.AnimationTypes.
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.MetaRocqUtils.
 
 From Stdlib Require Import List.

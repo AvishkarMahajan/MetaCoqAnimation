@@ -8,6 +8,9 @@
 
     Depends on: [MetaRocqUtils], [PatternCompilation], [EqualityResolution]. *)
 
+Require Import Animation.AnimationTypes.
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.EqualityResolution.
 
 Require Import Animation.MetaRocqUtils.
@@ -335,7 +338,7 @@ let boolCase :=
      {| bcontext := []; bbody := succFalseRetTm |}] in
 tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
   (tCase
-    {| ci_ind := {| inductive_mind := (MPfile ["MetaRocqUtils"; "Animation"], "animation_result");
+    {| ci_ind := {| inductive_mind := (MPfile ["AnimationResult"; "Animation"], "animation_result");
                      inductive_ind := 0 |};
        ci_npar := 1; ci_relevance := Relevant |}
     {| puinst := []; pparams := [<%bool%>];

@@ -2,6 +2,8 @@
     Tests animation of the untyped lambda calculus with de Bruijn indices.
     Small-step call-by-name (CBN) reduction via beta rule. *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

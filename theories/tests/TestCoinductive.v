@@ -2,6 +2,8 @@
     Tests animation of coinductive relations over infinite streams.
     Covers integration, zipping, equality, filtering, and length. *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

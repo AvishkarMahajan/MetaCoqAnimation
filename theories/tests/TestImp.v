@@ -4,6 +4,8 @@
     - [ImpSem]:   relation maps initial state to final state
     - [ImpSemTr]: relation maps initial state to a trace (sequence of states) *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.

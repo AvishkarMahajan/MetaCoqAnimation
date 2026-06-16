@@ -2,6 +2,8 @@
     Tests animation of simple inductive relations over natural numbers.
     Covers basic recursion, mutual induction, and multiple modes. *)
 
+Require Import Animation.AnimationResult.
+Require Import Animation.TermUtils.
 Require Import Animation.AnimationDispatch.
 Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.
