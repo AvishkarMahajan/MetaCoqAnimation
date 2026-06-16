@@ -524,20 +524,47 @@ Definition pred_type_map := list (string * list term)%type.
 (** Maps variable names to their types. *)
 Definition var_type_map := list (string * term)%type.
 
-(** Per-inductive clause data: [(name, in_types, out_types, constructors)].
-    Transparent alias for the nested tuple used throughout the pipeline. *)
-Definition clause_data :=
-  (((string * list term) * list term) * list (string * term))%type.
+(** Tagged conjunct: a conjunct term paired with its output variable name and type. *)
+Record tagged_conjunct := {
+  tc_conjunct : term;
+  tc_out_var  : string;
+  tc_out_type : term
+}.
+
+(** Resolved constructor variable: the result of unfolding one constructor
+    argument during pattern compilation. *)
+Record resolved_var := {
+  rv_name  : string;
+  rv_term  : term;
+  rv_bound : list string
+}.
+
+(** Per-inductive clause data:
+    inductive name, input types, output types, constructor clauses. *)
+Record clause_data := {
+  cd_ind_name  : string;
+  cd_in_types  : list term;
+  cd_out_types : list term;
+  cd_clauses   : list (string * term)
+}.
 
 (** Per-inductive type environment entry:
-    [(pred_name, pred_type, [(cstr_name, [(var_name, var_type)])])]. *)
-Definition type_env_entry :=
-  ((string * term) * list (string * list (string * term)))%type.
+    predicate name, predicate type, and per-constructor variable bindings. *)
+Record type_env_entry := {
+  te_pred_name : string;
+  te_pred_type : term;
+  te_cstr_vars : list (string * list (string * term))
+}.
 
 (** Per-inductive fixpoint entry after [prod_in_out]:
-    [(name, in_type, out_type, [(cstr_name, [pred_names])])]. *)
-Definition fixpoint_entry :=
-  (((string * term) * term) * list (string * list string))%type.
+    inductive name, product input type, product output type,
+    and per-constructor recursive predicate names. *)
+Record fixpoint_entry := {
+  fe_ind_name   : string;
+  fe_in_type    : term;
+  fe_out_type   : term;
+  fe_cstr_preds : list (string * list string)
+}.
 
 (** Build a product type from a list of output variable specs.
     Returns bool for empty list, single type for singleton, nested products otherwise. *)

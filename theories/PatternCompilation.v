@@ -54,42 +54,41 @@ Fixpoint gen_var_list (s : nat) (ls : list term) : list (string * term) :=
 Definition unfold_cons
   (i : nat)
   (currTs : list (string * term))
-  (resolvedTs : list ((string * term) * list string))
+  (resolvedTs : list resolved_var)
   (remTs : list (string * term))
   : (((nat *  list (string * term)) *
-      list ((string * term) * list string)) * list (string * term)) :=
+      list resolved_var) * list (string * term)) :=
  match currTs with
  | [] => (i, remTs, resolvedTs, nil)
  | (str, tApp (tConstruct typeInfo cstrInd ls') args) :: t =>
      (i + (length args), t,
-      (str, (tConstruct typeInfo cstrInd ls'),
-       map fst (gen_var_list i args)) :: resolvedTs,
+      {| rv_name := str; rv_term := tConstruct typeInfo cstrInd ls';
+         rv_bound := map fst (gen_var_list i args) |} :: resolvedTs,
       app (gen_var_list i args) remTs)
  | (str, tRel k) :: t =>
-     (i, t, (str, (tRel k), nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tRel k; rv_bound := [] |} :: resolvedTs, remTs)
  | (str, tVar varStr) :: t =>
-     (i, t, (str, (tVar varStr ), nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tVar varStr; rv_bound := [] |} :: resolvedTs, remTs)
  | (str, tConstruct typeInfo k lst) :: t =>
-     (i, t, (str, (tConstruct typeInfo k lst), nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tConstruct typeInfo k lst; rv_bound := [] |} :: resolvedTs, remTs)
  | (str, tApp <%eq%> args) :: t =>
      (i + length args, t,
-      (str, <%eq%>,
-       map fst (gen_var_list i args)) :: resolvedTs,
+      {| rv_name := str; rv_term := <%eq%>;
+         rv_bound := map fst (gen_var_list i args) |} :: resolvedTs,
       app (gen_var_list i args) remTs)
 
  | (str, tApp func args) :: t =>
-     (i, t, (str, tApp func args, nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tApp func args; rv_bound := [] |} :: resolvedTs, remTs)
 
  | (str, tInd indType ls') :: t =>
-     (i, t, (str, tInd indType ls', nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tInd indType ls'; rv_bound := [] |} :: resolvedTs, remTs)
  | (str, tConst indType ls') :: t =>
-     (i, t, (str, tConst indType ls', nil) :: resolvedTs, remTs)
+     (i, t, {| rv_name := str; rv_term := tConst indType ls'; rv_bound := [] |} :: resolvedTs, remTs)
  | (str, tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2) :: t =>
      (i, t,
-      (str, tProd
-        {| binder_name := nAnon;
-           binder_relevance := Relevant |}
-        tp1 tp2, nil) :: resolvedTs, remTs)
+      {| rv_name := str;
+         rv_term := tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2;
+         rv_bound := [] |} :: resolvedTs, remTs)
 
  | (str, _) :: t =>
      (i, t, resolvedTs, remTs)
@@ -100,9 +99,9 @@ Definition unfold_cons
 Fixpoint unfold_cons_iter
   (fuel : nat)
   (st : (((nat *  list (string * term)) *
-            list ((string * term) * list string)) * list (string * term)))
+            list resolved_var) * list (string * term)))
   : (((nat * list (string * term)) *
-      list ((string * term) * list string)) *
+      list resolved_var) *
      list (string * term)) :=
   match fuel with
   | 0 => st
@@ -112,7 +111,7 @@ Fixpoint unfold_cons_iter
   end.
 
 (** Pre-process a constructor term by unfolding it into a list of variable-term pairs. *)
-Definition preprocess_cons (fuel : nat) (t : term) : list ((string * term) * list string) :=
+Definition preprocess_cons (fuel : nat) (t : term) : list resolved_var :=
   rev (snd (fst (unfold_cons_iter fuel (0, [("x"%bs, t)], [], [])))).
 
 (** Check if all terms have been processed (no remaining terms). *)
@@ -128,14 +127,14 @@ Definition preprocess_remainder (fuel : nat) (t : term) : bool :=
     Returns matching variable names and associated type terms. *)
 Fixpoint lookup_one_var
   (str : string)
-  (ls : list ((string * term) * list string))
+  (ls : list resolved_var)
   : list string * list term :=
   match ls with
   | [] => ([], [])
   | (h :: t) =>
-      if String.eqb str (fst (fst h))
-      then (let t := snd (fst h) in
-            match t with
+      if String.eqb str h.(rv_name)
+      then (let tm := h.(rv_term) in
+            match tm with
             | tConstruct typeInfo k js => ([str], [])
             | tApp (tInd typeInfo js) args => ([], [tApp (tInd typeInfo js) args])
             | tApp (tConst typeInfo lst) args => ([], [tApp (tConst typeInfo lst) args])
@@ -168,7 +167,7 @@ Fixpoint lookup_one_var
 (** Look up multiple variable names and collect their associated data. *)
 Fixpoint lookup_vars
   (lsStr : list string)
-  (ls : list ((string * term) * list string))
+  (ls : list resolved_var)
   : list string * list term :=
   match lsStr with
   | [] => ([], [])
@@ -184,18 +183,21 @@ Fixpoint lookup_vars
 (** Pre-process constructor type variables, extracting relevant type information.
     Filters out equality constructors and enriches type constructor data. *)
 Fixpoint preprocess_type_var
-  (ls : list ((string * term) * list string))
-  (ls' : list ((string * term) * list string))
-  : list (((string * term) * list string) * list term) :=
+  (ls : list resolved_var)
+  (ls' : list resolved_var)
+  : list (resolved_var * list term) :=
   match ls' with
   | [] => []
-  | (str1, <%eq%>, lstStr) :: t => preprocess_type_var ls t
-  | (str1, (tConstruct typeInfo k js), lstStr) :: t =>
-    (str1, (tConstruct typeInfo k js),
-     fst (lookup_vars lstStr ls),
-     snd (lookup_vars lstStr ls))
-      :: preprocess_type_var ls t
-  | (_ :: t) => preprocess_type_var ls t
+  | h :: t =>
+    match h.(rv_term) with
+    | <%eq%> => preprocess_type_var ls t
+    | tConstruct typeInfo k js =>
+      let lv := lookup_vars h.(rv_bound) ls in
+      ({| rv_name := h.(rv_name); rv_term := h.(rv_term); rv_bound := fst lv |},
+       snd lv)
+        :: preprocess_type_var ls t
+    | _ => preprocess_type_var ls t
+    end
   end.
 
 (** Generate a list of binder annotations with names of the form "nN". *)
@@ -269,14 +271,14 @@ Definition return_var_tuple (lst : list string) : term :=
 (** Sort binders by finding which variable maps to a given output variable. *)
 Fixpoint sort_binders_one
   (outputVar : string)
-  (lst': list ((string * term) * list string)) : list string :=
+  (lst': list resolved_var) : list string :=
   match lst' with
   | [] => []
   | h :: rest =>
-      match h with
-      | (str1, (tVar y), _) =>
+      match h.(rv_term) with
+      | tVar y =>
           if String.eqb y outputVar
-          then [str1]
+          then [h.(rv_name)]
           else sort_binders_one outputVar rest
       | _ => sort_binders_one outputVar rest
       end
@@ -285,30 +287,28 @@ Fixpoint sort_binders_one
 (** Sort all binders according to a list of output variables. *)
 Definition sort_binders
   (outputVars : list string)
-  (lst : list ((string * term) * list string))
+  (lst : list resolved_var)
   : ((list string)) :=
   concat (map (fun x : string => sort_binders_one x lst) outputVars).
 
 (** Get the constructor index from a resolved term structure. *)
-Definition cstr_match_index (s : ((string * term) * list string)) : nat :=
-  match s with
-   | (str, tConstruct typeInfo k ls, lsStr) => k
+Definition cstr_match_index (s : resolved_var) : nat :=
+  match s.(rv_term) with
+   | tConstruct typeInfo k ls => k
    | _ => sentinel_nat
   end.
 
 (** Get the inductive type from a resolved term structure. *)
-Definition get_type (s : ((string * term) * list string)) :=
-  match s with
-   | (str, tConstruct typeInfo k ls, lsStr) => typeInfo
+Definition get_type (s : resolved_var) :=
+  match s.(rv_term) with
+   | tConstruct typeInfo k ls => typeInfo
    | _ => sentinel_inductive
   end.
 
 (** Extract the type name from a constructor term. *)
-Definition get_type_name (s : (string * term) * list string) : string :=
-  match s with
-  | (str,
-         tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
-           k ls, lsStr) => nmStr
+Definition get_type_name (s : resolved_var) : string :=
+  match s.(rv_term) with
+  | tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |} k ls => nmStr
   | _ => sentinel_string
   end.
 
@@ -316,22 +316,21 @@ Definition get_type_name (s : (string * term) * list string) : string :=
 (** Filter out terms that don't correspond to valid type constructors.
     Checks against the list of mutual inductive bodies. *)
 Fixpoint filter_type_cstrs
-  (ls : list ((string * term) * list string))
+  (ls : list resolved_var)
   (mut : list mutual_inductive_body)
-  : list ((string * term) * list string) :=
+  : list resolved_var :=
    match ls with
     | [] => []
-    | h :: t => match h with
-                 | (str,
-                    tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |}
-                    k ls, lsStr) =>
-                   if (in_strings nmStr
-                         (map fst
-                           (collect_cstr_arities mut)))
-                   then h :: (filter_type_cstrs t mut)
-                   else (filter_type_cstrs t mut)
-                 | _ => (filter_type_cstrs t mut)
-                end
+    | h :: t =>
+      match h.(rv_term) with
+      | tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |} k ls =>
+        if (in_strings nmStr
+              (map fst
+                (collect_cstr_arities mut)))
+        then h :: (filter_type_cstrs t mut)
+        else (filter_type_cstrs t mut)
+      | _ => (filter_type_cstrs t mut)
+      end
    end.
 
 (** Look up the list of constructor arities for a given type name. *)
@@ -371,20 +370,20 @@ Definition mk_option_some_branch (l : list string) (t : term) : branch term :=
     None branches before the matching constructor, a Some branch for the match,
     and None branches after. *)
 Definition mk_branch_list
-  (s : (string * term) * list string)
+  (s : resolved_var)
   (l : list mutual_inductive_body)
   (t : term) : list (branch term) :=
   let csArlst := (get_arity_list (get_type_name s) l) in
   let index := cstr_match_index s in
   map mk_option_none_branch (firstn index csArlst)
-    ++ [mk_option_some_branch (rev (snd s)) t]
+    ++ [mk_option_some_branch (rev s.(rv_bound)) t]
     ++ map mk_option_none_branch
          (skipn (S index) csArlst).
 
 (** Create a case expression (pattern match) term.
     Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
 Definition mk_case'
-  (s' : ((string * term) * list string) * list term)
+  (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
   (t : term) : term :=
   let s := fst s' in
@@ -397,7 +396,7 @@ Definition mk_case'
      {|
        puinst := [];
        pparams := (snd s');
-       pcontext := [{| binder_name := nNamed (fst (fst s)); binder_relevance := Relevant |}];
+       pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
        preturn :=
          (tApp
            (tInd
@@ -411,7 +410,7 @@ Definition mk_case'
               inductive_mind := <?list?>; inductive_ind := 0
             |} [])
          [<%nat%>]])
-     |} (tVar (fst (fst s))) (* Will be converted to De Bruijn index later *)
+     |} (tVar s.(rv_name)) (* Will be converted to De Bruijn index later *)
       (mk_branch_list s l t)).
 
 (** The identity function as a quoted term. *)
@@ -420,8 +419,8 @@ Definition id_term := <%(fun A : Type => (fun x : A => x))%>.
 (** Create nested pattern matches recursively.
     Base case returns identity, single case returns value, multiple cases nest. *)
 Fixpoint mk_nested_match_aux
-  (ls : list (((string * term) * list string) * list term))
-  (ls' : list (((string * term) * list string)))
+  (ls : list (resolved_var * list term))
+  (ls' : list resolved_var)
   (outputVars : list (string))
   (mut : list mutual_inductive_body) : term :=
  match ls with
@@ -431,7 +430,7 @@ Fixpoint mk_nested_match_aux
  end.
 
 (** Create a nested pattern match structure from a list of constructor patterns. *)
-Definition mk_nested_match (ls' : list (((string * term) * list string))) (outputVars : list string)
+Definition mk_nested_match (ls' : list resolved_var) (outputVars : list string)
             (mut : list mutual_inductive_body) : term :=
             mk_nested_match_aux (preprocess_type_var ls' ls') ls' outputVars mut.
 
@@ -459,7 +458,7 @@ Definition mk_wildcard_ret_branch (wildCardRet : term) (n : nat)  : branch term 
 
 (** Create branch list with custom wildcard return value for non-matching cases. *)
 Definition mk_branch_list_wild
-  (s : (string * term) * list string)
+  (s : resolved_var)
   (l : list mutual_inductive_body)
   (t : term) (wildCardRet : term)
   : list (branch term) :=
@@ -468,13 +467,13 @@ Definition mk_branch_list_wild
   map (mk_wildcard_ret_branch wildCardRet)
     (firstn index csArlst)
     ++ [typeConstrPatMatch.mk_option_some_branch
-          (rev (snd s)) t]
+          (rev s.(rv_bound)) t]
     ++ map (mk_wildcard_ret_branch wildCardRet)
          (skipn (S index) csArlst).
 
 (** Create a case expression with custom output type and wildcard return value. *)
 Definition mk_case_wild
-  (s' : ((string * term) * list string) * list term)
+  (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
   (t : term) (outputType : term)
   (wildCardRet : term) : term :=
@@ -488,25 +487,25 @@ Definition mk_case_wild
      {|
        puinst := [];
        pparams := (snd s');
-       pcontext := [{| binder_name := nNamed (fst (fst s)); binder_relevance := Relevant |}];
+       pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
        preturn :=
        outputType
-     |} (tVar (fst (fst s))) (* Should get changed to a tRel after deBruijning *)
+     |} (tVar s.(rv_name)) (* Should get changed to a tRel after deBruijning *)
       (mk_branch_list_wild s l t wildCardRet)).
 
 (** Collect sets of variable names and bound variables from a pattern structure.
     Returns a pair of lists: variables with tVar terms, and all variable names. *)
-Fixpoint collect_var_sets (l : list ((string * term) * list string)) : list string * list string :=
+Fixpoint collect_var_sets (l : list resolved_var) : list string * list string :=
   match l with
   | [] => ([], [])
-  | h :: t => match snd (fst h) with
+  | h :: t => match h.(rv_term) with
               | tVar str =>
                 (str :: fst (collect_var_sets t),
-                 app (snd h) (fst (fst h)
+                 app h.(rv_bound) (h.(rv_name)
                    :: snd (collect_var_sets t)))
               | _ =>
                 (fst (collect_var_sets t),
-                 app (snd h) (fst (fst h)
+                 app h.(rv_bound) (h.(rv_name)
                    :: snd (collect_var_sets t)))
              end
   end.
@@ -519,11 +518,14 @@ Fixpoint no_repeat (l1 : list string) (l2 : list string) : bool :=
   end.
 
 (** Extract a mapping from original variable names to their tVar references. *)
-Fixpoint original_var_map (l : list ((string * term) * list string)) : list (string * string) :=
+Fixpoint original_var_map (l : list resolved_var) : list (string * string) :=
   match l with
   | [] => []
-  | (str, tVar str1, lst) :: t => (str, str1) :: (original_var_map t)
-  | _ :: t => original_var_map t
+  | h :: t =>
+    match h.(rv_term) with
+    | tVar str1 => (h.(rv_name), str1) :: (original_var_map t)
+    | _ => original_var_map t
+    end
   end.
 
 (** Switch a single variable name according to a mapping. *)
@@ -536,28 +538,27 @@ Fixpoint switch_one_var (s : string) (map : list (string * string)) : string :=
 (** Apply variable name switching to a term structure. *)
 Definition switch_vars
   (d : list (string * string))
-  (o : ((string * term) * list string))
-  : ((string * term) * list string) :=
-  match o with
-  | (s, t, l) => ((switch_one_var s d), t, (map (fun s => switch_one_var s d) l))
-  end.
+  (o : resolved_var)
+  : resolved_var :=
+  {| rv_name := switch_one_var o.(rv_name) d;
+     rv_term := o.(rv_term);
+     rv_bound := map (fun s => switch_one_var s d) o.(rv_bound) |}.
 
 (** Apply variable switching to a list of terms. *)
-Definition switch_vars' (d : list (string * string))  (l : list ((string * term) * list string)) :=
+Definition switch_vars' (d : list (string * string))  (l : list resolved_var) :=
  (map (switch_vars d) l).
 
 (** Change all variables in a structure to their canonical names. *)
 Definition change_vars
-  (l : list ((string * term) * list string))
-  : list ((string * term) * list string) :=
+  (l : list resolved_var)
+  : list resolved_var :=
  switch_vars' (original_var_map l) l.
 
 (** Create nested pattern matches with custom output term, type, and wildcard.
     Version 2 with more flexibility than mk_nested_match. *)
 Fixpoint mk_nested_match_wild_aux
-  (ls : list (((string * term) * list string) *
-              list term))
-  (ls' : list (((string * term) * list string)))
+  (ls : list (resolved_var * list term))
+  (ls' : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
   (mut : list mutual_inductive_body) : term :=
@@ -573,7 +574,7 @@ Fixpoint mk_nested_match_wild_aux
 
 (** Wrapper for mk_nested_match_wild_aux that pre-processes constructor type variables. *)
 Definition mk_nested_match_wild
-  (ls' : list (((string * term) * list string)))
+  (ls' : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
   (mut : list mutual_inductive_body) : term :=
@@ -585,15 +586,15 @@ Definition mk_nested_match_wild
     using [mk_nested_match_wild] for the body.  Returns [None] if the structure is empty
     or lacks a two-variable binding form. *)
 Definition mk_lam_wild_unwrap
-  (ls : list (((string * term) * list string)))
+  (ls : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
   (mut : list mutual_inductive_body)
   : option term :=
   match ls with
   | [] => None
-  | (h :: ((str, typeInfo, []) ::
-          ((str2, t', l') :: rest))) =>
+  | (h :: ({| rv_name := str; rv_term := typeInfo; rv_bound := [] |} ::
+          ({| rv_name := str2; rv_term := t'; rv_bound := l' |} :: rest))) =>
     Some (tLambda
       {| binder_name := nNamed str2;
          binder_relevance := Relevant |}
@@ -606,7 +607,7 @@ Definition mk_lam_wild_unwrap
 
 (** Wrapper for [mk_lam_wild_unwrap] that filters [None] entries from the mutual inductive list. *)
 Definition mk_lam_wild
-  (ls : list (((string * term) * list string)))
+  (ls : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
   (mut : list (option mutual_inductive_body))

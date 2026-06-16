@@ -30,7 +30,7 @@ Definition id_fn (A : Type) (x : A) := x.
     Dispatches to appropriate animation strategy based on conjunction structure. *)
 Definition animate_let_binding {A : Type}
   (ind : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (inputTm : term) (inputTp : term)
   (inputVars : list string)
   (modes : mode_map)
@@ -38,9 +38,9 @@ Definition animate_let_binding {A : Type}
   (allVarTpInf : list (string * term))
   (fuel : nat) : TemplateMonad term :=
 
-outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
-outputTp <- tmEval all ((snd (snd conjunct'))) ;;
-let conjunct := fst conjunct' in
+outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
+outputTp <- tmEval all (conjunct'.(tc_out_type)) ;;
+let conjunct := conjunct'.(tc_conjunct) in
 
 match conjunct with
  | tApp <%eq%> [typeVar; t1; t2] => match t1 with
@@ -110,7 +110,7 @@ Definition build_let_chain_step
     a function and wrap it in a let that extends [partialLetfn]. *)
 Definition animate_one_let {A : Type}
   (ind : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (inputVarsLst : list (prod string term))
   (partialLetfn : term -> term)
   (modes : mode_map)
@@ -120,8 +120,8 @@ Definition animate_one_let {A : Type}
 let inputTm := tele_to_prod_tm inputVarsLst in
 let inputTp := tele_to_prod_tp inputVarsLst in
 let inputVarsLstTm := pairs_to_terms inputVarsLst in
-outputVarNm <- tmEval all ((fst (snd conjunct'))) ;;
-outputVarTp <- tmEval all ((snd (snd conjunct'))) ;;
+outputVarNm <- tmEval all (conjunct'.(tc_out_var)) ;;
+outputVarTp <- tmEval all (conjunct'.(tc_out_type)) ;;
 animationFn <- animate_let_binding (ind) (kn) (conjunct')
   (inputTm) (inputTp) (map fst inputVarsLst)
   (modes) (predTypeInf) (allVarTpInf) fuel ;;
@@ -132,7 +132,7 @@ tmReturn (build_let_chain_step (outputVarNm) (outputVarTp)
     produce a [and_outcome_bool] expression that extends [partialGuard]. *)
 Definition animate_one_guard {A : Type}
   (ind : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (inputVarsLst : list (prod string term))
   (partialGuard : term)
   (modes : mode_map)
@@ -144,8 +144,8 @@ let inputTp := tele_to_prod_tp inputVarsLst in
 let inputVarsLstTm := pairs_to_terms inputVarsLst in
 inputTm' <- tmEval all inputTm;;
 inputTp' <- tmEval all inputTp;;
-outputVarNm <- tmEval all ((fst (snd conjunct'))) ;;
-outputVarTp <- tmEval all ((snd (snd conjunct'))) ;;
+outputVarNm <- tmEval all (conjunct'.(tc_out_var)) ;;
+outputVarTp <- tmEval all (conjunct'.(tc_out_type)) ;;
 
 animationFn <- animate_let_binding (ind) (kn) (conjunct') (inputTm) (inputTp)
                                  (map fst inputVarsLst) (modes) (predTypeInf) (allVarTpInf) fuel ;;
@@ -166,12 +166,12 @@ Definition conj_vars_by_role
   (eqProj : term -> term -> list string)
   (modeProj : (list nat * list nat) ->
     list term -> list term)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (allVarTpInf : list (prod string term))
   (modes : mode_map)
   (predTypeInf : pred_type_map)
   : list (prod string term) :=
-let conjunct := fst conjunct' in
+let conjunct := conjunct'.(tc_conjunct) in
   match conjunct with
   | tApp <%eq%> [typeVar; t1; t2] => lookup_vars (eqProj t1 t2) allVarTpInf
   | tApp (tInd {| inductive_mind := (_path, indNm); inductive_ind := 0 |} []) lstArgs =>
@@ -195,7 +195,7 @@ Definition conj_input_vars :=
     context, then delegating to [animate_one_let]. *)
 Definition animate_let_with_ctx {A : Type}
   (ind : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (partialLetfn : term -> term)
   (modes : mode_map)
   (predTypeInf : pred_type_map)
@@ -208,7 +208,7 @@ animate_one_let ind kn conjunct' inputVarsLst partialLetfn (modes) (predTypeInf)
     list from context, then delegating to [animate_one_guard]. *)
 Definition animate_guard_with_ctx {A : Type}
   (ind : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (partialGuard : term)
   (modes : mode_map)
   (predTypeInf : pred_type_map)
@@ -223,7 +223,7 @@ animate_one_guard ind kn conjunct' inputVarsLst
     accumulated let-binding function [partialLetfn] through each step. *)
 Fixpoint animate_let_list {A : Type}
   (ind : A) (kn : kername)
-  (conjs : list (term * (string * term)))
+  (conjs : list tagged_conjunct)
   (partialLetfn : term -> term)
   (modes : mode_map)
   (predTypeInf : pred_type_map)
@@ -243,7 +243,7 @@ Fixpoint animate_let_list {A : Type}
     boolean guard [partialGuard] through each step. *)
 Fixpoint animate_guard_list {A : Type}
   (ind : A) (kn : kername)
-  (conjs : list (term * (string * term)))
+  (conjs : list tagged_conjunct)
   (partialGuard : term)
   (modes : mode_map)
   (predTypeInf : pred_type_map)
@@ -350,7 +350,7 @@ tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
     [NoMatch] as the [false] branch. *)
 Definition animate_guard_bool_branch {A : Type}
   (ind : A) (kn : kername)
-  (predGuardConjs : list (term × string × term))
+  (predGuardConjs : list tagged_conjunct)
   (modes : mode_map)
   (predTypeInf : pred_type_map)
   (allVarTpInf : list (string * term))
@@ -406,9 +406,9 @@ Definition split_inputs' (inVars : list (string * term)) (fnBody : term) : term 
     everything in lambdas for the animated recursive functions and the input. *)
 Definition animate_lets_and_guards {A : Type}
   (ind : A) (kn : kername)
-  (lConjs'' : list (term × (string × term)))
+  (lConjs'' : list tagged_conjunct)
   (gConjsEq'' : list term)
-  (gConjsPred'' : list (term × (string × term)))
+  (gConjsPred'' : list tagged_conjunct)
   (inVars : list (prod string term))
   (outVars : list (prod string term))
   (modes : mode_map)
@@ -635,7 +635,7 @@ conj_vars_by_role
   (fun t1 _t2 => ordered_vars t1)
   (fun mode lstArgs =>
     select_out_by_mode mode lstArgs)
-  (conj, (""%bs, <%bool%>))
+  {| tc_conjunct := conj; tc_out_var := ""%bs; tc_out_type := <%bool%> |}
   allVarTpInf modes predTypeInf.
 
 (** Pair each conjunct in [lconjs] with the output variables it introduces. *)
@@ -658,10 +658,10 @@ Fixpoint attach_output_vars
     producing one [(conjunct, output_var)] pair per variable. *)
 Fixpoint attach_var_to_conj (lconjt : term)
   (lconjV : (((list (string * term)))))
-  : list (term * (string * term)) :=
+  : list tagged_conjunct :=
   match (lconjV) with
   | [] => []
-  | (h :: rest) => ((lconjt), h) :: attach_var_to_conj lconjt rest
+  | (h :: rest) => {| tc_conjunct := lconjt; tc_out_var := fst h; tc_out_type := snd h |} :: attach_var_to_conj lconjt rest
   end.
 
 (** Flatten a list of [(conjunct, output_vars)] pairs into a flat list of
@@ -669,7 +669,7 @@ Fixpoint attach_var_to_conj (lconjt : term)
 Fixpoint attach_vars_to_conjs
   (lconjs : (list (prod term
     (list (prod string term)))))
-  : list (term * (string * term)) :=
+  : list tagged_conjunct :=
   match lconjs with
   | [] => []
   | h :: rest => attach_var_to_conj (fst h) (snd h) ++ attach_vars_to_conjs rest
@@ -680,58 +680,53 @@ Definition attach_sorted_outputs
   (allVarTpInf : list (prod string term))
   (modes : mode_map)
   (predTypeInf : pred_type_map)
-  : list (term * (string * term)) :=
+  : list tagged_conjunct :=
 attach_vars_to_conjs (attach_output_vars lconjs allVarTpInf modes predTypeInf).
 
 (** Remove conjuncts whose output variable already appears in [kv] (already defined),
     adding newly seen output variables to [kv] as they are encountered. *)
 Fixpoint remove_dup_defs
-  (lconjs : list (term * (string * term)))
+  (lconjs : list tagged_conjunct)
   (kv : list string)
-  : list (term * (string * term)) :=
+  : list tagged_conjunct :=
   match lconjs with
   | [] => []
   | h :: rest =>
-    if (in_strings (fst (snd h)) kv)
+    if (in_strings h.(tc_out_var) kv)
     then remove_dup_defs rest kv
     else h :: (remove_dup_defs rest
-      ((fst (snd h)) :: kv))
+      (h.(tc_out_var) :: kv))
   end.
 
 (** Keep only conjuncts whose output variable already appears in [kv] (duplicates),
     adding first occurrences to [kv] so subsequent duplicates are kept. *)
 Fixpoint keep_dup_defs
-  (lconjs : list (term * (string * term)))
+  (lconjs : list tagged_conjunct)
   (kv : list string)
-  : list (term * (string * term)) :=
+  : list tagged_conjunct :=
   match lconjs with
   | [] => []
   | h :: rest =>
-    if (in_strings (fst (snd h)) kv)
+    if (in_strings h.(tc_out_var) kv)
     then h :: (keep_dup_defs rest kv)
     else (keep_dup_defs rest
-      ((fst (snd h)) :: kv))
+      (h.(tc_out_var) :: kv))
   end.
 
 (** Keep only inductive predicate application entries from a tagged conjunct list,
     discarding equalities and other shapes. *)
-Fixpoint filter_conjs_pred' (lst : list (term * (string * term))) : list (term * (string * term)) :=
+Fixpoint filter_conjs_pred' (lst : list tagged_conjunct) : list tagged_conjunct :=
   match lst with
   | [] => []
-  | ((tApp <%eq%> [typeVar; t1; t2]), (str,t'')) :: rest => filter_conjs_pred' rest
-  | ((tApp (tInd
-      {| inductive_mind := (path, indNm);
-         inductive_ind := 0 |} []) lstArgs),
-      (str, t2)) :: rest =>
-    ((tApp (tInd
-      {| inductive_mind := (path, indNm);
-         inductive_ind := 0 |} []) lstArgs),
-      (str, t2)) :: filter_conjs_pred' rest
-
-  | ((tApp (tVar indNm) lstArgs),
-      (str, t2)) :: rest =>
-    ((tApp (tVar indNm) lstArgs),
-      (str, t2)) :: filter_conjs_pred' rest
-
-  | _h :: rest => filter_conjs_pred' rest
+  | h :: rest =>
+    match h.(tc_conjunct) with
+    | tApp <%eq%> [typeVar; t1; t2] => filter_conjs_pred' rest
+    | tApp (tInd
+        {| inductive_mind := (path, indNm);
+           inductive_ind := 0 |} []) lstArgs =>
+      h :: filter_conjs_pred' rest
+    | tApp (tVar indNm) lstArgs =>
+      h :: filter_conjs_pred' rest
+    | _ => filter_conjs_pred' rest
+    end
   end.

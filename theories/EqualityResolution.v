@@ -409,14 +409,14 @@ Definition compile_let_clause {A : Type}
     resolving equality premises and generating pattern matching. *)
 Definition compile_clause {A : Type}
   (induct : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (modes : mode_map) (predTypeInf : pred_type_map)
   (allVarTpInf : list (string * term))
   (fuel : nat) : TemplateMonad term :=
 
-outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
-outputTp <- tmEval all ((snd (snd conjunct'))) ;;
-let conjunct := fst conjunct' in
+outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
+outputTp <- tmEval all (conjunct'.(tc_out_type)) ;;
+let conjunct := conjunct'.(tc_conjunct) in
 
   match get_ind_name conjunct with
   | Some (indNm, lstArgs) =>
@@ -502,14 +502,14 @@ Fixpoint mk_lhs_term_monadic (lhsIndPre : list (term * term)) : TemplateMonad te
     builders so that the trivial [bool] base case is inserted correctly. *)
 Definition animate_no_input {A : Type}
   (induct : A) (kn : kername)
-  (conjunct' : (term * (string * term)))
+  (conjunct' : tagged_conjunct)
   (modes : mode_map) (predTypeInf : pred_type_map)
   (allVarTpInf : list (string * term))
   (fuel : nat) : TemplateMonad term :=
 
-outputTm <- tmEval all (tVar (fst (snd conjunct'))) ;;
-outputTp <- tmEval all ((snd (snd conjunct'))) ;;
-let conjunct := fst conjunct' in
+outputTm <- tmEval all (tVar conjunct'.(tc_out_var)) ;;
+outputTp <- tmEval all (conjunct'.(tc_out_type)) ;;
+let conjunct := conjunct'.(tc_conjunct) in
 
   match get_ind_name conjunct with
   | Some (indNm, lstArgs) =>
