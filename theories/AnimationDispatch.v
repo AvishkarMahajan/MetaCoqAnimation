@@ -302,8 +302,12 @@ Definition compile_guard_clause {A : Type}
      t0 <- compile_equality_clause induct postIn' postInType' postOut' postOutType'  fuel ;;
 
      let t1 := (tApp <%option_to_result%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option t1)) ;;
-     tmReturn t').
+     match DB.de_bruijn_option t1 with
+     | Some db_t1 =>
+       t' <- tmEval all db_t1 ;;
+       tmReturn t'
+     | None => tmFail "de Bruijn conversion failed in compile_guard_clause"
+     end).
 
 (** Lift [compile_guard_clause] to work directly with variable
     type lists by computing the product input/output types from [allVarTpInf] and [outVars]. *)

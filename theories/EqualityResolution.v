@@ -404,8 +404,12 @@ Definition compile_let_clause {A : Type}
      t0 <- compile_equality_clause induct postIn' postInType' postOut' postOutType'  fuel ;;
 
      let t1 := (tApp <%option_to_result%> [postInType'; outputTp; t0]) in
-     t' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option t1)) ;;
-     tmReturn t')
+     match DB.de_bruijn_option t1 with
+     | Some db_t1 =>
+       t' <- tmEval all db_t1 ;;
+       tmReturn t'
+     | None => tmFail "de Bruijn conversion failed in compile_let_clause"
+     end)
      else tmFail "no boolean equality over some type".
 
 (** Compile a single clause of an inductive relation into executable code,
@@ -469,8 +473,12 @@ let conjunct := conjunct'.(tc_conjunct) in
                           [(inputVarProdTp); predOutProdTp;
                            (outputTp); tIn; tOut]) in
                       u'' <- tmEval all u ;;
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
-                      tmReturn u'
+                      match DB.de_bruijn_option u with
+                      | Some db_u =>
+                        u' <- tmEval all db_u ;;
+                        tmReturn u'
+                      | None => tmFail "de Bruijn conversion failed"
+                      end
 
   | None => tmFail "incorrect inductive shape"
   end.
@@ -558,8 +566,12 @@ let conjunct := conjunct'.(tc_conjunct) in
                           [(inputVarProdTp); predOutProdTp;
                            (outputTp); tIn; tOut]) in
                       u'' <- tmEval all u ;;
-                      u' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
-                      tmReturn u'
+                      match DB.de_bruijn_option u with
+                      | Some db_u =>
+                        u' <- tmEval all db_u ;;
+                        tmReturn u'
+                      | None => tmFail "de Bruijn conversion failed"
+                      end
 
   | None => tmFail "incorrect inductive shape"
   end.

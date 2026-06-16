@@ -345,13 +345,6 @@ Fixpoint mk_lam_chain (inVars : list (prod string term)) (fnBody : term) :=
   | h :: t => tLam (fst h) (snd h) (mk_lam_chain t fnBody)
   end.
 
-(** Sentinel values for partial functions — used as defaults in match fallbacks. *)
-Parameter sentinel_term : term.
-Parameter sentinel_nat : nat.
-Parameter sentinel_inductive : inductive.
-Parameter sentinel_string : string.
-Parameter sentinel_nat_list : list nat.
-Parameter sentinel_def_term : def term.
 
 (** String constants for generated definition names. *)
 Definition top_fn_suffix : string := "AnimatedTopFn".

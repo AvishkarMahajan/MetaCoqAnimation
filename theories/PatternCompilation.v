@@ -295,24 +295,24 @@ Definition sort_binders
   concat (map (fun x : string => sort_binders_one x lst) outputVars).
 
 (** Get the constructor index from a resolved term structure. *)
-Definition cstr_match_index (s : resolved_var) : nat :=
+Definition cstr_match_index (s : resolved_var) : option nat :=
   match s.(rv_term) with
-   | tConstruct typeInfo k ls => k
-   | _ => sentinel_nat
+   | tConstruct typeInfo k ls => Some k
+   | _ => None
   end.
 
 (** Get the inductive type from a resolved term structure. *)
-Definition get_type (s : resolved_var) :=
+Definition get_type (s : resolved_var) : option inductive :=
   match s.(rv_term) with
-   | tConstruct typeInfo k ls => typeInfo
-   | _ => sentinel_inductive
+   | tConstruct typeInfo k ls => Some typeInfo
+   | _ => None
   end.
 
 (** Extract the type name from a constructor term. *)
-Definition get_type_name (s : resolved_var) : string :=
+Definition get_type_name (s : resolved_var) : option string :=
   match s.(rv_term) with
-  | tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |} k ls => nmStr
-  | _ => sentinel_string
+  | tConstruct {| inductive_mind := (loc, nmStr); inductive_ind := j |} k ls => Some nmStr
+  | _ => None
   end.
 
 
@@ -339,7 +339,7 @@ Fixpoint filter_type_cstrs
 (** Look up the list of constructor arities for a given type name. *)
 Fixpoint lookup_arity_by_name (typeName : string) (r : list (string * list nat)) : list nat :=
   match r with
-   | [] => sentinel_nat_list
+   | [] => []
    | (h :: t) => if String.eqb typeName (fst h) then snd h else lookup_arity_by_name typeName t
   end.
 
@@ -375,46 +375,53 @@ Definition mk_option_some_branch (l : list string) (t : term) : branch term :=
 Definition mk_branch_list
   (s : resolved_var)
   (l : list mutual_inductive_body)
-  (t : term) : list (branch term) :=
-  let csArlst := (get_arity_list (get_type_name s) l) in
-  let index := cstr_match_index s in
-  map mk_option_none_branch (firstn index csArlst)
-    ++ [mk_option_some_branch (rev s.(rv_bound)) t]
-    ++ map mk_option_none_branch
-         (skipn (S index) csArlst).
+  (t : term) : option (list (branch term)) :=
+  match get_type_name s, cstr_match_index s return option (list (branch term)) with
+  | Some tn, Some index =>
+    let csArlst := get_arity_list tn l in
+    let branches := app (app (map mk_option_none_branch (firstn index csArlst))
+      [mk_option_some_branch (rev s.(rv_bound)) t])
+      (map mk_option_none_branch (skipn (S index) csArlst)) in
+    Some branches
+  | _, _ => None
+  end.
 
 (** Create a case expression (pattern match) term.
     Takes a scrutinee with type parameters, inductive bodies, and a body term. *)
 Definition mk_case'
   (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
-  (t : term) : term :=
+  (t : term) : option term :=
   let s := fst s' in
-  (tCase
-     {|
-       ci_ind := get_type s ;
-       ci_npar := length (snd s');
-       ci_relevance := Relevant
-     |}
-     {|
-       puinst := [];
-       pparams := (snd s');
-       pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
-       preturn :=
-         (tApp
+  match get_type s, mk_branch_list s l t with
+  | Some ind, Some branches =>
+    Some (tCase
+       {|
+         ci_ind := ind ;
+         ci_npar := length (snd s');
+         ci_relevance := Relevant
+       |}
+       {|
+         puinst := [];
+         pparams := (snd s');
+         pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
+         preturn :=
+           (tApp
+             (tInd
+                {|
+                  inductive_mind := <?option?>;
+                  inductive_ind := 0
+                |} [])
+             [tApp
            (tInd
               {|
-                inductive_mind := <?option?>;
-                inductive_ind := 0
+                inductive_mind := <?list?>; inductive_ind := 0
               |} [])
-           [tApp
-         (tInd
-            {|
-              inductive_mind := <?list?>; inductive_ind := 0
-            |} [])
-         [<%nat%>]])
-     |} (tVar s.(rv_name)) (* Will be converted to De Bruijn index later *)
-      (mk_branch_list s l t)).
+           [<%nat%>]])
+       |} (tVar s.(rv_name))
+        branches)
+  | _, _ => None
+  end.
 
 (** The identity function as a quoted term. *)
 Definition id_term := <%(fun A : Type => (fun x : A => x))%>.
@@ -425,16 +432,20 @@ Fixpoint mk_nested_match_aux
   (ls : list (resolved_var * list term))
   (ls' : list resolved_var)
   (outputVars : list (string))
-  (mut : list mutual_inductive_body) : term :=
+  (mut : list mutual_inductive_body) : option term :=
  match ls with
-  | [] => id_term
+  | [] => Some id_term
   | (h :: nil) => mk_case' h mut (return_var_tuple (sort_binders outputVars (ls')))
-  | (h :: t) => mk_case' h mut (mk_nested_match_aux t ls' outputVars mut)
+  | (h :: t) =>
+    match mk_nested_match_aux t ls' outputVars mut with
+    | Some inner => mk_case' h mut inner
+    | None => None
+    end
  end.
 
 (** Create a nested pattern match structure from a list of constructor patterns. *)
 Definition mk_nested_match (ls' : list resolved_var) (outputVars : list string)
-            (mut : list mutual_inductive_body) : term :=
+            (mut : list mutual_inductive_body) : option term :=
             mk_nested_match_aux (preprocess_type_var ls' ls') ls' outputVars mut.
 
 (** Remove None values from a list of options. *)
@@ -443,13 +454,6 @@ Fixpoint remove_opt {A : Type} (optls : list (option A)) : list A :=
   | [] => []
   | (Some x :: t) => (x :: remove_opt t)
   | (None :: t) => remove_opt t
-  end.
-
-(** Unwrap an option term, returning sentinel if None. *)
-Definition unwrap_option (o : option term) : term :=
-  match o with
-  | Some t => t
-  | None => sentinel_term
   end.
 
 End typeConstrPatMatch.
@@ -464,37 +468,42 @@ Definition mk_branch_list_wild
   (s : resolved_var)
   (l : list mutual_inductive_body)
   (t : term) (wildCardRet : term)
-  : list (branch term) :=
- let csArlst := (typeConstrPatMatch.get_arity_list (typeConstrPatMatch.get_type_name s) l) in
-  let index := typeConstrPatMatch.cstr_match_index s in
-  map (mk_wildcard_ret_branch wildCardRet)
-    (firstn index csArlst)
-    ++ [typeConstrPatMatch.mk_option_some_branch
-          (rev s.(rv_bound)) t]
-    ++ map (mk_wildcard_ret_branch wildCardRet)
-         (skipn (S index) csArlst).
+  : option (list (branch term)) :=
+  match typeConstrPatMatch.get_type_name s, typeConstrPatMatch.cstr_match_index s with
+  | Some tn, Some index =>
+    let csArlst := typeConstrPatMatch.get_arity_list tn l in
+    let branches := app (app (map (mk_wildcard_ret_branch wildCardRet) (firstn index csArlst))
+      [typeConstrPatMatch.mk_option_some_branch (rev s.(rv_bound)) t])
+      (map (mk_wildcard_ret_branch wildCardRet) (skipn (S index) csArlst)) in
+    Some branches
+  | _, _ => None
+  end.
 
 (** Create a case expression with custom output type and wildcard return value. *)
 Definition mk_case_wild
   (s' : resolved_var * list term)
   (l : list mutual_inductive_body)
   (t : term) (outputType : term)
-  (wildCardRet : term) : term :=
+  (wildCardRet : term) : option term :=
   let s := fst s' in
-  (tCase
-     {|
-       ci_ind := typeConstrPatMatch.get_type s ;
-       ci_npar := length (snd s');
-       ci_relevance := Relevant
-     |}
-     {|
-       puinst := [];
-       pparams := (snd s');
-       pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
-       preturn :=
-       outputType
-     |} (tVar s.(rv_name)) (* Should get changed to a tRel after deBruijning *)
-      (mk_branch_list_wild s l t wildCardRet)).
+  match typeConstrPatMatch.get_type s, mk_branch_list_wild s l t wildCardRet with
+  | Some ind, Some branches =>
+    Some (tCase
+       {|
+         ci_ind := ind ;
+         ci_npar := length (snd s');
+         ci_relevance := Relevant
+       |}
+       {|
+         puinst := [];
+         pparams := (snd s');
+         pcontext := [{| binder_name := nNamed s.(rv_name); binder_relevance := Relevant |}];
+         preturn :=
+         outputType
+       |} (tVar s.(rv_name))
+        branches)
+  | _, _ => None
+  end.
 
 (** Collect sets of variable names and bound variables from a pattern structure.
     Returns a pair of lists: variables with tVar terms, and all variable names. *)
@@ -564,15 +573,15 @@ Fixpoint mk_nested_match_wild_aux
   (ls' : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
-  (mut : list mutual_inductive_body) : term :=
+  (mut : list mutual_inductive_body) : option term :=
  match ls with
-  | [] => typeConstrPatMatch.id_term
+  | [] => Some typeConstrPatMatch.id_term
   | (h :: nil) => mk_case_wild h mut (outputTerm) outputType wildCardRet
   | (h :: t) =>
-    mk_case_wild h mut
-      (mk_nested_match_wild_aux t ls'
-         outputTerm outputType wildCardRet mut)
-      outputType wildCardRet
+    match mk_nested_match_wild_aux t ls' outputTerm outputType wildCardRet mut with
+    | Some inner => mk_case_wild h mut inner outputType wildCardRet
+    | None => None
+    end
  end.
 
 (** Wrapper for mk_nested_match_wild_aux that pre-processes constructor type variables. *)
@@ -580,7 +589,7 @@ Definition mk_nested_match_wild
   (ls' : list resolved_var)
   (outputTerm : term) (outputType : term)
   (wildCardRet : term)
-  (mut : list mutual_inductive_body) : term :=
+  (mut : list mutual_inductive_body) : option term :=
   mk_nested_match_wild_aux
     (typeConstrPatMatch.preprocess_type_var ls' ls')
     ls' outputTerm outputType wildCardRet mut.
@@ -598,13 +607,15 @@ Definition mk_lam_wild_unwrap
   | [] => None
   | (h :: ({| rv_name := str; rv_term := typeInfo; rv_bound := [] |} ::
           ({| rv_name := str2; rv_term := t'; rv_bound := l' |} :: rest))) =>
-    Some (tLambda
-      {| binder_name := nNamed str2;
-         binder_relevance := Relevant |}
-      (typeInfo)
-      (mk_nested_match_wild ls
-         outputTerm outputType
-         wildCardRet mut))
+    match mk_nested_match_wild ls outputTerm outputType wildCardRet mut with
+    | Some body =>
+      Some (tLambda
+        {| binder_name := nNamed str2;
+           binder_relevance := Relevant |}
+        (typeInfo)
+        body)
+    | None => None
+    end
   | _ => None
   end.
 
@@ -661,16 +672,18 @@ Definition animate_one_pattern
                     (snd (collect_var_sets (typeConstrPatMatch.preprocess_cons fuel inputTerm))))
           (typeConstrPatMatch.preprocess_remainder fuel inputTerm)
   then
-    t <- tmEval all (typeConstrPatMatch.unwrap_option
-                      (DB.de_bruijn_option
-                        (typeConstrPatMatch.unwrap_option
-                          (mk_lam_from_ind inputTerm
-                                        [termFull; outcomePolyProg; prodTpProg]
-                                        outputTerm
-                                        outputType
-                                        wildCardRet
-                                        fuel)))) ;;
-    tmReturn t
+    match mk_lam_from_ind inputTerm
+            [termFull; outcomePolyProg; prodTpProg]
+            outputTerm outputType wildCardRet fuel with
+    | Some named_t =>
+      match DB.de_bruijn_option named_t with
+      | Some db_t =>
+        t <- tmEval all db_t ;;
+        tmReturn t
+      | None => tmFail "de Bruijn conversion failed in animate_one_pattern"
+      end
+    | None => tmFail "pattern compilation failed in animate_one_pattern"
+    end
   else
     tmFail "found clashing variables or insufficient fuel".
 
@@ -786,9 +799,12 @@ let u :=
                               |}]
                      )) in
 
-t' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
-
-tmReturn t'.
+match DB.de_bruijn_option u with
+| Some db_t =>
+  t' <- tmEval all db_t ;;
+  tmReturn t'
+| None => tmFail "de Bruijn conversion failed in join_pattern_fueled"
+end.
 
 (** Compile a constructor-pattern equality [t_pattern = t_expr] into a composed
     [animation_result] function: first match the input against [t_expr] to get
@@ -811,8 +827,12 @@ Definition compile_eq_binders
                 (snd kn ++ "OUT")
                 fuel ;;
       let u := tApp <%compose_outcome%> [inputTp; typeVar; outputTp; tIn; tOut] in
-      u' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
-      tmReturn u'
+      match DB.de_bruijn_option u with
+      | Some db_u =>
+        u' <- tmEval all db_u ;;
+        tmReturn u'
+      | None => tmFail "de Bruijn conversion failed in compile_eq_binders"
+      end
   | _ => tmFail "incorrect inductive shape"
   end.
 
