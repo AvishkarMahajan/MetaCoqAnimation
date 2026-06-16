@@ -51,7 +51,7 @@ Fixpoint type_to_eq_fn (t : term) : term :=
          |} [] => <%String.eqb%>
   | tInd {| inductive_mind := (defLoc, str);
             inductive_ind := _j |} [] =>
-    tConst (defLoc, (String.append eq_fn_prefix str)) []
+    tConst (defLoc, ((eq_fn_prefix ++ str))) []
 
   | tApp <%list%> [tp] => tApp <%@eqb_list%> [tp; (type_to_eq_fn tp)]
   | tApp <%prod%> [tp1 ; tp2] =>
@@ -139,16 +139,14 @@ Fixpoint ordered_vars (t : term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [typeT; tVar str1; tApp fn lst] =>
-    str1 :: (app (ordered_vars fn)
-                 (concat (map ordered_vars lst)))
+    str1 :: (ordered_vars fn ++ concat (map ordered_vars lst))
   | tApp <%eq%> [typeT; tApp fn lst; tVar str1] =>
-    app (app (ordered_vars fn)
-             (concat (map ordered_vars lst))) [str1]
+    ordered_vars fn ++ concat (map ordered_vars lst) ++ [str1]
   | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] => [str1]
   | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>  [str1]
 
   | tVar str  => [str]
-  | tApp fn lst => app (ordered_vars fn) (concat (map ordered_vars lst))
+  | tApp fn lst => ordered_vars fn ++ concat (map ordered_vars lst)
   | _ => []
   end.
 
@@ -444,7 +442,7 @@ let conjunct := fst conjunct' in
                       tIn' <- join_pattern_fueled induct
                         (inputVarProdTm) (inputVarProdTp)
                         predInProdTm predInProdTp
-                        (String.append (snd kn) "IN")
+                        (snd kn ++ "IN")
                         fuel ;;
                       (* Compose: user input -> pred input ->
                          pred output (via recursive call) *)
@@ -452,14 +450,13 @@ let conjunct := fst conjunct' in
                         (tApp <%compose_outcome%>
                           [(inputVarProdTp); predInProdTp;
                            (predOutProdTp); tIn';
-                           (tVar (String.append
-                              indNm top_fn_suffix))]) in
+                           (tVar (indNm ++ top_fn_suffix))]) in
                       (* Build the output-side pattern match:
                          maps predicate output to user output *)
                       tOut <- join_pattern_fueled induct
                         predOutProdTm predOutProdTp
                         (outputTm) (outputTp)
-                        (String.append (snd kn) "OUT")
+                        (snd kn ++ "OUT")
                         fuel ;;
                       (* Final composition:
                          user input -> pred output ->
@@ -536,7 +533,7 @@ let conjunct := fst conjunct' in
                       tIn' <- join_pattern_fueled induct
                         (inputVarProdTm) (inputVarProdTp)
                         predInProdTm predInProdTp
-                        (String.append (snd kn) "IN")
+                        (snd kn ++ "IN")
                         fuel ;;
                       let tIn :=
                         (tApp <%compose_outcome%>
@@ -545,14 +542,13 @@ let conjunct := fst conjunct' in
                            (tLam "fuel" <%nat%>
                              (tLam "input"
                                <%animation_result bool%>
-                               (tApp (tVar
-                                 (String.append indNm
-                                   top_fn_suffix))
+                               (tApp
+                                 (tVar (indNm ++ top_fn_suffix))
                                  [tVar "fuel"])))]) in
                       tOut <- join_pattern_fueled induct
                         predOutProdTm predOutProdTp
                         (outputTm) (outputTp)
-                        (String.append (snd kn) "OUT")
+                        (snd kn ++ "OUT")
                         fuel ;;
                       let u :=
                         (tApp <%compose_outcome%>

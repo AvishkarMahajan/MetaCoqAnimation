@@ -434,8 +434,7 @@ combineGuard <- animate_guard_bool_branch (ind) (kn)
   match inVars with
   | h :: rest =>
     tmReturn (mk_lam_chain
-      (app (mk_animated_names lhsPreds)
-        [("fuel", <%nat%>)])
+      (mk_animated_names lhsPreds ++ [("fuel", <%nat%>)])
       (tLam "input"
         (tApp <%animation_result%>
           [tele_to_prod_tp inVars])
@@ -443,8 +442,7 @@ combineGuard <- animate_guard_bool_branch (ind) (kn)
           (letBind combineGuard))))
   | [] =>
     tmReturn (mk_lam_chain
-      (app (mk_animated_names lhsPreds)
-        [("fuel", <%nat%>)])
+      (mk_animated_names lhsPreds ++ [("fuel", <%nat%>)])
       (tLam "input"
         (tApp <%animation_result%> [<%bool%>])
         (split_inputs' inVars
@@ -554,7 +552,7 @@ Fixpoint classify_premises
                     (tApp <%eq%>
                       [typeVar; t2; t1] :: sortedConjs)
                     (guardConjs)
-                    (app (ordered_vars t2) kv) n
+                    (ordered_vars t2 ++ kv) n
                 else
                 (if (andb
                   (is_subset_strings (ordered_vars t2) kv)
@@ -564,7 +562,7 @@ Fixpoint classify_premises
                     (tApp <%eq%>
                       [typeVar; t1; t2] :: sortedConjs)
                     (guardConjs)
-                    (app (ordered_vars t1) kv) n
+                    (ordered_vars t1 ++ kv) n
                 else
                 (classify_premises modes t
                   (conj' :: remConjs) (sortedConjs)
@@ -588,9 +586,9 @@ Fixpoint classify_premises
                   then
                     classify_premises modes t remConjs
                       (conj' :: sortedConjs) guardConjs
-                      (app (ordered_vars_of_list
+                      (ordered_vars_of_list
                         (select_out_args indNm
-                          modes lstArgs)) kv) n
+                          modes lstArgs) ++ kv) n
                   else
                     classify_premises modes t
                       (conj' :: remConjs) sortedConjs
@@ -674,7 +672,7 @@ Fixpoint attach_vars_to_conjs
   : list (term * (string * term)) :=
   match lconjs with
   | [] => []
-  | h :: rest => app (attach_var_to_conj (fst h) (snd h)) (attach_vars_to_conjs rest)
+  | h :: rest => attach_var_to_conj (fst h) (snd h) ++ attach_vars_to_conjs rest
   end.
 (** Convert a sorted conjunct list to a tagged [(conjunct, output_var)] list. *)
 Definition attach_sorted_outputs

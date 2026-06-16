@@ -193,7 +193,7 @@ Fixpoint in_out_types (modes : mode_map)
   : list ((string * list term) * list term) :=
   match modes with
   | [] => []
-  | h :: t => app (in_out_types_one h b) (in_out_types t b)
+  | h :: t => in_out_types_one h b ++ in_out_types t b
   end.
 
 (** Convert constructor bodies to named terms by unquoting from de Bruijn into
@@ -247,7 +247,7 @@ Fixpoint subst_pattern_vars (l : list term)
       :: (subst_pattern_vars rest varPfix n (tl argTps))
   | t' :: rest =>
       let vn :=
-        String.append varPfix (string_of_nat n) in
+        (varPfix ++ (string_of_nat n)) in
       (([(tVar vn)],
         [tApp <%eq%>
           [(hd <%bool%> argTps); (tVar vn); t']]),
@@ -316,8 +316,8 @@ Fixpoint ordered_vars_from_clause (t : term) : list string :=
 
   | tProd {| binder_name := nAnon;
              binder_relevance := Relevant |} t1 t2 =>
-      app (ordered_vars_from_clause t1)
-        (ordered_vars_from_clause t2)
+      ordered_vars_from_clause t1 ++
+        ordered_vars_from_clause t2
   | _ => []
   end.
 
@@ -326,7 +326,7 @@ Fixpoint ordered_vars_from_clause (t : term) : list string :=
 Fixpoint fresh_var_prefix (n : nat) : string :=
   match n with
   | 0 => "j"
-  | S m => String.append "j" (fresh_var_prefix m)
+  | S m => "j" ++ fresh_var_prefix m
   end.
 
 (** Extract the [(name, type)] pairs for every inductive predicate. *)
@@ -380,8 +380,8 @@ let lstTm := flatten_clause t in
 let allPredArgTp := pred_arg_types allTpInf in
 let resolved := resolve_conj_inputs lstTm prefix 0 allPredArgTp in
 build_clause
-  (app (concat (map (fun y => (snd (fst y))) resolved))
-       (map (fun y => (fst (fst y))) resolved)).
+  (concat (map (fun y => snd (fst y)) resolved) ++
+   map (fun y => fst (fst y)) resolved).
 
 (** Collect the new variable-type bindings introduced by rewriting clause [t]. *)
 Definition extra_type_info (t : term) (allTpInf : list type_env_entry) : list (string * term) :=
@@ -540,17 +540,14 @@ Fixpoint apply_top_fn (kn : kername) (clauseData : list (string * (list string))
   | (postConCons, preConInd) :: t => match preConInd with
                                    | [] =>
                                        (quote_const' kn
-                                         (String.append
-                                           postConCons anim_suffix))
+                                         (postConCons ++ anim_suffix))
                                        :: apply_top_fn kn t
                                    | l =>
                                        tApp
                                          (quote_const' kn
-                                           (String.append
-                                             postConCons anim_suffix))
+                                           (postConCons ++ anim_suffix))
                                          (map (fun nm =>
-                                           (tVar (String.append nm
-                                             top_fn_suffix))) l)
+                                           tVar (nm ++ top_fn_suffix)) l)
                                        :: apply_top_fn kn t
                                    end
   end.
@@ -592,7 +589,7 @@ let tp :=
   then tPro "fuel" <%nat%> (tPro "input" (tApp <%animation_result%> [inputType])
          (tApp <%animation_result%> [outputType]))
   else tPro "fuel" <%nat%> (tApp <%animation_result%> [outputType]) in
-{| dname := {| binder_name := nNamed (String.append indNm top_fn_suffix);
+{| dname := {| binder_name := nNamed ((indNm ++ top_fn_suffix));
                binder_relevance := Relevant |};
    dtype := tp; dbody := body; rarg := 0 |}.
 
@@ -619,7 +616,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
     using [map_outcome Rest] as the zero-fuel branch. *)
 Definition mk_coind_top_body (indNm : string) (inputType outputType : term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
-let restFn := quote_const' kn (String.append indNm "Rest") in
+let restFn := quote_const' kn ((indNm ++ "Rest")) in
 mk_ind_top_base indNm inputType outputType clauseData kn
   (tApp <%map_outcome%> [inputType; outputType; restFn; tVar "input"])
   (fun listTm => tApp (tVar "dispatch_coind_ext")
@@ -630,7 +627,7 @@ mk_ind_top_base indNm inputType outputType clauseData kn
     using [map_outcome Rest] as the zero-fuel branch. *)
 Definition mk_coind_top_no_input (indNm : string) (inputType outputType : term)
   (clauseData : list (string * (list string))) (kn : kername) : def term :=
-let restFn := quote_const' kn (String.append indNm "Rest") in
+let restFn := quote_const' kn ((indNm ++ "Rest")) in
 mk_ind_top_base indNm inputType outputType clauseData kn
   (tApp <%map_outcome%> [inputType; outputType; restFn; tVar "input"])
   (fun listTm => tApp (tVar "dispatch_coind_ext")
@@ -731,14 +728,14 @@ Definition mk_all_ind
   (inductData : (list fixpoint_entry))
   (kn : kername) (modes : mode_map)
   : list (def term) :=
-app (mk_all_fixpoints mk_ind_fixpoint inductData kn modes) [dispatch_ext_tm].
+mk_all_fixpoints mk_ind_fixpoint inductData kn modes ++ [dispatch_ext_tm].
 
 (** Build all coinductive top-level definitions plus the coinductive dispatch term. *)
 Definition mk_all_coind
   (inductData : (list fixpoint_entry))
   (kn : kername) (modes : mode_map)
   : list (def term) :=
-app (mk_all_fixpoints mk_coind_fixpoint inductData kn modes) [dispatch_ext_tm_co_ind].
+mk_all_fixpoints mk_coind_fixpoint inductData kn modes ++ [dispatch_ext_tm_co_ind].
 
 (** Annotate each inductive's clause list with the inductive names it calls,
     producing the [(inductive_data, recursive_calls)] structure used for
@@ -808,7 +805,7 @@ t <- animate_lets_and_guards ind kn lConjs
 t'' <- tmEval all  (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option t)) ;;
 f <- tmUnquote t'' ;;
 tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (String.append cstrNm anim_suffix) (Some hnf) ;;
+    tmDefinitionRed_ false ((cstrNm ++ anim_suffix)) (Some hnf) ;;
 
 tmReturn t''.
 
@@ -949,7 +946,7 @@ Fixpoint var_names_at (n : nat) (vArgs : list term) : list string :=
 Fixpoint var_names (l : list nat) (vArgs : list term) : list string :=
   match l with
   | [] => []
-  | h :: rest => app (var_names_at h vArgs) (var_names rest vArgs)
+  | h :: rest => var_names_at h vArgs ++ var_names rest vArgs
   end.
 
 (** Extract variable names from a clause's conclusion according to the positions
@@ -999,7 +996,7 @@ all_var_types_raw c (concat (map snd tpData)).
 Definition all_ind_tp_data (data : list clause_data) : list (string * list term) :=
 map (fun x =>
   (fst (fst (fst x)),
-   app (snd (fst (fst x))) (snd (fst x )))) data.
+   app (snd (fst (fst x))) (snd (fst x)))) data.
 
 (** Compute the type of the animated top-level function for one inductive:
     [nat -> animation_result inputTp -> animation_result outputTp]. *)
@@ -1032,7 +1029,7 @@ Fixpoint filter_by_names {A : Type}
   : list (string * A) :=
   match l with
   | [] => []
-  | h :: rest => app (filter_by_name h l') (filter_by_names rest l')
+  | h :: rest => filter_by_name h l' ++ filter_by_names rest l'
   end.
 
 (** Look up the animation types of all predicates called by constructor [snd (fst c)]. *)
@@ -1184,7 +1181,7 @@ let u := (mk_rec_fn (mk_all_ind (inductData) kn modes) 0)  in
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false
-                (String.append (snd kn) top_fn_suffix)
+                (((snd kn) ++ top_fn_suffix))
                 (Some hnf) ;;
               tmReturn tms.
 
@@ -1211,7 +1208,7 @@ let u := (mk_rec_fn (mk_all_coind (inductData) kn modes) 0)  in
           t' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (String.append (snd kn) top_fn_suffix) (Some hnf) ;;
+              tmDefinitionRed_ false (((snd kn) ++ top_fn_suffix)) (Some hnf) ;;
               fnInTp <- search_in_tp inductData (snd kn) "cannot find input type" ;;
               fnOutTp <- search_out_tp inductData (snd kn) "cannot find output type" ;;
               let tCoInd :=
@@ -1223,7 +1220,7 @@ let u := (mk_rec_fn (mk_all_coind (inductData) kn modes) 0)  in
               fStm <- tmUnquote tCoInd'' ;;
 
               tmEval hnf (my_projT2 fStm) >>=
-              tmDefinitionRed_ false (String.append (snd kn) stream_suffix) (Some hnf) ;;
+              tmDefinitionRed_ false (((snd kn) ++ stream_suffix)) (Some hnf) ;;
 
               tmReturn tms.
 
@@ -1264,7 +1261,7 @@ let u := (mk_rec_fn (mk_all_ind (inductData) topKn modes) 0)  in
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false
-                (String.append (snd topKn) top_fn_suffix)
+                (((snd topKn) ++ top_fn_suffix))
                 (Some hnf) ;;
               tmReturn u'.
 

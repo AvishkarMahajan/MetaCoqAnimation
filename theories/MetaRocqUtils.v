@@ -744,7 +744,7 @@ Fixpoint ordered_vars (t : term) : list string :=
 Fixpoint ordered_vars_of_list (l : list term) : list string :=
   match l with
   | [] => []
-  | h :: t => app (ordered_vars h) (ordered_vars_of_list t)
+  | h :: t => ordered_vars h ++ ordered_vars_of_list t
   end.
 (** Return a singleton list containing element [ind] of [l], or [[]] if out of bounds. *)
 Fixpoint select_from_index {A : Type} (ind : nat) (l : list A) : list A :=
@@ -760,7 +760,7 @@ Fixpoint select_from_index {A : Type} (ind : nat) (l : list A) : list A :=
 Fixpoint select_by_indices {A : Type} (indLst : list nat) (l : list A) : list A :=
   match indLst with
   | [] => []
-  | h :: t => app (select_from_index h l) (select_by_indices t l)
+  | h :: t => select_from_index h l ++ select_by_indices t l
   end.
 
 (** Select the input arguments of predicate [indNm] from [lstArgs] according to its mode. *)
@@ -873,16 +873,16 @@ Definition join_pair (A B : Type)
 Fixpoint mk_join_body (lstTypes : list term) (n : nat) : term :=
   match lstTypes with
   | [] => <%Success bool true%>
-  | [h] => tApp <%join_unit%> [h; tVar (String.append "o" (string_of_nat n))]
+  | [h] => tApp <%join_unit%> [h; tVar ("o" ++ string_of_nat n)]
   | [h ; h1] =>
     tApp <%join_pair%>
       [h; h1;
-       tVar (String.append "o" (string_of_nat n));
-       tVar (String.append "o" (string_of_nat (S n)))]
+       tVar ("o" ++ string_of_nat n);
+       tVar ("o" ++ string_of_nat (S n))]
   | h :: t =>
     tApp <%join_pair%>
       [h; nested_prod_type t;
-       tVar (String.append "o" (string_of_nat n));
+       tVar ("o" ++ string_of_nat n);
        mk_join_body t (S n)]
   end.
 
@@ -893,10 +893,10 @@ Fixpoint mk_join_lam (lstTypes : list term)
   match lstTypes with
   | [] => fnBody
   | [h] =>
-    tLam (String.append "o" (string_of_nat n))
+    tLam ("o" ++ string_of_nat n)
       (tApp <%animation_result%> [h]) fnBody
   | h :: t =>
-    tLam (String.append "o" (string_of_nat n))
+    tLam ("o" ++ string_of_nat n)
       (tApp <%animation_result%> [h])
       (mk_join_lam t (S n) fnBody)
   end.
@@ -988,7 +988,7 @@ Definition anim_suffix : string := "Animated".
 Fixpoint mk_animated_names (l : list (string * term)) : list (string * term) :=
   match l with
   | [] => []
-  | (s,tp) :: t => ((String.append s top_fn_suffix), tp) :: mk_animated_names t
+  | (s,tp) :: t => (((s ++ top_fn_suffix)), tp) :: mk_animated_names t
   end.
 
 (** Project the first component of a paired [animation_result]: discards the second

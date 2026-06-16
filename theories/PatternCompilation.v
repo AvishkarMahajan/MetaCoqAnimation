@@ -39,7 +39,7 @@ Definition get_type_data (p : program) : list (option mutual_inductive_body) :=
 
 (** Generate a fresh variable name of the form "vN" where N is a number. *)
 Definition gen_var (n : nat) : string :=
-  String.append "v" (string_of_nat (n)).
+  "v" ++ string_of_nat n.
 
 (** Generate a list of fresh variables paired with terms, starting from index s. *)
 Fixpoint gen_var_list (s : nat) (ls : list term) : list (string * term) :=
@@ -64,7 +64,7 @@ Definition unfold_cons
      (i + (length args), t,
       (str, (tConstruct typeInfo cstrInd ls'),
        map fst (gen_var_list i args)) :: resolvedTs,
-      (app (gen_var_list i args) remTs))
+      app (gen_var_list i args) remTs)
  | (str, tRel k) :: t =>
      (i, t, (str, (tRel k), nil) :: resolvedTs, remTs)
  | (str, tVar varStr) :: t =>
@@ -204,8 +204,7 @@ Fixpoint gen_binder_names (n : nat) : list (binder_annot name) :=
   | 0 => []
   | S m =>
     {| binder_name :=
-         nNamed (String.append "n"
-                   (string_of_nat (S m)));
+         nNamed ("n" ++ string_of_nat (S m));
        binder_relevance := Relevant |}
       :: gen_binder_names m
   end.
@@ -502,15 +501,13 @@ Fixpoint collect_var_sets (l : list ((string * term) * list string)) : list stri
   | [] => ([], [])
   | h :: t => match snd (fst h) with
               | tVar str =>
-                (str :: (fst (collect_var_sets t)),
-                 (app (snd h)
-                   (fst (fst h)
-                     :: snd (collect_var_sets t))))
+                (str :: fst (collect_var_sets t),
+                 app (snd h) (fst (fst h)
+                   :: snd (collect_var_sets t)))
               | _ =>
-                ((fst (collect_var_sets t)),
-                 (app (snd h)
-                   (fst (fst h)
-                     :: snd (collect_var_sets t))))
+                (fst (collect_var_sets t),
+                 app (snd h) (fst (fst h)
+                   :: snd (collect_var_sets t)))
              end
   end.
 
@@ -803,11 +800,11 @@ Definition compile_eq_binders
   | tApp <%eq%> [typeVar; patMatTerm; rhsTerm] =>
       tIn <- join_pattern_fueled induct
                inputTm inputTp rhsTerm typeVar
-               (String.append (snd kn) "IN")
+               (snd kn ++ "IN")
                fuel ;;
       tOut <- join_pattern_fueled induct
                 patMatTerm typeVar outputTm outputTp
-                (String.append (snd kn) "OUT")
+                (snd kn ++ "OUT")
                 fuel ;;
       let u := tApp <%compose_outcome%> [inputTp; typeVar; outputTp; tIn; tOut] in
       u' <- tmEval all (typeConstrPatMatch.unwrap_option (DB.de_bruijn_option u)) ;;
