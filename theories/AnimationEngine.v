@@ -86,11 +86,11 @@ Definition map_outcome (A : Type) (B : Type)
 
 (** Extract inductive names from bodies. *)
 Definition ind_body_names (l : list one_inductive_body) :=
-map (fun o => ind_name o) l.
+map ind_name l.
 
 (** Generate context from inductive names. *)
 Definition gen_cxt (l : list one_inductive_body) :=
-(map (fun s => nNamed s) (rev (ind_body_names l))).
+map nNamed (rev (ind_body_names l)).
 
 (** Extract all argument types from an inductive type (de Bruijn). *)
 Fixpoint get_type (o : term) : option (list term) :=
@@ -231,7 +231,7 @@ Fixpoint mk_nm_tm (c : list constructor_body)
   match c with
   | [] => tmReturn []
   | (h :: t) =>
-      r <- DB.un_de_bruijn' l ((cstr_type h )) ;;
+      r <- DB.un_de_bruijn' l (cstr_type h) ;;
       r' <- tmEval all r ;;
       let hres := (cstr_name h, (reduce_clause r')) in
       rest <- mk_nm_tm t l ;;
@@ -251,7 +251,7 @@ Fixpoint get_data
   | h' :: t' => match inOutTps with
                  | h :: t =>
                      dbth <- mk_nm_tm (ind_ctors h') nm_ctx ;;
-                     rest <- get_data t' (ln) nm_ctx (tl inOutTps) ;;
+                     rest <- get_data t' ln nm_ctx (tl inOutTps) ;;
                      tmReturn ({| cd_ind_name := fst (fst h);
                                   cd_in_types := snd (fst h);
                                   cd_out_types := snd h;
@@ -302,8 +302,8 @@ Fixpoint resolve_conj_inputs (l : list named_term)
   | [] => []
   | (tApp <%eq%> lstArgs) :: rest =>
       (((tApp <%eq%> lstArgs) , []), [])
-      :: resolve_conj_inputs (rest) (var_pfx) (n)
-           (pred_arg_tps)
+      :: resolve_conj_inputs rest var_pfx n
+           pred_arg_tps
   | (tApp (tVar str) lstArgs) :: rest =>
       let result :=
         subst_pattern_vars lstArgs var_pfx n
@@ -313,8 +313,8 @@ Fixpoint resolve_conj_inputs (l : list named_term)
                result)))),
         (concat (map (fun y => snd (fst y)) result))),
        (concat (map snd result)))
-      :: resolve_conj_inputs (rest) (var_pfx)
-           ((length lstArgs) + (S n)) (pred_arg_tps)
+      :: resolve_conj_inputs rest var_pfx
+           (length lstArgs + S n) pred_arg_tps
   | (tApp (tInd {| inductive_mind := (_path, ind_nm);
        inductive_ind := 0 |} []) lstArgs) :: rest =>
       let result :=
@@ -327,10 +327,10 @@ Fixpoint resolve_conj_inputs (l : list named_term)
                result)))),
         (concat (map (fun y => snd (fst y)) result))),
        (concat (map snd result)))
-      :: resolve_conj_inputs (rest) (var_pfx)
-           ((length lstArgs) + (S n)) (pred_arg_tps)
+      :: resolve_conj_inputs rest var_pfx
+           (length lstArgs + S n) pred_arg_tps
 
-  | t'' :: rest => ((t'', []), []) :: resolve_conj_inputs (rest) (var_pfx) (n) (pred_arg_tps)
+  | t'' :: rest => ((t'', []), []) :: resolve_conj_inputs rest var_pfx n pred_arg_tps
 
   end.
 
@@ -340,7 +340,7 @@ Fixpoint ordered_vars_from_clause (t : named_term) : list string :=
   match t with
   | tVar str  => [str]
   | (tInd {| inductive_mind := (_path, str); inductive_ind := k |} []) => [str]
-  | tApp fn lst => app (concat (map ordered_vars_from_clause lst)) (ordered_vars_from_clause fn)
+  | tApp fn lst => flat_map ordered_vars_from_clause lst ++ ordered_vars_from_clause fn
 
   | tProd {| binder_name := nAnon;
              binder_relevance := Relevant |} t1 t2 =>
@@ -383,7 +383,7 @@ Definition flatten_clause (t : named_term) : list named_term :=
   | tProd {| binder_name := nAnon;
              binder_relevance := Relevant |}
       (tApp <%and%> lst) t' =>
-      app ((flatten_and (tApp <%and%> lst))) [t']
+      app (flatten_and (tApp <%and%> lst)) [t']
   | tProd {| binder_name := nAnon; binder_relevance := Relevant |} t'' t' =>  [t''; t']
   | t''' => [t''']
   end.
@@ -429,7 +429,7 @@ Definition extra_type_info (t : named_term) (tp_env : list type_env_entry) : lis
 let prefix := fresh_var_prefix (S (list_max (map String.length (ordered_vars_from_clause t)))) in
 let lstTm := flatten_clause t in
 let pred_arg_tp := pred_arg_types tp_env in
-(concat (map (fun y => (snd (y))) (resolve_conj_inputs lstTm prefix 0 pred_arg_tp))).
+concat (map snd (resolve_conj_inputs lstTm prefix 0 pred_arg_tp)).
 
 (** Rewrite all clause terms in a flat [(constructor_name, named_clause)] list. *)
 Fixpoint rewrite_cl_all1
@@ -751,7 +751,7 @@ Fixpoint dispatch_coind_ext
     animation_result B)) (fuel' : nat)
   (input' : animation_result A) {struct fuel'} : animation_result B :=
   match fuel' with
-  | 0 => map_outcome (A) (B) (f) (input')
+  | 0 => map_outcome A B f input'
   | S rem_fuel' =>
       match lst with
       | [] => NoMatch B
@@ -759,7 +759,7 @@ Fixpoint dispatch_coind_ext
           let res := h (S rem_fuel') input' in
           match res with
           | @NoMatch _ => dispatch_coind_ext A B f t rem_fuel' input'
-          | @FuelError _ => map_outcome (A) (B) (f) (input')
+          | @FuelError _ => map_outcome A B f input'
           | _ => res
           end
       end
@@ -896,7 +896,7 @@ end.
 Definition cstr_body_data
   (lo : list one_inductive_body)
   : list (string × term × list constructor_body) :=
-map (fun (o : one_inductive_body) => ((ind_name o), ((ind_type o), (ind_ctors o)))) lo.
+map (fun o => (ind_name o, (ind_type o, ind_ctors o))) lo.
 
 (** Convert a context declaration list to [(name, type)] pairs,
     dropping anonymous binders. *)
@@ -1262,7 +1262,7 @@ match mk_all_ind ind_data kn modes with
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false
-                (((snd kn) ++ top_fn_suffix))
+                (snd kn ++ top_fn_suffix)
                 (Some hnf) ;;
               tmReturn tms
           | None => tmFail "de Bruijn conversion failed in animate_inductive"
@@ -1300,7 +1300,7 @@ match mk_all_coind ind_data kn modes with
             t' <- tmEval all db_u ;;
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (((snd kn) ++ top_fn_suffix)) (Some hnf) ;;
+              tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
               fn_in_tp <- search_in_tp ind_data (snd kn) "cannot find input type" ;;
 
               fn_out_tp <- search_out_tp ind_data (snd kn) "cannot find output type" ;;
@@ -1313,7 +1313,7 @@ match mk_all_coind ind_data kn modes with
               f_stm <- tmUnquote t_coind'' ;;
 
               tmEval hnf (my_projT2 f_stm) >>=
-              tmDefinitionRed_ false (((snd kn) ++ stream_suffix)) (Some hnf) ;;
+              tmDefinitionRed_ false (snd kn ++ stream_suffix) (Some hnf) ;;
 
               tmReturn tms
           | None => tmFail "de Bruijn conversion failed in animate_coinductive"
@@ -1352,7 +1352,7 @@ end.
 Definition animate_multi_aux {A : Type} (topInd : A) (topKn : kername) (knLst : list kername)
  (modes : mode_map) (fuel : nat) : TemplateMonad term:=
 
-ind_data'' <- animate_multi_def (topInd) (topKn :: knLst) (modes) (fuel);;
+ind_data'' <- animate_multi_def topInd (topKn :: knLst) modes fuel ;;
 ind_data <- tmEval all ind_data'';;
 
 match mk_all_ind ind_data topKn modes with
@@ -1365,7 +1365,7 @@ match mk_all_ind ind_data topKn modes with
                f <- tmUnquote t';;
               tmEval hnf (my_projT2 f) >>=
               tmDefinitionRed_ false
-                (((snd topKn) ++ top_fn_suffix))
+                (snd topKn ++ top_fn_suffix)
                 (Some hnf) ;;
               tmReturn db_u
           | None => tmFail "de Bruijn conversion failed in animate_multi_aux"

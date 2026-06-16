@@ -38,31 +38,27 @@ Notation "<%bool%>" := (tInd {| inductive_mind := <?bool?>; inductive_ind := 0 |
 
 (** Build a product type from a list of output variable specs.
     Returns bool for empty list, single type for singleton, nested products otherwise. *)
-Fixpoint tele_to_prod_tp (out_data : list (string * term)) :  term :=
+Fixpoint tele_to_prod_tp (out_data : list (string * term)) : term :=
   match out_data with
   | [] => <%bool%>
-  | [h] =>  (snd h)
-  | h :: t => let res := tele_to_prod_tp t in  (tApp
-                                            (tInd
-                                             {|
-                                             inductive_mind := <?prod?>; inductive_ind := 0
-                                              |} []) [(snd h) ; res])
+  | [h] => snd h
+  | h :: t =>
+    let res := tele_to_prod_tp t in
+    tApp <%prod%> [snd h; res]
   end.
 
 (** Build a product term from a list of output variables.
     Constructs nested pairs of variables. *)
-Fixpoint tele_to_prod_tm  (out_data : list (string * term )) : named_term :=
+Fixpoint tele_to_prod_tm (out_data : list (string * term)) : named_term :=
   match out_data with
   | [] => <%true%>
-  | [h] => (tVar (fst h))
-  | h :: t => let res := tele_to_prod_tm t in
-                                        let resT := tele_to_prod_tp t in (tApp (tConstruct
-                                                  {|
-                                                   inductive_mind := <?prod?>; inductive_ind := 0
-                                                   |} 0 []) [(snd h); resT ; (tVar (fst h)) ; res])
+  | [h] => tVar (fst h)
+  | h :: t =>
+    let res := tele_to_prod_tm t in
+    let resT := tele_to_prod_tp t in
+    tApp (tConstruct {| inductive_mind := <?prod?>; inductive_ind := 0 |} 0 [])
+         [snd h; resT; tVar (fst h); res]
   end.
-
-Open Scope bs.
 
 (** Build the product type of a non-empty list of [(term, type)] pairs.
     Fails if the list is empty; returns a single type for singletons. *)
@@ -115,18 +111,18 @@ Fixpoint build_coq_list (lst : list global_term) (elem_tp : global_term) : globa
   | h :: t =>  tApp
                (tConstruct
                {| inductive_mind := <?list?>; inductive_ind := 0 |} 1 [])
-               [elem_tp; h; (build_coq_list t elem_tp)]
+               [elem_tp; h; build_coq_list t elem_tp]
   end.
 
 (** Dispatch mechanism: try each function in the list until one returns Some.
     Returns None if all functions return None. *)
 Fixpoint dispatch_clauses (inT : Type) (outT : Type)
-                            (fns : list (inT -> option (outT))) : (inT -> (option outT)) :=
+                            (fns : list (inT -> option outT)) : inT -> option outT :=
  fun x => match fns with
            | [] => None
            | h :: t => let r := h x in
                        match r with
-                       | None => (dispatch_clauses inT outT t) x
+                       | None => dispatch_clauses inT outT t x
                        | _ => r
                        end
           end .
@@ -156,8 +152,8 @@ Fixpoint quote_list {A : Type} (l : list A) : TemplateMonad (list term) :=
 Fixpoint ordered_vars_aux (ls : list named_term) : list string :=
   match ls with
   | [] => []
-  | (tVar str) :: t => str :: (ordered_vars_aux t)
-  | _ :: t => (ordered_vars_aux t)
+  | tVar str :: t => str :: ordered_vars_aux t
+  | _ :: t => ordered_vars_aux t
   end.
 
 (** Extract variable names from a term in declaration order.
@@ -165,22 +161,19 @@ Fixpoint ordered_vars_aux (ls : list named_term) : list string :=
 Fixpoint ordered_vars (t : named_term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
-  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: ordered_vars_aux (lst)
-  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (ordered_vars_aux (lst)) [str1]
+  | tApp <%eq%> [typeT; tVar str1; tApp fn lst] => str1 :: ordered_vars_aux lst
+  | tApp <%eq%> [typeT; tApp fn lst; tVar str1] => app (ordered_vars_aux lst) [str1]
   | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] => [str1]
   | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>  [str1]
 
   | tVar str  => [str]
-  | tApp _ lst => concat (map ordered_vars lst)
+  | tApp _ lst => flat_map ordered_vars lst
   | _ => []
   end.
 
 (** Apply [ordered_vars] to each element of [l] and concatenate the results. *)
-Fixpoint ordered_vars_of_list (l : list named_term) : list string :=
-  match l with
-  | [] => []
-  | h :: t => ordered_vars h ++ ordered_vars_of_list t
-  end.
+Definition ordered_vars_of_list : list named_term -> list string :=
+  flat_map ordered_vars.
 
 (** Return a singleton list containing element [ind] of [l], or [[]] if out of bounds. *)
 Fixpoint select_from_index {A : Type} (ind : nat) (l : list A) : list A :=
@@ -231,11 +224,8 @@ Fixpoint lookup_one_var (var_nm : string)
   end.
 
 (** Convert a [(variable_name, type)] list to a [(tVar name, type)] list. *)
-Fixpoint pairs_to_terms (lst : list (prod string term)) : list (prod named_term term) :=
-  match lst with
-  | [] => []
-  | (str,tp) :: t => (tVar str, tp) :: pairs_to_terms t
-  end.
+Definition pairs_to_terms (lst : list (prod string term)) : list (prod named_term term) :=
+  map (fun '(str, tp) => (tVar str, tp)) lst.
 
 (** Look up each variable name in [lst] in the type environment, dropping missing entries. *)
 Fixpoint lookup_vars (lst : list string)
@@ -251,18 +241,18 @@ Fixpoint lookup_vars (lst : list string)
 
 (** Look up the mode (input-position list, output-position list) for [ind_nm],
     returning ([],[]) if not found. *)
-Fixpoint lookup_mode (ind_nm : string) (modes : mode_map) : (list nat) * (list nat) :=
+Fixpoint lookup_mode (ind_nm : string) (modes : mode_map) : list nat * list nat :=
   match modes with
   | [] => ([],[])
   | h :: t => if String.eqb ind_nm (fst h) then (snd h) else lookup_mode ind_nm t
   end.
 
 (** Select the input arguments from [lstArgs] using a pre-looked-up [mode] pair. *)
-Definition select_in_by_mode  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+Definition select_in_by_mode (mode : list nat * list nat) (lstArgs : list term) : list term :=
 select_by_indices (fst mode) lstArgs.
 
 (** Select the output arguments from [lstArgs] using a pre-looked-up [mode] pair. *)
-Definition select_out_by_mode  (mode : (list nat) * (list nat)) (lstArgs : list term) : list term :=
+Definition select_out_by_mode (mode : list nat * list nat) (lstArgs : list term) : list term :=
 select_by_indices (snd mode) lstArgs.
 
 (** Look up the argument types for predicate [ind_nm] in a type-info table. *)
@@ -278,12 +268,7 @@ Fixpoint nested_prod_type (types : list term) : global_term :=
   match types with
   | [] => <%bool%>
   | [h] => h
-  | h :: t => tApp
-                     (tInd
-                        {|
-                          inductive_mind := <?prod?>;
-                          inductive_ind := 0
-                        |} []) [h ; (nested_prod_type t)]
+  | h :: t => tApp <%prod%> [h; nested_prod_type t]
   end.
 
 (** Build the body of a join function for [types]: folds [join_pair] over
@@ -341,10 +326,8 @@ tApp (mk_join_tm (map snd out_vars)) (map (fun e => tVar (fst e)) out_vars).
 Fixpoint mk_lam_chain (in_vars : list (prod string term)) (body : term) : term :=
   match in_vars with
   | [] => body
-
   | h :: t => tLam (fst h) (snd h) (mk_lam_chain t body)
   end.
-
 
 (** String constants for generated definition names. *)
 Definition top_fn_suffix : string := "AnimatedTopFn".
@@ -353,8 +336,5 @@ Definition anim_suffix : string := "Animated".
 
 (** Append [top_fn_suffix] to every function name in the [(name, type)] list,
     producing the names used for the generated animated definitions. *)
-Fixpoint mk_animated_names (l : list (string * term)) : list (string * term) :=
-  match l with
-  | [] => []
-  | (s,tp) :: t => (((s ++ top_fn_suffix)), tp) :: mk_animated_names t
-  end.
+Definition mk_animated_names (l : list (string * term)) : list (string * term) :=
+  map (fun '(s, tp) => (s ++ top_fn_suffix, tp)) l.

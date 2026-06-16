@@ -38,7 +38,7 @@ Definition get_ind_body (x : global_decl) : option mutual_inductive_body :=
 
 (** Extract all inductive type declarations from a program. *)
 Definition get_type_data (p : program) : list (option mutual_inductive_body) :=
-  map get_ind_body ((map snd ((((declarations (fst p))))))).
+  map get_ind_body (map snd (declarations (fst p))).
 
 (** Generate a fresh variable name of the form "vN" where N is a number. *)
 Definition gen_var (n : nat) : string :=
@@ -291,7 +291,7 @@ Fixpoint sort_binders_one
 Definition sort_binders
   (out_vars : list string)
   (lst : list resolved_var)
-  : ((list string)) :=
+  : list string :=
   concat (map (fun x : string => sort_binders_one x lst) out_vars).
 
 (** Get the constructor index from a resolved term structure. *)
@@ -575,7 +575,7 @@ Fixpoint mk_nested_match_wild_aux
   (mut : list mutual_inductive_body) : option named_term :=
  match ls with
   | [] => Some typeConstrPatMatch.id_term
-  | (h :: nil) => mk_case_wild h mut (out_tm) out_tp wildcard
+  | (h :: nil) => mk_case_wild h mut out_tm out_tp wildcard
   | (h :: t) =>
     match mk_nested_match_wild_aux t ls' out_tm out_tp wildcard mut with
     | Some inner => mk_case_wild h mut inner out_tp wildcard
@@ -611,7 +611,7 @@ Definition mk_lam_wild_unwrap
       Some (tLambda
         {| binder_name := nNamed str2;
            binder_relevance := Relevant |}
-        (typeInfo)
+        typeInfo
         body)
     | None => None
     end
@@ -699,10 +699,7 @@ Fixpoint animate_patterns
   match branch_data with
   | [] => tmReturn []
   | h :: rest =>
-      t <- animate_one_pattern
-             induct
-             (fst h)
-             in_tp
+      t <- animate_one_pattern induct (fst h) in_tp
              (tApp (tConstruct {| inductive_mind := <?option?>; inductive_ind := 0 |} 0 [])
                    [out_tp; snd h])
              (tApp <%option%> [out_tp])
@@ -761,10 +758,10 @@ let post_out := tApp <%Success%> [post_out_tp'; post_out'] in
 let post_out_tp := tApp <%animation_result%> [post_out_tp'] in
 (* Build a dispatch fn: Success input -> Success output, FuelError -> FuelError *)
 tBody' <-
-  mk_pattern_match_fn (induct)
-    ([(post_in, (post_out));
-      ((tApp <%FuelError%> [post_in_tp']),
-       (tApp <%FuelError%> [post_out_tp']))])
+  mk_pattern_match_fn induct
+    [(post_in, post_out);
+     (tApp <%FuelError%> [post_in_tp'],
+      tApp <%FuelError%> [post_out_tp'])]
     post_in_tp post_out_tp
     (tApp <%NoMatch%> [post_out_tp']) fuel ;;
 (* Wrap in a fuel-decrementing case: 0 -> fuel_error, S n -> dispatch *)

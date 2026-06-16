@@ -96,7 +96,7 @@ Fixpoint has_eq_fn (t : global_term) : bool :=
     that will generate let-bindings. *)
 Fixpoint collect_let_conjs (big_conj : named_term) : list named_term :=
   match big_conj with
-  | tApp <%and%> ls => concat (map collect_let_conjs ls)
+  | tApp <%and%> ls => flat_map collect_let_conjs ls
   | tApp <%eq%> [_; _; _] => [big_conj]
   | _ => []
   end.
@@ -116,7 +116,7 @@ Definition get_ind_name (conjunct : named_term) : option (string * list named_te
     equalities and inductive predicate applications (used for boolean guard generation). *)
 Fixpoint collect_guard_conjs (big_conj : named_term) : list named_term :=
   match big_conj with
-  | tApp <%and%> ls => concat (map collect_guard_conjs ls)
+  | tApp <%and%> ls => flat_map collect_guard_conjs ls
   | tApp <%eq%> [_; _; _] => [big_conj]
   | _ => match get_ind_name big_conj with
          | Some _ => [big_conj]
@@ -131,7 +131,7 @@ Definition collect_all_conjs := collect_guard_conjs.
     by [has_eq_fn] (used to decide if the whole clause can be animated). *)
 Fixpoint classify_conj_types (big_conj : named_term) : list bool :=
   match big_conj with
-  | tApp <%and%> ls => concat (map classify_conj_types ls)
+  | tApp <%and%> ls => flat_map classify_conj_types ls
   | tApp <%eq%> [typeT; _; _] => [has_eq_fn typeT]
   | _ => [false]
   end.
@@ -142,14 +142,14 @@ Fixpoint ordered_vars (t : named_term) : list string :=
   match t with
   | tApp <%eq%> [typeT; tVar str1; tVar str2] => [str1 ; str2]
   | tApp <%eq%> [typeT; tVar str1; tApp fn lst] =>
-    str1 :: (ordered_vars fn ++ concat (map ordered_vars lst))
+    str1 :: (ordered_vars fn ++ flat_map ordered_vars lst)
   | tApp <%eq%> [typeT; tApp fn lst; tVar str1] =>
-    ordered_vars fn ++ concat (map ordered_vars lst) ++ [str1]
+    ordered_vars fn ++ flat_map ordered_vars lst ++ [str1]
   | tApp <%eq%> [typeT; tConstruct ind_type k lst; tVar str1] => [str1]
   | tApp <%eq%> [typeT; tVar str1; tConstruct ind_type k lst] =>  [str1]
 
   | tVar str  => [str]
-  | tApp fn lst => ordered_vars fn ++ concat (map ordered_vars lst)
+  | tApp fn lst => ordered_vars fn ++ flat_map ordered_vars lst
   | _ => []
   end.
 
@@ -334,10 +334,10 @@ let post_in_tp := tApp <%animation_result%> [post_in_tp'] in
 let post_out := tApp <%Success%> [post_out_tp'; post_out'] in
 let post_out_tp := tApp <%animation_result%> [post_out_tp'] in
 
-tBody' <-  mk_pattern_match_fn (induct)
-  ([(post_in, (post_out));
-    ((tApp <%FuelError%> [post_in_tp']),
-     (tApp <%FuelError%> [post_out_tp']))])
+tBody' <- mk_pattern_match_fn induct
+  [(post_in, post_out);
+   (tApp <%FuelError%> [post_in_tp'],
+    tApp <%FuelError%> [post_out_tp'])]
   post_in_tp post_out_tp
   (tApp <%NoMatch%> [post_out_tp']) fuel ;;
 

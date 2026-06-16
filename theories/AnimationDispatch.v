@@ -125,11 +125,11 @@ let in_tp := tele_to_prod_tp in_vars_lst in
 let inputVarsLstTm := pairs_to_terms in_vars_lst in
 out_var_nm <- tmEval all (conjunct'.(tc_out_var)) ;;
 out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
-anim_fn <- animate_let_binding (ind) (kn) (conjunct')
-  (in_tm) (in_tp) (map fst in_vars_lst)
-  (modes) (pred_types) (var_env) fuel ;;
-tmReturn (build_let_chain_step (out_var_nm) (out_var_tp)
-  (inputVarsLstTm) (anim_fn) (partial_fn)).
+anim_fn <- animate_let_binding ind kn conjunct'
+  in_tm in_tp (map fst in_vars_lst)
+  modes pred_types var_env fuel ;;
+tmReturn (build_let_chain_step out_var_nm out_var_tp
+  inputVarsLstTm anim_fn partial_fn).
 
 (** Animate one conjunction as a boolean predicate guard: compile [conjunct'] and
     produce a [and_outcome_bool] expression that extends [guard_acc]. *)
@@ -150,8 +150,8 @@ in_tp' <- tmEval all in_tp;;
 out_var_nm <- tmEval all (conjunct'.(tc_out_var)) ;;
 out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
 
-anim_fn <- animate_let_binding (ind) (kn) (conjunct') (in_tm) (in_tp)
-                                 (map fst in_vars_lst) (modes) (pred_types) (var_env) fuel ;;
+anim_fn <- animate_let_binding ind kn conjunct' in_tm in_tp
+                                 (map fst in_vars_lst) modes pred_types var_env fuel ;;
 
 tmReturn (tApp <%and_outcome_bool%>
   [guard_acc ;
@@ -205,8 +205,8 @@ Definition animate_let_with_ctx {A : Type}
   (pred_types : pred_type_map)
   (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term -> term) :=
-let  in_vars_lst := conj_input_vars conjunct' var_env (modes) (pred_types) in
-animate_one_let ind kn conjunct' in_vars_lst partial_fn (modes) (pred_types) (var_env) fuel.
+let in_vars_lst := conj_input_vars conjunct' var_env modes pred_types in
+animate_one_let ind kn conjunct' in_vars_lst partial_fn modes pred_types var_env fuel.
 
 (** Animate one guard-predicate clause by first computing its input variable
     list (named) from context, then delegating to [animate_one_guard].
@@ -220,9 +220,9 @@ Definition animate_guard_with_ctx {A : Type}
   (var_env : list (string * term))
   (fuel : nat) : TemplateMonad (term) :=
 
-let  in_vars_lst := conj_input_vars conjunct' var_env (modes) (pred_types) in
+let in_vars_lst := conj_input_vars conjunct' var_env modes pred_types in
 animate_one_guard ind kn conjunct' in_vars_lst
-  guard_acc (modes) (pred_types) (var_env) fuel.
+  guard_acc modes pred_types var_env fuel.
 
 (** Animate a list of let-binding conjuncts left-to-right, threading the
     accumulated let-binding function [partial_fn] through each step. *)
@@ -238,10 +238,10 @@ Fixpoint animate_let_list {A : Type}
   | [] => tmReturn partial_fn
   | h :: t =>
     lFn' <- animate_let_with_ctx ind kn h
-      partial_fn (modes) (pred_types)
-      (var_env) fuel ;;
+      partial_fn modes pred_types
+      var_env fuel ;;
     animate_let_list ind kn t lFn'
-      (modes) (pred_types) (var_env) fuel
+      modes pred_types var_env fuel
   end.
 
 (** Animate a list of predicate guard conjuncts, threading the accumulated
@@ -258,10 +258,10 @@ Fixpoint animate_guard_list {A : Type}
   | [] => tmReturn guard_acc
   | h :: t =>
     pg <- animate_guard_with_ctx ind kn h
-      guard_acc (modes) (pred_types)
-      (var_env) fuel ;;
+      guard_acc modes pred_types
+      var_env fuel ;;
     animate_guard_list ind kn t pg
-      (modes) (pred_types) (var_env) fuel
+      modes pred_types var_env fuel
   end.
 
 (** Combine a list of equality conjuncts (named) into a single boolean guard
@@ -270,10 +270,7 @@ Fixpoint animate_guard_list {A : Type}
 Fixpoint build_eq_guard_chain (conj : list named_term) : named_term :=
   match conj with
   | [] => <% true %>
-  | h :: t =>
-    match build_eq_guard_chain t with
-    | gt => animate_conj_guard h gt
-    end
+  | h :: t => animate_conj_guard h (build_eq_guard_chain t)
   end.
 
 (** Compile a guard-equality clause into an executable function (de Bruijn):
@@ -287,9 +284,8 @@ Definition compile_guard_clause {A : Type}
   (out_tm : global_term) (out_tp : global_term)
   (fuel : nat) : TemplateMonad term :=
 
-  (let post_out' := (build_guarded_body out_tm out_tp
-
-    (build_eq_guard_chain (g_conjs_eq) )) in
+  (let post_out' := build_guarded_body out_tm out_tp
+    (build_eq_guard_chain g_conjs_eq) in
 
     let post_out_tp' := tApp <% @option %> [out_tp] in
 
@@ -371,9 +367,9 @@ Definition animate_guard_bool_branch {A : Type}
   (out_vars : list (prod string global_term))
   (guard_eq_an : term)
   (fuel : nat) : TemplateMonad (term) :=
-predGuardCon <- animate_guard_list (ind) (kn)
+predGuardCon <- animate_guard_list ind kn
   (pred_guard) <%Success bool true%>
-  (modes) (pred_types) (var_env) (fuel) ;;
+  modes pred_types var_env fuel ;;
 let br_out_bool :=
   branch_on_bool
     (tApp <%animation_result%>
@@ -436,16 +432,16 @@ l_conjs <- tmEval all l_conjs'';;
 g_conjs_eq <- tmEval all g_conjs_eq'';;
 g_conjs_pred <- tmEval all g_conjs_pred'';;
 (* Animate let-binding conjuncts into a chain of let-in expressions *)
-let_bind <- animate_let_list (ind) kn l_conjs
-  (fun t : term => t) (modes) (pred_types)
-  (var_env) (fuel) ;;
+let_bind <- animate_let_list ind kn l_conjs
+  (fun t : term => t) modes pred_types
+  var_env fuel ;;
 (* Animate equality guards into a boolean function *)
 g_fn <- animate_guard_eq ind kn g_conjs_eq var_env out_vars fuel ;;
-let guard_eq_an := (tApp g_fn [tVar "fuel"; mk_output_prod_tm (var_env)]) in
+let guard_eq_an := (tApp g_fn [tVar "fuel"; mk_output_prod_tm var_env]) in
 (* Combine predicate guards with equality guard into a branching guard *)
-combined <- animate_guard_bool_branch (ind) (kn)
-  (g_conjs_pred) (modes) (pred_types)
-  (var_env) (out_vars) (guard_eq_an) (fuel);;
+combined <- animate_guard_bool_branch ind kn
+  (g_conjs_pred) modes pred_types
+  var_env (out_vars) (guard_eq_an) fuel;;
   (* Wrap in lambdas for recursive function args, fuel, and input *)
   match in_vars with
   | h :: rest =>
@@ -634,7 +630,7 @@ Definition get_classified
   (fuel : nat) : TemplateMonad (list named_term) :=
 sConjs <- classify_premises modes (curr_conjs)
   (rem_conjs) (sorted_conjs) (guard_conjs)
-  (kv) (fuel) ;;
+  (kv) fuel ;;
 result <- tmEval all (if doReverse then rev (proj sConjs) else proj sConjs) ;;
 tmReturn result.
 

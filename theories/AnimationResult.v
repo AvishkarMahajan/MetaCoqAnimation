@@ -86,7 +86,7 @@ Definition eq_outcome (A : Type)
   : animation_result bool :=
   match x with
   | Success j => match y with
-                    | Success k => if eqfn j k then (Success bool true) else (NoMatch bool)
+                    | Success k => if eqfn j k then Success bool true else NoMatch bool
                     | NoMatch => NoMatch bool
                     | FuelError => FuelError bool
                    end
