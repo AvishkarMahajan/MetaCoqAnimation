@@ -72,21 +72,48 @@ Definition evalCmdRest := fun _ : (co_vars * cmd) => undefinedCoV.
 MetaRocq Run (animate_coinductive evalCmd <? evalCmd ?>
   [("evalCmd", ([0;1], [2]))] 500).
 
-(** While (var 4 != 0) { var 8 := 8 }, starting with all vars = n+1. *)
+(** While (var 4 != 0) { var 8 := 8 }, starting with all vars = n+1. Non terminating program*)
 Definition prog  := While (Var 4) (Assign 8 (Const 8)).
 Definition initFn := pure (fun m : nat => m + 1).
 
-MetaRocq Run (r <- tmEval all
-  (Str_nth 25 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn, prog)))) ;;
-  tmPrint r).
+Example nonTerminating : 
+(Str_nth 25 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn, prog)))) = Success co_vars undefinedCoV. 
+Proof. reflexivity. Qed.
 
-(** While (var 0 != 0) { var 8 := 9 }, starting with all vars = 0 — terminates immediately. *)
-Definition prog'  := While (Var 0) (Assign 8 (Const 9)).
+
+(** While (var 1 != 0) { var 8 := 9 }, starting with all vars = 0 — terminates immediately. *)
+Definition prog'  := While (Var 1) (Assign 8 (Const 9)).
 Definition initFn' := pure (fun _ : nat => 0).
 
+Example whilefalse : 
+(Str_nth 25 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn', prog')))) = 
+Success co_vars (pure (fun _ : nat => 0)). Proof. reflexivity. Qed.
+
+(** Rotate registers: var4←var3, var3←var2, var2←var1, var1←var0. *)
+Definition prog''   :=
+  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
+    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
+Definition initFn'' := pure (fun m : nat => m).
 MetaRocq Run (r <- tmEval all
-  (Str_nth 25 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn', prog')))) ;;
-  tmPrint r).
+  ((evalCmdAnimatedTopFn 40 (Success (co_vars * cmd) (initFn'', prog'')))) ;; tmDefinition "rotateRegFn" r).
+Definition getJustFn (i: animation_result co_vars) :=
+match i with
+| Success (pure f) => f
+| _ => (fun j: nat => 55)
+end.
+Example rotateReg4 :
+(getJustFn rotateRegFn) 4 = 0. Proof. reflexivity. Qed.
+Example rotateReg3 :
+(getJustFn rotateRegFn) 3 = 0. Proof. reflexivity. Qed.
+
+Example rotateReg2 :
+(getJustFn rotateRegFn) 2 = 0. Proof. reflexivity. Qed.
+
+Example rotateReg5 :
+(getJustFn rotateRegFn) 5 = 5. Proof. reflexivity. Qed.
+
+
+
 
 End ImpSem.
 
@@ -170,19 +197,144 @@ MetaRocq Run (animate_coinductive evalCmd <? evalCmd ?>
 Definition prog   := While (Var 4) (Assign 8 (Const 8)).
 Definition add1   := fun m : nat => m + 1.
 Definition initFn := pure add1.
+Example diverge : (Str_nth 30 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn, prog)))) = 
+(Success co_vars_tr
+   (covSeq
+      (pure
+         (fun v' : nat =>
+          if match v' with
+             | 8 => true
+             | _ => false
+             end
+          then 8
+          else
+           (fix add (n m : nat) {struct n} : nat := match n with
+                                                    | 0 => m
+                                                    | S p => S (add p m)
+                                                    end) v' 1))
+      (covSeq
+         (pure
+            (fun v' : nat =>
+             if match v' with
+                | 8 => true
+                | _ => false
+                end
+             then 8
+             else
+              if match v' with
+                 | 8 => true
+                 | _ => false
+                 end
+              then 8
+              else
+               (fix add (n m : nat) {struct n} : nat := match n with
+                                                        | 0 => m
+                                                        | S p => S (add p m)
+                                                        end)
+                 v' 1))
+         (covSeq
+            (pure
+               (fun v' : nat =>
+                if match v' with
+                   | 8 => true
+                   | _ => false
+                   end
+                then 8
+                else
+                 if match v' with
+                    | 8 => true
+                    | _ => false
+                    end
+                 then 8
+                 else
+                  if match v' with
+                     | 8 => true
+                     | _ => false
+                     end
+                  then 8
+                  else
+                   (fix add (n m : nat) {struct n} : nat :=
+                      match n with
+                      | 0 => m
+                      | S p => S (add p m)
+                      end)
+                     v' 1))
+            (covSeq
+               (pure
+                  (fun v' : nat =>
+                   if match v' with
+                      | 8 => true
+                      | _ => false
+                      end
+                   then 8
+                   else
+                    if match v' with
+                       | 8 => true
+                       | _ => false
+                       end
+                    then 8
+                    else
+                     if match v' with
+                        | 8 => true
+                        | _ => false
+                        end
+                     then 8
+                     else
+                      if match v' with
+                         | 8 => true
+                         | _ => false
+                         end
+                      then 8
+                      else
+                       (fix add (n m : nat) {struct n} : nat :=
+                          match n with
+                          | 0 => m
+                          | S p => S (add p m)
+                          end)
+                         v' 1))
+               (covSeq
+                  (pure
+                     (fun v' : nat =>
+                      if match v' with
+                         | 8 => true
+                         | _ => false
+                         end
+                      then 8
+                      else
+                       if match v' with
+                          | 8 => true
+                          | _ => false
+                          end
+                       then 8
+                       else
+                        if match v' with
+                           | 8 => true
+                           | _ => false
+                           end
+                        then 8
+                        else
+                         if match v' with
+                            | 8 => true
+                            | _ => false
+                            end
+                         then 8
+                         else
+                          if match v' with
+                             | 8 => true
+                             | _ => false
+                             end
+                          then 8
+                          else
+                           (fix add (n m : nat) {struct n} : nat :=
+                              match n with
+                              | 0 => m
+                              | S p => S (add p m)
+                              end)
+                             v' 1))
+                  undefinedCoVTr)))))).
 
-MetaRocq Run (r <- tmEval all
-  (Str_nth 30 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn, prog)))) ;;
-  tmPrint r).
+Proof. reflexivity. Qed.                  
 
-(** Rotate registers: var4←var3, var3←var2, var2←var1, var1←var0. *)
-Definition prog'   :=
-  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
-    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
-Definition initFn' := pure (fun m : nat => m).
 
-MetaRocq Run (r <- tmEval all
-  (Str_nth 40 (evalCmdAnimatedTopFnStream (Success (co_vars * cmd) (initFn', prog')))) ;;
-  tmPrint r).
 
 End ImpSemTr.
