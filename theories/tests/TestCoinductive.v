@@ -21,6 +21,7 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+
 (** A stream of naturals, with explicit undefined and nil sentinels. *)
 CoInductive stream : Type :=
 | undefinedStm : stream

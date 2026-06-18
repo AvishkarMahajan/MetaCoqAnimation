@@ -17,7 +17,29 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+(* Some problematic examples 
 
+
+
+(*Reverse modes*)
+
+
+
+
+Inductive isGood : list nat -> nat -> Prop :=
+| isG : forall n, isGood' [] n -> isGood [] (S n)
+with
+
+isGood' : list nat -> nat -> Prop :=
+| zeroC : isGood' [] 0.
+
+MetaRocq Run (animate_inductive isGood <? isGood ?>
+  [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 500).
+Compute isGood'AnimatedTopFn 5 (Success nat 1).
+
+Empty Modes 
+ 
+*)
 (** ** Addition as a relation *)
 
 Module Addition.
