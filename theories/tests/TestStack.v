@@ -42,15 +42,14 @@ Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
 Definition stack := list nat.
 Definition prog  := list sinstr.
 
-Definition unwrap (A : Type) (x : ind_tp A) : A :=
-  match x with indWrap x' => x' end.
 
-Inductive stack_step : ind_tp state -> list sinstr * list nat -> list sinstr * list nat -> Prop :=
+
+Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat -> Prop :=
 | SS_Push  : forall st stk n p ps0 ps1,
     ps0 = (SPush n :: p, stk) /\ ps1 = (p, n :: stk)
-    -> stack_step st ps0 ps1
+    -> stack_step st ps0 ps1 
 | SS_Load  : forall st stk i p ps0 ps1,
-    ps0 = (SLoad i :: p, stk) /\ ps1 = (p, (unwrap state st) i :: stk)
+    ps0 = (SLoad i :: p, stk) /\ ps1 = (p, (st) i :: stk)
     -> stack_step st ps0 ps1
 | SS_Plus  : forall st stk n m p ps0 ps1,
     ps0 = (SPlus :: p, n :: m :: stk) /\ ps1 = (p, (m + n) :: stk)
@@ -60,25 +59,31 @@ Inductive stack_step : ind_tp state -> list sinstr * list nat -> list sinstr * l
     -> stack_step st ps0 ps1
 | SS_Mult  : forall st stk n m p ps0 ps1,
     ps0 = (SMult :: p, n :: m :: stk) /\ ps1 = (p, (m * n) :: stk)
-    -> stack_step st ps0 ps1.
+    -> stack_step st ps0 ps1 .
 
 MetaRocq Run (animate_inductive stack_step <? stack_step ?>
   [("stack_step", ([0;1], [2]))] 200).
 
 Definition empty_state : state := fun (_ : string) => 0.
-Definition wrapped_state : ind_tp state := @indWrap state empty_state.
+Definition one_state : state := fun (_ : string) => 1.
 
 (** Push 3, push 4, then add: stack should end up as [7]. *)
-Compute (stack_stepAnimatedTopFn 50
-  (Success (ind_tp state * (list sinstr * list nat))
-    (wrapped_state, ([SPush 3; SPush 4; SPlus], [])))).
+Example Push : 
+ (stack_stepAnimatedTopFn 50
+  (Success (state * (list sinstr * list nat))
+    (empty_state, ([SPush 3; SPush 4; SPlus], [])))) = (Success (list sinstr * list nat)
+    ([SPush 4; SPlus], [3])). 
+    Proof. reflexivity. Qed.
 
-(** Push 5, push 2, then subtract: result [3]. *)
-Compute (stack_stepAnimatedTopFn 50
-  (Success (ind_tp state * (list sinstr * list nat))
-    (wrapped_state, ([SPush 5; SPush 2; SMinus], [])))).
+Example Load : 
+ (stack_stepAnimatedTopFn 50
+  (Success (state * (list sinstr * list nat))
+    (one_state , ([SLoad "x"; SPush 2; SMinus], [4])))) = (Success (list sinstr * list nat)
+    ([SPush 2; SMinus], [1;4])). Proof. reflexivity. Qed.
 
 (** Push 3, push 4, then multiply: result [12]. *)
-Compute (stack_stepAnimatedTopFn 50
-  (Success (ind_tp state * (list sinstr * list nat))
-    (wrapped_state, ([SPush 3; SPush 4; SMult], [])))).
+Example Mult :
+(stack_stepAnimatedTopFn 50
+  (Success (state * (list sinstr * list nat))
+    (empty_state, ([SMult; SPush 2], [3;5;6])))) = Success (list sinstr × list nat) ([SPush 2], [15; 6]).
+Proof. reflexivity. Qed.    

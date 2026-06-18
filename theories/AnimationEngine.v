@@ -65,7 +65,7 @@ Definition strip_fn_vars
   | tApp <%eq%> [typeVar; t1; t2] =>
       let newConj :=
         tApp <%eq%>
-          [typeVar; t1;
+          [typeVar; t1 ;
            strip_fn_position_vars t2 var_env]
       in {| tc_conjunct := newConj;
             tc_out_var := conjunct'.(tc_out_var);
@@ -848,6 +848,7 @@ l_conjs00 <- tmEval all
       var_env modes pred_types)
     (map fst in_vars)) ;;
 l_conjs <- tmEval all (map (fun lc => strip_fn_vars lc var_env) l_conjs00) ;;
+
 (* Collect predicate guard conjuncts from both guard and let sources *)
 g_conjs_pred1 <- tmEval all
   (filter_conjs_pred'

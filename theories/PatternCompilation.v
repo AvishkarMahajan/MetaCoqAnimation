@@ -92,7 +92,14 @@ Definition unfold_cons
       {| rv_name := str;
          rv_term := tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2;
          rv_bound := [] |} :: resolved_ts, rem_ts)
+ 
+ | (str, tPro str'' tp1 tp2)  :: t =>
+     (i, t,
+      {| rv_name := str;
+         rv_term := tPro str'' tp1 tp2;
+         rv_bound := [] |} :: resolved_ts, rem_ts)        
 
+ 
  | (str, _) :: t =>
      (i, t, resolved_ts, rem_ts)
  end.
@@ -149,6 +156,9 @@ Fixpoint lookup_one_var
                 {| binder_name := nAnon;
                    binder_relevance := Relevant |}
                 tp1 tp2) args])
+                
+            | tApp (tPro str'' tp1 tp2) args =>
+              ([], [tApp (tPro str'' tp1 tp2) args])    
 
             | tRel k => ([str], [])
             | tVar str'' => ([str], [])
@@ -162,6 +172,8 @@ Fixpoint lookup_one_var
                 {| binder_name := nAnon;
                    binder_relevance := Relevant |}
                 tp1 tp2)])
+            | (tPro str'' tp1 tp2) =>
+              ([], [(tPro str'' tp1 tp2)])    
             | _ => ([], [])
             end)
       else lookup_one_var str t
