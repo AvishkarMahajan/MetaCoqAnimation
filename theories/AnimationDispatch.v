@@ -74,7 +74,7 @@ end.
 (** Wrap an animation function call in a [tLetIn] that binds the output variable,
     extending [partial_fn].  Handles three cases: no inputs (direct value),
     a single input (apply with fuel + input), or multiple inputs (join first). *)
-Definition build_let_chain_step
+Definition build_let_chain_step'
   (out_var_nm : string) (out_var_tp : term)
   (in_vars_lst : list (prod term term))
   (anim_fn : term)
@@ -109,6 +109,31 @@ Definition build_let_chain_step
         t))
   end.
 
+Definition build_let_chain_step (conjunct' : tagged_conjunct)
+  (out_var_nm : string) (out_var_tp : term)
+  (in_vars_lst : list (prod term term))
+  (anim_fn : term)
+  (partial_fn : term -> term) : (term -> term) := 
+  let conjunct := conjunct'.(tc_conjunct) in
+
+  match conjunct with
+   | tApp <%eq%> [typeVar; t1; t2] => build_let_chain_step' out_var_nm  out_var_tp in_vars_lst anim_fn partial_fn 
+   | _ => match in_vars_lst with
+          | [] => (fun t => partial_fn
+                  ((tLetIn
+                  {| binder_name := nNamed out_var_nm;
+                  binder_relevance := Relevant |}
+                  (tApp anim_fn [(tVar "fuel")])
+                  (tApp <%animation_result%> [out_var_tp]))
+                   t))
+          | _ =>  build_let_chain_step' out_var_nm  out_var_tp in_vars_lst anim_fn partial_fn 
+          end
+  end.                
+                                     
+                                        
+ 
+   
+
 (** Animate one conjunction as a let-binding step: compile [conjunct'] into
     a function and wrap it in a let that extends [partial_fn]. *)
 Definition animate_one_let {A : Type}
@@ -128,7 +153,7 @@ out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
 anim_fn <- animate_let_binding ind kn conjunct'
   in_tm in_tp (map fst in_vars_lst)
   modes pred_types var_env fuel ;;
-tmReturn (build_let_chain_step out_var_nm out_var_tp
+tmReturn (build_let_chain_step conjunct' out_var_nm out_var_tp
   inputVarsLstTm anim_fn partial_fn).
 
 (** Animate one conjunction as a boolean predicate guard: compile [conjunct'] and

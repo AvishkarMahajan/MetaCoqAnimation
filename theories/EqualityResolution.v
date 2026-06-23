@@ -542,6 +542,15 @@ Fixpoint mk_lhs_term_monadic (lhs_preds : list (term * term)) : TemplateMonad te
     builders so that the trivial [bool] base case is inserted correctly.
     Type parameters in [pred_types] and [var_env] are global terms.
     Returns a de Bruijn term. *)
+  
+Definition compose_outcome_no_in :=
+fun (B C : Type) (f : nat -> animation_result B)
+  (f' : nat -> animation_result B -> animation_result C) (fuel : nat)  =>
+match f fuel  with
+| @FuelError _ => FuelError C
+| @Success _ res => f' fuel (Success B res)
+| @NoMatch _ => NoMatch C
+end. 
 Definition animate_no_input {A : Type}
   (induct : A) (kn : kername)
   (conjunct' : tagged_conjunct)
@@ -558,9 +567,9 @@ let conjunct := conjunct'.(tc_conjunct) in
                      let mode := lookup_mode ind_nm modes in
                      let predTp := lookup_pred_type ind_nm pred_types in
                      let predInArgsTm := select_in_by_mode mode lstArgs in
-                     let predInArgsTp := select_in_by_mode mode predTp in
+                     let predInArgsTp := select_in_mode_len mode predTp in
                      let predOutArgsTm := select_out_by_mode mode lstArgs in
-                     let predOutArgsTp := select_out_by_mode mode predTp in
+                     let predOutArgsTp := select_out_mode_len mode predTp in
                      let in_vars := ordered_vars_of_list predInArgsTm in
                      let inputVarsTmTp := pairs_to_terms (lookup_vars in_vars var_env) in
                      let predInArgs := combine predInArgsTm predInArgsTp in
@@ -572,29 +581,19 @@ let conjunct := conjunct'.(tc_conjunct) in
                       predOutProdTm <- mk_lhs_term_monadic predOutArgs ;;
                       predInProdTp <- mk_lhs_type_monadic predInArgs ;;
                       predInProdTm <- mk_lhs_term_monadic predInArgs ;;
-                      tIn' <- join_pattern_fueled induct
-                        (inputVarProdTm) (inputVarProdTp)
-                        predInProdTm predInProdTp
-                        (snd kn ++ "IN")
-                        fuel ;;
+                      
                       let tIn :=
-                        (tApp <%compose_outcome%>
-                          [(inputVarProdTp); predInProdTp;
-                           (predOutProdTp); tIn';
-                           (tLam "fuel" <%nat%>
-                             (tLam "input"
-                               <%animation_result bool%>
-                               (tApp
-                                 (tVar (ind_nm ++ top_fn_suffix))
-                                 [tVar "fuel"])))]) in
+                        
+                                 (tLam "fuel" <%nat%> (tApp (tVar (ind_nm ++ top_fn_suffix)) [tVar "fuel"; <% Success bool true %>])) 
+                                  in
                       tOut <- join_pattern_fueled induct
                         predOutProdTm predOutProdTp
                         (out_tm) (out_tp)
                         (snd kn ++ "OUT")
                         fuel ;;
                       let u :=
-                        (tApp <%compose_outcome%>
-                          [(inputVarProdTp); predOutProdTp;
+                        (tApp <%compose_outcome_no_in%>
+                          [predOutProdTp;
                            (out_tp); tIn; tOut]) in
                       u'' <- tmEval all u ;;
                       match DB.de_bruijn_option u with

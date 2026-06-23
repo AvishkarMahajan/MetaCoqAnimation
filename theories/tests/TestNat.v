@@ -19,6 +19,20 @@ Open Scope bs.
 
 (* Reverse usual modes*)
 
+Inductive isGood2 : list nat -> nat -> Prop :=
+| isG2 : forall n l, isGoodEmptyIn l n  -> isGood2 l n
+with isGoodEmptyIn : list nat -> nat -> Prop :=
+| zeroCEmptyIn : isGoodEmptyIn [] 0.
+
+
+
+
+MetaRocq Run (animate_inductive isGood2 <? isGood2 ?>
+  [("isGood2", ([], [0;1]));("isGoodEmptyIn", ([], [0;1]))] 500).
+Example testIsGood2 :
+isGood2AnimatedTopFn 5 (Success (bool) true) = Success (list nat * nat) ([],0). 
+Proof. reflexivity. Qed.
+
 Inductive isGood : list nat -> nat -> Prop :=
 | isG : forall n l, isGood' l n  -> isGood l n
 with

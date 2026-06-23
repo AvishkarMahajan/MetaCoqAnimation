@@ -693,7 +693,7 @@ Definition mk_ind_fixpoint (ind_nm : string)
   (cdata : list (string * (list string)))
   (kn : kername) (modes : mode_map) : def term :=
   match lookup_mode_input ind_nm modes with
-  | [] => mk_ind_top_no_input ind_nm in_tp out_tp cdata kn
+  | [] => mk_ind_top_body ind_nm in_tp out_tp cdata kn
   | _ => mk_ind_top_body ind_nm in_tp out_tp cdata kn
   end.
 
@@ -703,7 +703,7 @@ Definition mk_coind_fixpoint (ind_nm : string)
   (cdata : list (string * (list string)))
   (kn : kername) (modes : mode_map) : def term :=
   match lookup_mode_input ind_nm modes with
-  | [] => mk_coind_top_no_input ind_nm in_tp out_tp cdata kn
+  | [] =>  mk_coind_top_body ind_nm in_tp out_tp cdata kn
   | _ => mk_coind_top_body ind_nm in_tp out_tp cdata kn
   end.
 
