@@ -429,7 +429,7 @@ match ls with
 end.
             
 Definition takelast {A : Type} (n : nat) (ls : list A) : list A :=
-takefst n (rev ls).
+rev (takefst n (rev ls)).
  
 Definition select_in_mode_len (mode : list nat × list nat) (predTp : list term) :=
 takefst (length (fst mode)) predTp.
