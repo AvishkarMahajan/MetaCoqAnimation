@@ -418,6 +418,25 @@ Definition compile_let_clause {A : Type}
     resolving equality premises and generating pattern matching.
     Type parameters in [pred_types] and [var_env] are global terms.
     Returns a de Bruijn term. *)
+Print mode_map.
+Fixpoint takefst {A : Type} (n : nat) (ls : list A) : list A :=
+match ls with
+| [] => []
+| h :: t => match n with
+            | 0 => []
+            | S m => h :: (takefst m t)
+            end
+end.
+            
+Definition takelast {A : Type} (n : nat) (ls : list A) : list A :=
+takefst n (rev ls).
+ 
+Definition select_in_mode_len (mode : list nat × list nat) (predTp : list term) :=
+takefst (length (fst mode)) predTp.
+
+Definition select_out_mode_len (mode : list nat × list nat) (predTp : list term) :=
+takelast (length (snd mode)) predTp.
+      
 Definition compile_clause {A : Type}
   (induct : A) (kn : kername)
   (conjunct' : tagged_conjunct)
@@ -433,11 +452,17 @@ let conjunct := conjunct'.(tc_conjunct) in
   | Some (ind_nm, lstArgs) =>
                      (* Look up the mode and partition arguments into input/output *)
                      let mode := lookup_mode ind_nm modes in
+                     (*m' <- tmEval all mode ;;
+                     tmPrint m';;*)
                      let predTp := lookup_pred_type ind_nm pred_types in
+                     (*pTp' <- tmEval all pred_types ;;
+                     tmPrint pTp';; *)
                      let predInArgsTm := select_in_by_mode mode lstArgs in
-                     let predInArgsTp := select_in_by_mode mode predTp in
+                     let predInArgsTp := select_in_mode_len mode predTp in
+                     (*pInTp' <- tmEval all predInArgsTp;;
+                     tmPrint pInTp' ;;*)
                      let predOutArgsTm := select_out_by_mode mode lstArgs in
-                     let predOutArgsTp := select_out_by_mode mode predTp in
+                     let predOutArgsTp := select_out_mode_len mode predTp in
                      let in_vars := ordered_vars_of_list predInArgsTm in
                      let inputVarsTmTp := pairs_to_terms (lookup_vars in_vars var_env) in
                      let predInArgs := combine predInArgsTm predInArgsTp in

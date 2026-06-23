@@ -1211,6 +1211,7 @@ outV <- tmEval all
     (conj_out_vars one_clause modes) (var_tp));;
 (* Step 5: gather predicate type info for recursive calls *)
 pred_tps <- tmEval all (all_ind_tp_data all_cdata) ;;
+(*tmPrint pred_tps ;;*)
 pred_tps_an <- tmEval all (animation_types all_cdata) ;;
 pred_tps_occ <- tmEval all
   (pred_animation_types one_clause
@@ -1248,6 +1249,8 @@ all_cdata <- match rewrite_cl_all all_cdata' tp_data' with
                  | None => tmFail "clause rewriting failed"
                  end ;;
 tp_data <- tmEval all (finalize_type_info all_cdata' tp_data') ;;
+(*tmPrint all_cdata;;
+tmPrint tp_data;;*)
 (* Phase 2: compile each clause into a match-and-return term *)
 cl_lst <- tmEval all (all_clauses all_cdata) ;;
 tms <- animate_clause_list ind kn cl_lst modes fuel ;;
