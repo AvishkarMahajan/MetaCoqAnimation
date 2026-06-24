@@ -203,20 +203,72 @@ Definition flip_conj (conj : named_term) : named_term :=
       [typeT; tVar str1; tConstruct ind_type k lst]
   | t' => t'
   end.
+Definition reduceToBool (a : animation_result bool) : bool :=
+match a with
+| Success true => true
+| _ => false
+end.
+
+
+Fixpoint attachTpsFmEnv' (arg :term) (var_env : list (prod string term)): list (prod string term) :=
+match arg with
+| tVar str => match var_env with
+               | [] => []
+               | h :: t => if String.eqb str (fst h) then [(str, (snd h))] else attachTpsFmEnv' arg t
+               end
+| _ => []
+end.
+
+Definition attachTpsFmEnv (args :list term) (var_env : list (prod string term)): list (prod string term) := 
+concat (map (fun arg => attachTpsFmEnv' arg var_env) args).              
+
 
 (** Extend a boolean guard [guard_acc] (named) with a boolean equality check for
     the equality conjunct [conj] (named), producing [guard_acc && eqFn t1 t2]. *)
-Definition animate_conj_guard (conj : named_term) (guard_acc : named_term)  :  named_term :=
+Definition animate_conj_guard (conj : named_term) (guard_acc : named_term) (var_env : list (prod string term))  :  named_term :=
   match conj with
   | tApp <%eq%> [typeT; t1; t2] =>
     tApp (tConst <? andb ?> [])
          [ guard_acc
          ; tApp (type_to_eq_fn typeT) [t1
          ; t2]]
-
+  | tApp (tInd {| inductive_mind := (_path, ind_nm);
+                  inductive_ind := 0 |} [])
+         lstArgs => let inputVars := attachTpsFmEnv lstArgs var_env in 
+                    match inputVars with
+                    
+                    | h :: h1 => tApp (tConst <? andb ?> [])
+                           [ guard_acc
+                            ; tApp (type_to_eq_fn <%bool%>) [<%true%>
+                            ; tApp <%reduceToBool%> [(tApp (tVar (ind_nm ++ top_fn_suffix)) [(tVar "fuel"); tApp <%Success%> [(tele_to_prod_tp inputVars); (tele_to_prod_tm inputVars)]])]]]        
+                    
+                   
+                             
+                    | _ => <% false %> 
+                    end                    
+  | tApp (tVar ind_nm) lstArgs => let inputVars := attachTpsFmEnv lstArgs var_env in 
+                    match inputVars with
+                    
+                    | h :: h1 => tApp (tConst <? andb ?> [])
+                           [ guard_acc
+                            ; tApp (type_to_eq_fn <%bool%>) [<%true%>
+                            ; tApp <%reduceToBool%> [(tApp (tVar (ind_nm ++ top_fn_suffix)) [(tVar "fuel"); tApp <%Success%> [(tele_to_prod_tp inputVars); (tele_to_prod_tm inputVars)]])]]]        
+                    
+                    
+                    
+                    | _ => <% false %> 
+                    end                    
+                    
   | _ => <% false %>
-  end.
-
+  end.                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    
 (** Try to orient and animate a single equality conjunct (named) given the currently
     known variables [knownVar].  Returns the extended known-variable set and
     the updated partial program if successful, or [None] if deferred. *)

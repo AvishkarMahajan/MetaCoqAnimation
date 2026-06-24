@@ -305,10 +305,10 @@ Fixpoint animate_guard_list {A : Type}
 (** Combine a list of equality conjuncts (named) into a single boolean guard
     expression (named) by folding [animate_conj_guard] right-to-left, starting
     from [true]. *)
-Fixpoint build_eq_guard_chain (conj : list named_term) : named_term :=
+Fixpoint build_eq_guard_chain (conj : list named_term) (var_env : list (prod string term)) : named_term :=
   match conj with
   | [] => <% true %>
-  | h :: t => animate_conj_guard h (build_eq_guard_chain t)
+  | h :: t => animate_conj_guard h (build_eq_guard_chain t var_env) var_env
   end.
 
 (** Compile a guard-equality clause into an executable function (de Bruijn):
@@ -317,13 +317,13 @@ Fixpoint build_eq_guard_chain (conj : list named_term) : named_term :=
     Type params [in_tm], [in_tp], [out_tm], [out_tp] are global. *)
 Definition compile_guard_clause {A : Type}
   (induct : A) (kn : kername)
-  (g_conjs_eq : list named_term)
+  (g_conjs_eq : list named_term) (var_env : list (prod string term))
   (in_tm : global_term) (in_tp : global_term)
   (out_tm : global_term) (out_tp : global_term)
   (fuel : nat) : TemplateMonad term :=
 
   (let post_out' := build_guarded_body out_tm out_tp
-    (build_eq_guard_chain g_conjs_eq) in
+    (build_eq_guard_chain g_conjs_eq var_env) in
 
     let post_out_tp' := tApp <% @option %> [out_tp] in
 
@@ -356,7 +356,7 @@ Definition animate_guard_eq {A : Type}
   (var_env : list (prod string term))
   (out_vars : list (prod string term))
   (fuel : nat) : TemplateMonad term :=
-compile_guard_clause induct kn g_conjs_eq
+compile_guard_clause induct kn g_conjs_eq (var_env)
   (tele_to_prod_tm var_env)
   (tele_to_prod_tp var_env)
   (tele_to_prod_tm out_vars)
@@ -499,17 +499,35 @@ combined <- animate_guard_bool_branch ind kn
           (let_bind combined))))
 
   end.
-
+Search (string -> mode_map -> (list nat * list nat)).
+Print lookup_mode.
 (** Keep only the equality ([eq]) conjuncts (named) from a list, discarding
     predicates. *)
-Fixpoint filter_conjs_eq (lst : list named_term) : list named_term :=
+Fixpoint filter_conjs_eq (lst : list named_term) (modes : mode_map)  : list named_term :=
   match lst with
   | [] => []
   | (tApp <%eq%> [typeVar; t1; t2]) :: rest =>
     (tApp <%eq%> [typeVar; t1; t2])
-      :: filter_conjs_eq rest
+      :: filter_conjs_eq rest modes
+      
+   | (tApp (tInd {| inductive_mind := (_path, ind_nm); inductive_ind := 0 |} []) lstArgs) :: rest =>
+     let mode := lookup_mode ind_nm modes in
+     match mode with
+     | ([], []) => filter_conjs_eq rest modes
+     | (_, []) => (tApp (tInd {| inductive_mind := (_path, ind_nm); inductive_ind := 0 |} []) lstArgs) :: filter_conjs_eq rest modes
+     | _ => filter_conjs_eq rest modes
+     end
+  | (tApp (tVar ind_nm) lstArgs) :: rest =>
+     let mode := lookup_mode ind_nm modes in
+     match mode with
+     | ([], []) => filter_conjs_eq rest modes
+     | (_, []) => (tApp (tVar ind_nm) lstArgs) :: filter_conjs_eq rest modes
+     | _ => filter_conjs_eq rest modes
+     end
+        
+      
 
-  | _h :: rest => filter_conjs_eq rest
+  | _h :: rest => filter_conjs_eq rest modes
   end.
 (** Keep only inductive predicate application conjuncts (named) from a list,
     discarding equalities and other forms. *)

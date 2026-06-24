@@ -820,6 +820,8 @@ Fixpoint mk_ind_data
 
 Unset Universe Checking.
 
+
+
 (** Compile a constructor clause (named input -> de Bruijn output): classify premises,
     animate let-bindings and guard predicates, then assemble into a single executable term. *)
 Definition compile_clause_body {A : Type}
@@ -837,7 +839,7 @@ let listAllConjs := collect_all_conjs big_conj in
 (* Classify premises: guards check equality/predicates, lets bind outputs *)
 gConjs' <- (get_sorted_guards modes listAllConjs [] [] [] (map fst in_vars) fuel) ;;
 (* Separate equality guards from predicate guards *)
-g_conjs_eq <- tmEval all (filter_conjs_eq gConjs') ;;
+g_conjs_eq <- tmEval all (filter_conjs_eq gConjs' modes) ;;
 (* Get the let-binding conjuncts (sorted by dependency order) *)
 l_conjs' <- (get_sorted_lets modes listAllConjs [] [] [] (map fst in_vars) fuel) ;;
 lc'' <- tmEval all l_conjs' ;;
