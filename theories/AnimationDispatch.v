@@ -177,8 +177,17 @@ out_var_tp <- tmEval all (conjunct'.(tc_out_type)) ;;
 
 anim_fn <- animate_let_binding ind kn conjunct' in_tm in_tp
                                  (map fst in_vars_lst) modes pred_types var_env fuel ;;
+match in_vars_lst with
+| [] =>   tmReturn (tApp <%and_outcome_bool%>
+  [guard_acc ;
+   tApp (mk_eq_outcome_tm out_var_tp
+     (type_to_eq_fn out_var_tp))
+     [tVar out_var_nm ;
+      (tApp anim_fn
+        [(tVar "fuel")
+         ])] ])
 
-tmReturn (tApp <%and_outcome_bool%>
+| _ => tmReturn (tApp <%and_outcome_bool%>
   [guard_acc ;
    tApp (mk_eq_outcome_tm out_var_tp
      (type_to_eq_fn out_var_tp))
@@ -186,7 +195,11 @@ tmReturn (tApp <%and_outcome_bool%>
       (tApp anim_fn
         [(tVar "fuel");
          (tApp (mk_join_tm (map snd in_vars_lst))
-            (map fst inputVarsLstTm))])] ]).
+            (map fst inputVarsLstTm))])] ])
+end.                    
+                               
+
+
 
 (** Extract input or output variables from a conjunct (named) using [eq_proj]
     for equalities and [mode_proj] for inductive predicate applications. *)
