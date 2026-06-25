@@ -24,10 +24,9 @@ Open Scope bs.
 
 (** A stream of naturals, with explicit undefined and nil sentinels. *)
 CoInductive stream : Type :=
-| undefinedStm : stream
 | nil : stream
-| Seq : nat -> stream -> stream.
-
+| Seq : nat -> stream -> stream
+| undefinedStm : stream.
 CoInductive counter : Type :=
 | incr : counter -> counter.
 
@@ -41,32 +40,6 @@ Definition eqFnstream (s1 s2 : stream) : bool :=
 
 CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
 
-(* ------------------------------------------------------------------ *)
-(** ** Integrate *)
-
-CoInductive Integrate : stream -> stream -> Prop :=
-| integNil : Integrate nil nil
-| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
-| integU : forall s, Integrate s undefinedStm
-with addStm : nat -> stream -> stream -> Prop :=
-| addStmNil : forall m, addStm m nil nil
-| plusm : forall m s1 n s2, addStm m s1 s2 -> addStm m (Seq n s1) (Seq (m + n) s2)
-| addStmU : forall m s, addStm m s undefinedStm.
-
-Definition IntegrateRest := fun _ : stream => undefinedStm.
-Definition addStmRest := fun _ : (nat * stream) => undefinedStm.
-
-MetaRocq Run (animate_coinductive Integrate <? Integrate ?>
-  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
-
-(** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
-MetaRocq Run (r <- tmEval all
-  (Str_nth 15 (IntegrateAnimatedTopFnStream (Success stream (from 4)))) ;;
-  tmPrint r).
-
-MetaRocq Run (r <- tmEval all
-  (Str_nth 15 (IntegrateAnimatedTopFnStream (Success stream (Seq 4 (Seq 3 (Seq 2 nil)))))) ;;
-  tmPrint r).
 
 (* ------------------------------------------------------------------ *)
 (** ** Zip two streams *)
@@ -127,6 +100,52 @@ Definition filterEvenRest := fun _ : stream => undefinedStm.
 MetaRocq Run (animate_coinductive filterEven <? filterEven ?>
   [("filterEven", ([0], [1]))] 100).
 
-Compute (Str_nth 10 (filterEvenAnimatedTopFnStream (Success stream (from 0)))).
+Compute (Str_nth 30 (filterEvenAnimatedTopFnStream (Success stream (from 0)))).
 Compute (Str_nth 10 (filterEvenAnimatedTopFnStream
   (Success stream (Seq 0 (Seq 2 (Seq 3 (Seq 6 (Seq 8 (Seq 10 (Seq 12 nil)))))))))).
+Module integrateStreams.
+(** A stream of naturals, with explicit undefined and nil sentinels. *)
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream
+| IntegrateAnim : stream -> stream
+| addStmAnim : (nat * stream) -> stream.
+
+Definition eqFncounter : counter -> counter -> bool := fun _ _ => true.
+
+Definition eqFnstream (s1 s2 : stream) : bool :=
+  match s1 with
+  | nil => match s2 with nil => true | _ => false end
+  | _   => false
+  end.
+
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
+
+(* ------------------------------------------------------------------ *)
+(** ** Integrate *)
+
+CoInductive Integrate : stream -> stream -> Prop :=
+| integNil : Integrate nil nil
+| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
+| integU : forall s, Integrate s (IntegrateAnim s)
+with addStm : nat -> stream -> stream -> Prop :=
+| addStmNil : forall m, addStm m nil nil
+| plusm : forall m s1 n s2, addStm m s1 s2 -> addStm m (Seq n s1) (Seq (m + n) s2)
+| addStmU : forall m s, addStm m s (addStmAnim (m, s)).
+
+Definition IntegrateRest := fun s: stream => IntegrateAnim s.
+Definition addStmRest := fun ns : (nat * stream) => addStmAnim ns.
+
+MetaRocq Run (animate_coinductive Integrate <? Integrate ?>
+  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
+
+(** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
+MetaRocq Run (r <- tmEval all
+  (Str_nth 15 (IntegrateAnimatedTopFnStream (Success stream (from 4)))) ;;
+  tmPrint r).
+
+MetaRocq Run (r <- tmEval all
+  (Str_nth 15 (IntegrateAnimatedTopFnStream (Success stream (Seq 4 (Seq 3 (Seq 2 nil)))))) ;;
+  tmPrint r).
+End integrateStreams.  
+  
