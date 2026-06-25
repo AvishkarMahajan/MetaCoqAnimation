@@ -196,14 +196,16 @@ Fixpoint ind_occurrences_named
 Fixpoint in_out_types_one
   (mode : (string * ((list nat) * (list nat))))
   (b : list one_inductive_body)
-  : option (list ((string * list term) * list term)) :=
+  : option (list in_out_entry) :=
   match b with
     | h' :: t' =>
         if String.eqb (fst mode) (ind_name h')
         then match input_types (fst (snd mode)) h',
                    input_types (snd (snd mode)) h' with
              | Some inTps, Some outTps =>
-               Some [(ind_name h', inTps, outTps)]
+               Some [{| ioe_name := ind_name h';
+                        ioe_in_types := inTps;
+                        ioe_out_types := outTps |}]
              | _, _ => None
              end
         else in_out_types_one mode t'
@@ -213,7 +215,7 @@ Fixpoint in_out_types_one
 (** Get input/output types for all inductives in the mode list. *)
 Fixpoint in_out_types (modes : mode_map)
   (b : list one_inductive_body)
-  : option (list ((string * list term) * list term)) :=
+  : option (list in_out_entry) :=
   match modes with
   | [] => Some []
   | h :: t =>
@@ -240,27 +242,27 @@ Fixpoint mk_nm_tm (c : list constructor_body)
 
 (** Retrieve clause data for all inductives in [lib]: for each body, convert
     constructors to named terms and pair them with their input/output type info. *)
-Definition find_in_out_tps (name : string)
-  (inOutTps : list ((string * list term) * list term))
-  : option ((string * list term) * list term) :=
-  List.find (fun entry => String.eqb (fst (fst entry)) name) inOutTps.
+Definition find_in_out_entry (name : string)
+  (entries : list in_out_entry)
+  : option in_out_entry :=
+  List.find (fun e => String.eqb (ioe_name e) name) entries.
 
 Fixpoint get_data
   (lib : list one_inductive_body)
   (ln : mode_map) (nm_ctx : list name)
-  (inOutTps : list ((string * list term) * list term))
+  (entries : list in_out_entry)
   : TemplateMonad (list clause_data) :=
 
   match lib with
   | [] => tmReturn []
   | h' :: t' =>
-      match find_in_out_tps (ind_name h') inOutTps with
-      | Some h =>
+      match find_in_out_entry (ind_name h') entries with
+      | Some e =>
           dbth <- mk_nm_tm (ind_ctors h') nm_ctx ;;
-          rest <- get_data t' ln nm_ctx inOutTps ;;
-          tmReturn ({| cd_ind_name := fst (fst h);
-                       cd_in_types := snd (fst h);
-                       cd_out_types := snd h;
+          rest <- get_data t' ln nm_ctx entries ;;
+          tmReturn ({| cd_ind_name := ioe_name e;
+                       cd_in_types := ioe_in_types e;
+                       cd_out_types := ioe_out_types e;
                        cd_clauses := dbth |} :: rest)
       | None => tmReturn []
       end

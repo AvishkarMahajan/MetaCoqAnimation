@@ -64,6 +64,17 @@ Record resolved_var := {
   rv_bound : list string
 }.
 
+(** Input/output type information for one inductive relation, extracted from
+    the mode specification before constructor bodies are processed. *)
+Record in_out_entry := {
+  (** Name of the inductive predicate. *)
+  ioe_name      : string;
+  (** Types of the input arguments (de Bruijn), selected by the mode. *)
+  ioe_in_types  : list term;
+  (** Types of the output arguments (de Bruijn), selected by the mode. *)
+  ioe_out_types : list term
+}.
+
 (** All data needed to compile one inductive relation:
     extracted once by [get_data] and threaded through the entire pipeline. *)
 Record clause_data := {
