@@ -240,6 +240,11 @@ Fixpoint mk_nm_tm (c : list constructor_body)
 
 (** Retrieve clause data for all inductives in [lib]: for each body, convert
     constructors to named terms and pair them with their input/output type info. *)
+Definition find_in_out_tps (name : string)
+  (inOutTps : list ((string * list term) * list term))
+  : option ((string * list term) * list term) :=
+  List.find (fun entry => String.eqb (fst (fst entry)) name) inOutTps.
+
 Fixpoint get_data
   (lib : list one_inductive_body)
   (ln : mode_map) (nm_ctx : list name)
@@ -248,17 +253,17 @@ Fixpoint get_data
 
   match lib with
   | [] => tmReturn []
-  | h' :: t' => match inOutTps with
-                 | h :: t =>
-                     dbth <- mk_nm_tm (ind_ctors h') nm_ctx ;;
-                     rest <- get_data t' ln nm_ctx (tl inOutTps) ;;
-                     tmReturn ({| cd_ind_name := fst (fst h);
-                                  cd_in_types := snd (fst h);
-                                  cd_out_types := snd h;
-                                  cd_clauses := dbth |} :: rest)
-                 | _ => tmReturn []
-                 end
-
+  | h' :: t' =>
+      match find_in_out_tps (ind_name h') inOutTps with
+      | Some h =>
+          dbth <- mk_nm_tm (ind_ctors h') nm_ctx ;;
+          rest <- get_data t' ln nm_ctx inOutTps ;;
+          tmReturn ({| cd_ind_name := fst (fst h);
+                       cd_in_types := snd (fst h);
+                       cd_out_types := snd h;
+                       cd_clauses := dbth |} :: rest)
+      | None => tmReturn []
+      end
   end.
 
 (** Replace non-variable subterms in [l] with fresh variables (prefixed by
