@@ -243,6 +243,10 @@ Proof. reflexivity. Qed.
 
 End STLCStep.
 
+(** ** STLC Big-Step Trace Semantics (Coinductive) *)
+(* Produces a coinductive trace of reduction steps, handling both
+   terminating and non-terminating computations. *)
+
 Module STLCStepTr.
 
 Inductive ty : Type :=
@@ -259,16 +263,16 @@ Inductive tm : Type :=
 | undefined_tm : tm.
 
 Definition isVal (t : tm) : nat :=
-match t with
-| tvar _ => 1
-| tabs _ _ _ => 1
-| ttrue => 1
-| tfalse => 1
-| undefined_tm => 3
-| _ => 0
-end.
+  match t with
+  | tvar _ => 1
+  | tabs _ _ _ => 1
+  | ttrue => 1
+  | tfalse => 1
+  | undefined_tm => 3
+  | _ => 0
+  end.
 
-CoInductive coLst: Type :=
+CoInductive coLst : Type :=
 | coNil : coLst
 | coSeq : tm -> coLst -> coLst
 | undefined_lst : coLst.
@@ -297,11 +301,12 @@ Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
   | tif t1 t2 t3 => tif (subst x s t1) (subst x s t2) (subst x s t3)
   | _ => undefined_tm
   end.
-Inductive bigStepTr : tm -> coLst -> Prop :=
-| bigVal : forall  t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
-| bigStep : forall t tr_lst t', step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
-| bigStepUndef : forall t, bigStepTr t undefined_lst
 
+Inductive bigStepTr : tm -> coLst -> Prop :=
+| bigVal : forall t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
+| bigStep : forall t tr_lst t',
+    step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
+| bigStepUndef : forall t, bigStepTr t undefined_lst
 with step : tm -> tm -> Prop :=
 | ST_AppAbs : forall (z : string) (T : ty) (t w : tm),
     step (tapp (tabs z T t) w) (subst z w t)
@@ -315,82 +320,35 @@ with step : tm -> tm -> Prop :=
 | ST_If : forall (t1 t1' t2 t3 : tm),
     step t1 t1' ->
     step (tif t1 t2 t3) (tif t1' t2 t3)
-    
 | ST_Val : forall t t1, isVal t = 1 /\ t1 = t -> step t t1
-| ST_Undef : forall t, step t undefined_tm .
+| ST_Undef : forall t, step t undefined_tm.
+
 Definition stepRest := fun _ : tm => undefined_tm.
-Definition bigStepTrRest     := fun _ : tm => undefined_lst.
+Definition bigStepTrRest := fun _ : tm => undefined_lst.
 
+MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?>
+  [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 600).
 
-MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?> [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 600).
-
-(* --- Step tests --- *)
 Definition omega : tm :=
-tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x"))) (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
+  tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+       (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
 
-
-(* omega -- non terminating  *)
+(* Non-terminating: omega self-applies forever, trace is infinite *)
 Example test_bigstep_omega :
-  (Str_nth 30 (bigStepTrAnimatedTopFnStream (Success tm omega)))
-  = 
-Success coLst
-         (coSeq
-            (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-               (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-            (coSeq
-               (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                  (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-               (coSeq
-                  (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                     (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                  (coSeq
-                     (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                        (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                     (coSeq
-                        (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                           (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                        (coSeq
-                           (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                              (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                           (coSeq
-                              (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                 (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                              (coSeq
-                                 (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                    (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                 (coSeq
-                                    (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                       (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                    (coSeq
-                                       (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                          (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                       (coSeq
-                                          (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                             (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                          (coSeq
-                                             (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                                (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                             (coSeq
-                                                (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                                   (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                                (coSeq
-                                                   (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
-                                                      (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
-                                                   undefined_lst)))))))))))))).
-    
+  let o := omega in
+  (Str_nth 30 (bigStepTrAnimatedTopFnStream (Success tm o)))
+  = Success coLst
+      (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o
+      (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o
+      undefined_lst)))))))))))))).
 Proof. reflexivity. Qed.
 
-
-
-(* Beta reduction: (\x:Bool. x) false --> false *)
-Example terminating :
-  (Str_nth 30 (bigStepTrAnimatedTopFnStream (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue))))
-
-    
+(* Terminating: if ((\x. x) true) false true -->* false *)
+Example test_bigstep_terminating :
+  (Str_nth 30 (bigStepTrAnimatedTopFnStream
+    (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue))))
   = Success coLst (coSeq (tif ttrue tfalse ttrue) (coSeq tfalse (coSeq tfalse coNil))).
 Proof. reflexivity. Qed.
-
-
 
 End STLCStepTr.
 

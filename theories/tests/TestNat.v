@@ -17,7 +17,9 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-(* Empty input mode. Relation in both let binding and boolean guard position *)
+(** ** Empty input mode *)
+(* All arguments are outputs — the relation appears in both let-binding
+   and boolean-guard position during compilation. *)
 
 Inductive isGood2 : list nat -> nat -> Prop :=
 | isG2 : forall n l, isGoodEmptyIn' l n /\ isGoodEmptyIn l n -> isGood2 l n
@@ -26,17 +28,18 @@ with isGoodEmptyIn : list nat -> nat -> Prop :=
 with isGoodEmptyIn' : list nat -> nat -> Prop :=
 | zeroCEmptyIn' : isGoodEmptyIn' [] 1.
 
-
-
-
 MetaRocq Run (animate_inductive isGood2 <? isGood2 ?>
-  [("isGood2", ([], [0;1]));("isGoodEmptyIn", ([], [0;1])); ("isGoodEmptyIn'", ([], [0;1]))] 500).
-  
+  [("isGood2", ([], [0;1]));
+   ("isGoodEmptyIn", ([], [0;1]));
+   ("isGoodEmptyIn'", ([], [0;1]))] 500).
+
 Example testIsGood2 :
-isGood2AnimatedTopFn 5 (Success (bool) true) = NoMatch (list nat * nat). 
+  isGood2AnimatedTopFn 5 (Success bool true) = NoMatch (list nat * nat).
 Proof. reflexivity. Qed.
 
-(* Empty output mode. *)
+(** ** Empty output mode *)
+(* All arguments are inputs — no output positions. *)
+
 Inductive isGood3 : list nat -> nat -> Prop :=
 | isG3 : forall n l, isGoodEmptyIn'3 l n /\ isGoodEmptyIn3 l n -> isGood3 l n
 with isGoodEmptyIn3 : list nat -> nat -> Prop :=
@@ -44,21 +47,20 @@ with isGoodEmptyIn3 : list nat -> nat -> Prop :=
 with isGoodEmptyIn'3 : list nat -> nat -> Prop :=
 | zeroCEmptyIn'3 : isGoodEmptyIn'3 [] 0.
 
-
-
-
 MetaRocq Run (animate_inductive isGood3 <? isGood3 ?>
-  [("isGood3", ([0;1], []));("isGoodEmptyIn3", ([0;1], [])); ("isGoodEmptyIn'3", ([0;1], []))] 500).
-  
+  [("isGood3", ([0;1], []));
+   ("isGoodEmptyIn3", ([0;1], []));
+   ("isGoodEmptyIn'3", ([0;1], []))] 500).
+
 Example testIsGood3 :
-isGood3AnimatedTopFn 5 (Success (list nat * nat) ([1],3)) =  NoMatch (bool). 
+  isGood3AnimatedTopFn 5 (Success (list nat * nat) ([1], 3)) = NoMatch bool.
 Proof. reflexivity. Qed.
 
 Example testIsGood3' :
-isGood3AnimatedTopFn 5 (Success (list nat * nat) ([],0)) =  Success (bool) true. 
+  isGood3AnimatedTopFn 5 (Success (list nat * nat) ([], 0)) = Success bool true.
 Proof. reflexivity. Qed.
 
-(* Reverse usual modes*)
+(** ** Reverse usual modes *)
 
 Inductive isGood : list nat -> nat -> Prop :=
 | isG : forall n l, isGood' l n  -> isGood l n
@@ -69,20 +71,14 @@ isGood' : list nat -> nat -> Prop :=
 
 MetaRocq Run (animate_inductive isGood <? isGood ?>
   [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 500).
-  
+
 Example testIsGood_0 :
-isGoodAnimatedTopFn 5 (Success (nat) 0) = Success (list nat) []. 
+  isGoodAnimatedTopFn 5 (Success nat 0) = Success (list nat) [].
 Proof. reflexivity. Qed.
 
 Example testIsGood_none :
-isGoodAnimatedTopFn 5 (Success (nat) 3) = NoMatch (list nat). 
+  isGoodAnimatedTopFn 5 (Success nat 3) = NoMatch (list nat).
 Proof. reflexivity. Qed.
-
-
-  
-
-
- 
 
 (** ** Addition as a relation *)
 
