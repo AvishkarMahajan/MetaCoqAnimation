@@ -260,7 +260,8 @@ Inductive tm : Type :=
 | ttrue : tm
 | tfalse : tm
 | tif : tm -> tm -> tm -> tm
-| undefined_tm : tm.
+| substAnim : string -> tm -> tm -> tm
+| stepAnim : tm -> tm.
 
 Definition isVal (t : tm) : nat :=
   match t with
@@ -268,14 +269,15 @@ Definition isVal (t : tm) : nat :=
   | tabs _ _ _ => 1
   | ttrue => 1
   | tfalse => 1
-  | undefined_tm => 3
+  | stepAnim _ => 3
+  | substAnim _ _ _ => 3
   | _ => 0
   end.
 
 CoInductive coLst : Type :=
 | coNil : coLst
 | coSeq : tm -> coLst -> coLst
-| undefined_lst : coLst.
+| bigStepTrAnim : tm -> coLst.
 
 Definition eqFnty (t1 t2 : ty) : bool :=
   match t1, t2 with
@@ -299,14 +301,14 @@ Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
   | ttrue => ttrue
   | tfalse => tfalse
   | tif t1 t2 t3 => tif (subst x s t1) (subst x s t2) (subst x s t3)
-  | _ => undefined_tm
+  | _ => substAnim x s t
   end.
 
 Inductive bigStepTr : tm -> coLst -> Prop :=
 | bigVal : forall t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
 | bigStep : forall t tr_lst t',
     step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
-| bigStepUndef : forall t, bigStepTr t undefined_lst
+| bigStepUndef : forall t, bigStepTr t (bigStepTrAnim t)
 with step : tm -> tm -> Prop :=
 | ST_AppAbs : forall (z : string) (T : ty) (t w : tm),
     step (tapp (tabs z T t) w) (subst z w t)
@@ -321,10 +323,10 @@ with step : tm -> tm -> Prop :=
     step t1 t1' ->
     step (tif t1 t2 t3) (tif t1' t2 t3)
 | ST_Val : forall t t1, isVal t = 1 /\ t1 = t -> step t t1
-| ST_Undef : forall t, step t undefined_tm.
+| ST_Undef : forall t, step t (stepAnim t).
 
-Definition stepRest := fun _ : tm => undefined_tm.
-Definition bigStepTrRest := fun _ : tm => undefined_lst.
+Definition stepRest := fun t : tm => (stepAnim t).
+Definition bigStepTrRest := fun t: tm => (bigStepTrAnim t).
 
 MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?>
   [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 100).
@@ -333,6 +335,8 @@ Definition omega : tm :=
   tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
        (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
 
+ 
+
 (* Non-terminating: omega self-applies forever, trace is infinite *)
 Example test_bigstep_omega :
   let o := omega in
@@ -340,7 +344,7 @@ Example test_bigstep_omega :
   = Success coLst
       (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o
       (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o (coSeq o
-      undefined_lst)))))))))))))).
+      (bigStepTrAnim o))))))))))))))).
 Proof. reflexivity. Qed.
 
 (* Terminating: if ((\x. x) true) false true -->* false *)
