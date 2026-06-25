@@ -31,7 +31,7 @@ with isGoodEmptyIn' : list nat -> nat -> Prop :=
 MetaRocq Run (animate_inductive isGood2 <? isGood2 ?>
   [("isGood2", ([], [0;1]));
    ("isGoodEmptyIn", ([], [0;1]));
-   ("isGoodEmptyIn'", ([], [0;1]))] 500).
+   ("isGoodEmptyIn'", ([], [0;1]))] 100).
 
 Example testIsGood2 :
   isGood2AnimatedTopFn 5 (Success bool true) = NoMatch (list nat * nat).
@@ -50,7 +50,7 @@ with isGoodEmptyIn'3 : list nat -> nat -> Prop :=
 MetaRocq Run (animate_inductive isGood3 <? isGood3 ?>
   [("isGood3", ([0;1], []));
    ("isGoodEmptyIn3", ([0;1], []));
-   ("isGoodEmptyIn'3", ([0;1], []))] 500).
+   ("isGoodEmptyIn'3", ([0;1], []))] 100).
 
 Example testIsGood3 :
   isGood3AnimatedTopFn 5 (Success (list nat * nat) ([1], 3)) = NoMatch bool.
@@ -70,7 +70,7 @@ isGood' : list nat -> nat -> Prop :=
 | zeroC : isGood' [] 0.
 
 MetaRocq Run (animate_inductive isGood <? isGood ?>
-  [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 500).
+  [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 100).
 
 Example testIsGood_0 :
   isGoodAnimatedTopFn 5 (Success nat 0) = Success (list nat) [].

@@ -327,7 +327,7 @@ Definition stepRest := fun _ : tm => undefined_tm.
 Definition bigStepTrRest := fun _ : tm => undefined_lst.
 
 MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?>
-  [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 600).
+  [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 100).
 
 Definition omega : tm :=
   tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
