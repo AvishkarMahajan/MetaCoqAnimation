@@ -11,6 +11,7 @@ Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
 From Stdlib Require Import List.
+From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -241,3 +242,155 @@ Example test_step_if_cond :
 Proof. reflexivity. Qed.
 
 End STLCStep.
+
+Module STLCStepTr.
+
+Inductive ty : Type :=
+| TBool : ty
+| TArrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+| tvar : string -> tm
+| tapp : tm -> tm -> tm
+| tabs : string -> ty -> tm -> tm
+| ttrue : tm
+| tfalse : tm
+| tif : tm -> tm -> tm -> tm
+| undefined_tm : tm.
+
+Definition isVal (t : tm) : nat :=
+match t with
+| tvar _ => 1
+| tabs _ _ _ => 1
+| ttrue => 1
+| tfalse => 1
+| undefined_tm => 3
+| _ => 0
+end.
+
+CoInductive coLst: Type :=
+| coNil : coLst
+| coSeq : tm -> coLst -> coLst
+| undefined_lst : coLst.
+
+Definition eqFnty (t1 t2 : ty) : bool :=
+  match t1, t2 with
+  | TBool, TBool => true
+  | TArrow a1 b1, TArrow a2 b2 => false
+  | _, _ => false
+  end.
+
+Definition eqFntm (t1 t2 : tm) : bool :=
+  match t1, t2 with
+  | ttrue, ttrue => true
+  | tfalse, tfalse => true
+  | _, _ => false
+  end.
+
+Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
+  match t with
+  | tvar y => if String.eqb x y then s else t
+  | tabs y T t1 => if String.eqb x y then t else tabs y T (subst x s t1)
+  | tapp t1 t2 => tapp (subst x s t1) (subst x s t2)
+  | ttrue => ttrue
+  | tfalse => tfalse
+  | tif t1 t2 t3 => tif (subst x s t1) (subst x s t2) (subst x s t3)
+  | _ => undefined_tm
+  end.
+Inductive bigStepTr : tm -> coLst -> Prop :=
+| bigVal : forall  t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
+| bigStep : forall t tr_lst t', step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
+| bigStepUndef : forall t, bigStepTr t undefined_lst
+
+with step : tm -> tm -> Prop :=
+| ST_AppAbs : forall (z : string) (T : ty) (t w : tm),
+    step (tapp (tabs z T t) w) (subst z w t)
+| ST_App1 : forall (t1 t1' t2 : tm),
+    step t1 t1' ->
+    step (tapp t1 t2) (tapp t1' t2)
+| ST_IfTrue : forall (t1 t2 : tm),
+    step (tif ttrue t1 t2) t1
+| ST_IfFalse : forall (t1 t2 : tm),
+    step (tif tfalse t1 t2) t2
+| ST_If : forall (t1 t1' t2 t3 : tm),
+    step t1 t1' ->
+    step (tif t1 t2 t3) (tif t1' t2 t3)
+    
+| ST_Val : forall t t1, isVal t = 1 /\ t1 = t -> step t t1
+| ST_Undef : forall t, step t undefined_tm .
+Definition stepRest := fun _ : tm => undefined_tm.
+Definition bigStepTrRest     := fun _ : tm => undefined_lst.
+
+
+MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?> [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 600).
+
+(* --- Step tests --- *)
+Definition omega : tm :=
+tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x"))) (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
+
+
+(* omega -- non terminating  *)
+Example test_bigstep_omega :
+  (Str_nth 30 (bigStepTrAnimatedTopFnStream (Success tm omega)))
+  = 
+Success coLst
+         (coSeq
+            (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+               (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+            (coSeq
+               (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                  (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+               (coSeq
+                  (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                     (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                  (coSeq
+                     (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                        (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                     (coSeq
+                        (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                           (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                        (coSeq
+                           (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                              (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                           (coSeq
+                              (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                 (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                              (coSeq
+                                 (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                    (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                 (coSeq
+                                    (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                       (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                    (coSeq
+                                       (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                          (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                       (coSeq
+                                          (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                             (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                          (coSeq
+                                             (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                                (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                             (coSeq
+                                                (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                                   (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                                (coSeq
+                                                   (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+                                                      (tabs "x" TBool (tapp (tvar "x") (tvar "x"))))
+                                                   undefined_lst)))))))))))))).
+    
+Proof. reflexivity. Qed.
+
+
+
+(* Beta reduction: (\x:Bool. x) false --> false *)
+Example terminating :
+  (Str_nth 30 (bigStepTrAnimatedTopFnStream (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue))))
+
+    
+  = Success coLst (coSeq (tif ttrue tfalse ttrue) (coSeq tfalse (coSeq tfalse coNil))).
+Proof. reflexivity. Qed.
+
+
+
+End STLCStepTr.
+
