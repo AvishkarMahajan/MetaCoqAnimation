@@ -1334,30 +1334,91 @@ match mk_all_coind ind_data kn modes with
 | None => tmFail "dispatch term extraction failed in animate_coinductive"
 end.
 
-(** Compile all clauses for a list of mutually recursive inductives [knLst],
-    returning the combined fixpoint structure data. *)
-Fixpoint animate_multi_def {A : Type} (ind : A) (knLst : list kername)
- (modes : mode_map) (fuel : nat) : TemplateMonad ((list fixpoint_entry)) :=
+(** Collect and merge raw clause data from every kn in [knLst]. *)
+Fixpoint collect_all_cdata (knLst : list kername) (modes : mode_map)
+  : TemplateMonad (list clause_data) :=
+  match knLst with
+  | [] => tmReturn []
+  | kn :: rest => raw_cdata <- get_data' kn modes ;;
+                  rest_cdata <- collect_all_cdata rest modes ;;
+                  tmReturn (app raw_cdata rest_cdata)
+  end.
 
+(** Collect and merge type environments from every kn in [knLst]. *)
+Fixpoint collect_all_tp_data (knLst : list kername)
+  : TemplateMonad (list type_env_entry) :=
+  match knLst with
+  | [] => tmReturn []
+  | kn :: rest => mut <- tmQuoteInductive kn ;;
+                  rest_tp <- collect_all_tp_data rest ;;
+                  tmReturn (app (clause_type_info (ind_bodies mut)) rest_tp)
+  end.
+
+(** Like [animate_one_clause] but receives pre-computed, merged [all_cdata] and
+    [tp_data] covering every inductive block.  Eliminates the single-[kn]
+    re-derivation that caused cross-block predicate references to produce free
+    variables in the generated term. *)
+Definition animate_one_clause_with_data {A : Type}
+  (ind : A) (kn : kername)
+  (one_clause : ((string * string) * named_term))
+  (modes : mode_map) (fuel : nat)
+  (all_cdata : list clause_data)
+  (tp_data : list type_env_entry)
+  : TemplateMonad term :=
+cstr_nm      <- tmEval all (snd (fst one_clause)) ;;
+fixpt_data   <- tmEval all (prod_in_out (fixpoint_data all_cdata)) ;;
+clause_lhs   <- tmEval all (conj_lhs one_clause) ;;
+var_tp       <- tmEval all (all_var_types one_clause tp_data) ;;
+inV          <- tmEval all (lookup_var_types (conj_in_vars one_clause modes) var_tp) ;;
+outV         <- tmEval all (lookup_var_types (conj_out_vars one_clause modes) var_tp) ;;
+pred_tps     <- tmEval all (all_ind_tp_data all_cdata) ;;
+pred_tps_an  <- tmEval all (animation_types all_cdata) ;;
+pred_tps_occ <- tmEval all (pred_animation_types one_clause fixpt_data pred_tps_an) ;;
+compile_clause_body ind kn clause_lhs cstr_nm inV outV modes pred_tps var_tp pred_tps_occ fuel.
+
+(** Like [animate_clause_list] but uses [animate_one_clause_with_data]. *)
+Fixpoint animate_clause_list_with_data {A : Type}
+  (ind : A) (kn : kername)
+  (cl_lst : list ((string * string) * term))
+  (modes : mode_map) (fuel : nat)
+  (all_cdata : list clause_data)
+  (tp_data : list type_env_entry)
+  : TemplateMonad (list term) :=
+  match cl_lst with
+  | [] => tmReturn []
+  | c1 :: cRest =>
+      c1An    <- animate_one_clause_with_data ind kn c1 modes fuel all_cdata tp_data ;;
+      cRestAn <- animate_clause_list_with_data ind kn cRest modes fuel all_cdata tp_data ;;
+      tmReturn (c1An :: cRestAn)
+  end.
+
+(** Compile all clauses for a list of separately-defined inductive blocks,
+    returning the combined fixpoint structure data.
+
+    Phase 1: collect raw data from every block in [knLst], merge the type
+    environments, and rewrite all clauses with the unified type info so that
+    cross-block predicate argument types are resolved correctly.
+
+    Phase 2: animate every clause using the merged context so that predicates
+    from other blocks appear in [pred_tps_an] and the lambda chain for
+    [lhs_preds] is built correctly — preventing the free-variable error that
+    arose when [pred_tps_occ] was empty for cross-block calls. *)
+Definition animate_multi_def {A : Type} (ind : A) (knLst : list kername)
+ (modes : mode_map) (fuel : nat) : TemplateMonad (list fixpoint_entry) :=
 match knLst with
 | [] => tmReturn []
-| kn :: t => all_cdata' <- get_data' kn modes ;;
-             mut <- tmQuoteInductive kn ;;
-             tp_data' <- tmEval all (clause_type_info (ind_bodies mut)) ;;
-             all_cdata <- match rewrite_cl_all all_cdata' tp_data' with
-                 | Some d => tmEval all d
-                 | None => tmFail "clause rewriting failed"
-                 end ;;
-             tp_data <- tmEval all (finalize_type_info all_cdata' tp_data') ;;
-
-             cl_lst <- tmEval all (all_clauses all_cdata) ;;
-
-             animate_clause_list ind kn cl_lst modes fuel ;;
-
-             ind_data <- tmEval all (prod_in_out (fixpoint_data all_cdata)) ;;
-             restDefs <- animate_multi_def ind t (modes) (fuel) ;;
-             tmReturn (app ind_data restDefs)
-
+| topKn :: _ =>
+  all_cdata_raw    <- collect_all_cdata knLst modes ;;
+  tp_data_raw      <- collect_all_tp_data knLst ;;
+  all_cdata_merged  <- match rewrite_cl_all all_cdata_raw tp_data_raw with
+                       | Some d => tmEval all d
+                       | None   => tmFail "clause rewriting failed in animate_multi_def"
+                       end ;;
+  let tp_data_merged := finalize_type_info all_cdata_raw tp_data_raw in
+  let cl_lst         := all_clauses all_cdata_merged in
+  animate_clause_list_with_data ind topKn cl_lst modes fuel
+    all_cdata_merged tp_data_merged ;;
+  tmReturn (prod_in_out (fixpoint_data all_cdata_merged))
 end.
 
 (** Compile all clauses across a multi-definition mutual block ([topKn :: knLst]),
