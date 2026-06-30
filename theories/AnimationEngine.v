@@ -1447,4 +1447,55 @@ match mk_all_ind ind_data topKn modes with
 | None => tmFail "dispatch term extraction failed in animate_multi_aux"
 end.
 
+(** Like [animate_coinductive] but handles auxiliary relations defined in separate
+    inductive blocks.  Uses the two-phase approach from [animate_multi_def]:
+    merge clause data and type environments from all blocks first, then rewrite
+    and animate with the unified context so that cross-block predicate references
+    are correctly resolved in the corecursive output.
+
+    Generates both the top-level fixpoint ([topKn ++ AnimatedTopFn]) and the
+    lazy [Stream] ([topKn ++ AnimatedStream]) for the main relation [topKn].
+    Auxiliary relations in [knLst] participate in the mutual fixpoint but do
+    not get their own top-level stream definitions. *)
+Definition animate_coinductive_multi_aux {A : Type}
+  (topInd : A) (topKn : kername) (knLst : list kername)
+  (modes : mode_map) (fuel : nat)
+  : TemplateMonad (list term) :=
+all_cdata_raw    <- collect_all_cdata (topKn :: knLst) modes ;;
+tp_data_raw      <- collect_all_tp_data (topKn :: knLst) ;;
+all_cdata_merged <- match rewrite_cl_all all_cdata_raw tp_data_raw with
+                    | Some d => tmEval all d
+                    | None   => tmFail "clause rewriting failed in animate_coinductive_multi_aux"
+                    end ;;
+let tp_data_merged := finalize_type_info all_cdata_raw tp_data_raw in
+let cl_lst         := all_clauses all_cdata_merged in
+tms <- animate_clause_list_with_data topInd topKn cl_lst modes fuel
+         all_cdata_merged tp_data_merged ;;
+let ind_data := prod_in_out (fixpoint_data all_cdata_merged) in
+match mk_all_coind ind_data topKn modes with
+| Some defs =>
+  let u := mk_rec_fn defs 0 in
+  match DB.de_bruijn_option u with
+  | Some db_u =>
+    t'        <- tmEval all db_u ;;
+    f         <- tmUnquote t' ;;
+    tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (snd topKn ++ top_fn_suffix) (Some hnf) ;;
+    fn_in_tp  <- search_in_tp  ind_data (snd topKn) "cannot find input type" ;;
+    fn_out_tp <- search_out_tp ind_data (snd topKn) "cannot find output type" ;;
+    let t_coind :=
+      tApp <%stream_of_fn%>
+        [(tApp <%animation_result%> [fn_in_tp]);
+         (tApp <%animation_result%> [fn_out_tp]);
+         t'] in
+    t_coind'' <- tmEval all t_coind ;;
+    f_stm     <- tmUnquote t_coind'' ;;
+    tmEval hnf (my_projT2 f_stm) >>=
+    tmDefinitionRed_ false (snd topKn ++ stream_suffix) (Some hnf) ;;
+    tmReturn tms
+  | None => tmFail "de Bruijn conversion failed in animate_coinductive_multi_aux"
+  end
+| None => tmFail "dispatch term extraction failed in animate_coinductive_multi_aux"
+end.
+
 Set Universe Checking.
