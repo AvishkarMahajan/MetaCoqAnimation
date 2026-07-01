@@ -231,3 +231,122 @@ Example test_leq_1_0 :
 Proof. reflexivity. Qed.
 
 End LessEq.
+
+
+(** ** Mutual block + standalone block
+    [triple2] is a standalone inductive.
+    [evn4]/[od4] are a mutually recursive pair (same [with] block).
+    [tripled_parity] calls both: it triples its input and checks the
+    parity of the result. *)
+
+Module MixedBlocksSolo.
+
+(** Standalone: tripling relation. *)
+Inductive triple2 : nat -> nat -> Prop :=
+| t2_zero : triple2 0 0
+| t2_succ : forall n m, triple2 n m -> triple2 (S n) (S (S (S m))).
+
+(** Mutual block: parity check (only derives [true] outputs). *)
+Inductive evn4 : nat -> bool -> Prop :=
+| evn4_zero : evn4 0 true
+| evn4_succ : forall n, od4 n true -> evn4 (S n) true
+with od4 : nat -> bool -> Prop :=
+| od4_succ : forall n, evn4 n true -> od4 (S n) true.
+
+(** Top-level: given [n], compute [(3n, parity(3n))].
+    Only succeeds when [3n] is even, i.e. when [n] is even. *)
+Inductive tripled_parity : nat -> (nat * bool) -> Prop :=
+| tp_rule : forall n t b,
+    triple2 n t /\ evn4 t b -> tripled_parity n (t, b).
+
+MetaRocq Run (animate_inductive tripled_parity <?tripled_parity?>
+  [("tripled_parity", ([0], [1]));
+   ("triple2",        ([0], [1]));
+   ("evn4",           ([0], [1]));
+   ("od4",            ([0], [1]))] 50).
+
+(* 3*0 = 0, which is even *)
+Example test_tp_0 :
+  tripled_parityAnimatedTopFn 50 (Success nat 0)
+  = Success (nat * bool) (0, true).
+Proof. reflexivity. Qed.
+
+(* 3*2 = 6, which is even *)
+Example test_tp_2 :
+  tripled_parityAnimatedTopFn 50 (Success nat 2)
+  = Success (nat * bool) (6, true).
+Proof. reflexivity. Qed.
+
+(* 3*4 = 12, which is even — requires deeper recursion, needs more fuel *)
+Example test_tp_4 :
+  tripled_parityAnimatedTopFn 50 (Success nat 4)
+  = Success (nat * bool) (12, true).
+Proof. reflexivity. Qed.
+
+(* 3*1 = 3, which is odd — no parity proof exists, returns NoMatch *)
+Example test_tp_1_no_match :
+  tripled_parityAnimatedTopFn 50 (Success nat 1)
+  = NoMatch (nat * bool).
+Proof. reflexivity. Qed.
+
+End MixedBlocksSolo.
+
+
+(** ** Two separate mutual blocks
+    [evn5]/[od5] form one mutual [with] block (parity).
+    [val_check]/[val_helper] form a second mutual [with] block (identity).
+    [even_ident] calls one relation from each block: it is the identity
+    function restricted to even inputs. *)
+
+Module TwoMutualBlocks.
+
+(** First mutual block: parity (only derives [true] outputs). *)
+Inductive evn5 : nat -> bool -> Prop :=
+| evn5_zero : evn5 0 true
+| evn5_succ : forall n, od5 n true -> evn5 (S n) true
+with od5 : nat -> bool -> Prop :=
+| od5_succ : forall n, evn5 n true -> od5 (S n) true.
+
+(** Second mutual block: identity relation, bouncing between two predicates. *)
+Inductive val_check : nat -> nat -> Prop :=
+| vc_zero : val_check 0 0
+| vc_succ : forall n m, val_helper n m -> val_check (S n) (S m)
+with val_helper : nat -> nat -> Prop :=
+| vh_zero : val_helper 0 0
+| vh_succ : forall n m, val_check n m -> val_helper (S n) (S m).
+
+(** Top-level: identity on even naturals.
+    Combines parity evidence ([evn5]) with value identity ([val_check]). *)
+Inductive even_ident : nat -> nat -> Prop :=
+| ei_rule : forall n m,
+    evn5 n true /\ val_check n m -> even_ident n m.
+
+MetaRocq Run (animate_inductive even_ident <?even_ident?>
+  [("even_ident",  ([0], [1]));
+   ("evn5",        ([0], [1]));
+   ("od5",         ([0], [1]));
+   ("val_check",   ([0], [1]));
+   ("val_helper",  ([0], [1]))] 30).
+
+Example test_ei_0 :
+  even_identAnimatedTopFn 30 (Success nat 0) = Success nat 0.
+Proof. reflexivity. Qed.
+
+Example test_ei_2 :
+  even_identAnimatedTopFn 30 (Success nat 2) = Success nat 2.
+Proof. reflexivity. Qed.
+
+Example test_ei_4 :
+  even_identAnimatedTopFn 30 (Success nat 4) = Success nat 4.
+Proof. reflexivity. Qed.
+
+(* Odd input: parity check fails, no derivation exists *)
+Example test_ei_1_no_match :
+  even_identAnimatedTopFn 30 (Success nat 1) = NoMatch nat.
+Proof. reflexivity. Qed.
+
+Example test_ei_3_no_match :
+  even_identAnimatedTopFn 30 (Success nat 3) = NoMatch nat.
+Proof. reflexivity. Qed.
+
+End TwoMutualBlocks.
