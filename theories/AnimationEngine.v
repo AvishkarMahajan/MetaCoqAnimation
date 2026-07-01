@@ -1188,151 +1188,49 @@ Definition search_out_tp := search_type_by_proj (fun h => h.(fe_out_type)).
 
 Unset Universe Checking.
 
-(** Compile a single clause [one_clause] of inductive [kn] (named input -> de Bruijn output):
-    extract type and clause data, rewrite non-variable arguments, then call
-    [compile_clause_body] to produce the compiled de Bruijn term. *)
-Definition animate_one_clause {A : Type}
-  (ind : A) (kn : kername)
-  (one_clause : ((string * string) * named_term))
-  (modes : mode_map) (fuel : nat)
-  : TemplateMonad term :=
-(* Step 1: gather clause data and type info from the inductive definition *)
-all_cdata' <- get_data' kn modes ;;
-mut <- tmQuoteInductive kn ;;
-tp_data' <- tmEval all (clause_type_info (ind_bodies mut)) ;;
-(* Step 2: rewrite clauses to normalize non-variable arguments *)
-all_cdata <- match rewrite_cl_all all_cdata' tp_data' with
-                 | Some d => tmEval all d
-                 | None => tmFail "clause rewriting failed"
-                 end ;;
-tp_data <- tmEval all (finalize_type_info all_cdata' tp_data') ;;
-cstr_nm  <- tmEval all (snd (fst one_clause)) ;;
-(* Step 3: compute fixpoint metadata and clause LHS *)
-fixpt_data <- tmEval all (prod_in_out (fixpoint_data all_cdata)) ;;
-conj_lhs <- tmEval all (conj_lhs one_clause) ;;
-(* Step 4: resolve variable types and partition into input/output *)
-var_tp <- tmEval all (all_var_types one_clause tp_data) ;;
-inV <- tmEval all
-  (lookup_var_types
-    (conj_in_vars one_clause modes) (var_tp)) ;;
-outV <- tmEval all
-  (lookup_var_types
-    (conj_out_vars one_clause modes) (var_tp));;
-(* Step 5: gather predicate type info for recursive calls *)
-pred_tps <- tmEval all (all_ind_tp_data all_cdata) ;;
-(*tmPrint pred_tps ;;*)
-pred_tps_an <- tmEval all (animation_types all_cdata) ;;
-pred_tps_occ <- tmEval all
-  (pred_animation_types one_clause
-    fixpt_data pred_tps_an) ;;
-(* Step 6: compile the clause body with all gathered info *)
-(compile_clause_body ind kn conj_lhs cstr_nm inV outV modes pred_tps var_tp pred_tps_occ fuel).
-
-(** Compile every clause in [cl_lst] sequentially, collecting compiled terms. *)
-Fixpoint animate_clause_list {A : Type}
-  (ind : A) (kn : kername)
-  (cl_lst : list ((string * string) * term))
-  (modes : mode_map) (fuel : nat)
-  : TemplateMonad (list term) :=
-
-  match cl_lst with
-  | [] => tmReturn []
-  | c1 :: cRest =>
-      c1An <- animate_one_clause ind kn c1 modes fuel ;;
-      cRestAn <- animate_clause_list ind kn cRest modes fuel ;;
-      tmReturn (c1An :: cRestAn)
+(** Deep scan of a MetaRocq [term] for all [tInd] kernel names. *)
+Fixpoint collect_tInd_kn (t : term) : list kername :=
+  match t with
+  | tInd {| inductive_mind := kn |} _  => [kn]
+  | tApp f args                         => app (collect_tInd_kn f)
+                                               (flat_map collect_tInd_kn args)
+  | tProd _ t1 t2                       => app (collect_tInd_kn t1)
+                                               (collect_tInd_kn t2)
+  | tLambda _ t1 t2                     => app (collect_tInd_kn t1)
+                                               (collect_tInd_kn t2)
+  | tLetIn _ t1 t2 t3                   => app (collect_tInd_kn t1)
+                                           (app (collect_tInd_kn t2)
+                                                (collect_tInd_kn t3))
+  | _                                   => []
   end.
 
-(** Main entry point: animate an inductive relation into an executable function.
-    Generates a fixpoint that tries each clause with bounded fuel. *)
-Definition animate_inductive {A : Type}
-  (ind : A) (kn : kername)
-  (modes : mode_map) (fuel : nat)
-  : TemplateMonad (list term) :=
-(* Phase 1: extract clause structure and type info *)
-all_cdata' <- get_data' kn modes ;;
-mut <- tmQuoteInductive kn ;;
-tp_data' <- tmEval all (clause_type_info (ind_bodies mut)) ;;
-all_cdata <- match rewrite_cl_all all_cdata' tp_data' with
-                 | Some d => tmEval all d
-                 | None => tmFail "clause rewriting failed"
-                 end ;;
-tp_data <- tmEval all (finalize_type_info all_cdata' tp_data') ;;
-(*tmPrint all_cdata;;
-tmPrint tp_data;;*)
-(* Phase 2: compile each clause into a match-and-return term *)
-cl_lst <- tmEval all (all_clauses all_cdata) ;;
-tms <- animate_clause_list ind kn cl_lst modes fuel ;;
-(* Phase 3: assemble the fixpoint that dispatches over compiled clauses *)
-ind_data <- tmEval all (prod_in_out (fixpoint_data all_cdata)) ;;
-match mk_all_ind ind_data kn modes with
-| Some defs =>
-  let u := mk_rec_fn defs 0 in
-          u' <- tmEval all u ;;
-          match DB.de_bruijn_option u with
-          | Some db_u =>
-            t' <- tmEval all db_u ;;
-               f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false
-                (snd kn ++ top_fn_suffix)
-                (Some hnf) ;;
-              tmReturn tms
-          | None => tmFail "de Bruijn conversion failed in animate_inductive"
-          end
-| None => tmFail "dispatch term extraction failed in animate_inductive"
-end.
+(** Deduplicate a list of kernames, comparing by local ident. *)
+Fixpoint dedup_knames (l : list kername) (acc : list kername) : list kername :=
+  match l with
+  | [] => acc
+  | h :: t =>
+      if in_strings (snd h) (map snd acc)
+      then dedup_knames t acc
+      else dedup_knames t (h :: acc)
+  end.
 
-(** Main entry point: animate a coinductive relation into an executable corecursive stream.
-    Generates both a fixpoint and a [Stream] for lazy enumeration. *)
-Definition animate_coinductive {A : Type}
-  (ind : A) (kn : kername)
-  (modes : mode_map) (fuel : nat)
-  : TemplateMonad (list term) :=
-all_cdata' <- get_data' kn modes ;;
-mut <- tmQuoteInductive kn ;;
-tp_data' <- tmEval all (clause_type_info (ind_bodies mut)) ;;
-all_cdata <- match rewrite_cl_all all_cdata' tp_data' with
-                 | Some d => tmEval all d
-                 | None => tmFail "clause rewriting failed"
-                 end ;;
-tp_data <- tmEval all (finalize_type_info all_cdata' tp_data') ;;
-
-let cl_lst := all_clauses all_cdata in
-
-tms <- animate_clause_list ind kn cl_lst modes fuel ;;
-
-let ind_data := prod_in_out (fixpoint_data all_cdata) in
-
-match mk_all_coind ind_data kn modes with
-| Some defs =>
-  let u := mk_rec_fn defs 0 in
-          u' <- tmEval all u ;;
-          match DB.de_bruijn_option u with
-          | Some db_u =>
-            t' <- tmEval all db_u ;;
-               f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
-              fn_in_tp <- search_in_tp ind_data (snd kn) "cannot find input type" ;;
-
-              fn_out_tp <- search_out_tp ind_data (snd kn) "cannot find output type" ;;
-              let t_coind :=
-                tApp <%stream_of_fn%>
-                  [(tApp <%animation_result%> [fn_in_tp]);
-                   (tApp <%animation_result%> [fn_out_tp]);
-                   t'] in
-              t_coind'' <- tmEval all t_coind ;;
-              f_stm <- tmUnquote t_coind'' ;;
-
-              tmEval hnf (my_projT2 f_stm) >>=
-              tmDefinitionRed_ false (snd kn ++ stream_suffix) (Some hnf) ;;
-
-              tmReturn tms
-          | None => tmFail "de Bruijn conversion failed in animate_coinductive"
-          end
-| None => tmFail "dispatch term extraction failed in animate_coinductive"
-end.
+(** Infer the auxiliary kernames referenced in the constructors of [topKn].
+    Scans all constructor types for [tInd] references, deduplicates,
+    removes [topKn] itself, and keeps only names that appear in [modes]. *)
+Definition infer_aux_knames (topKn : kername) (modes : mode_map)
+    : TemplateMonad (list kername) :=
+  mut <- tmQuoteInductive topKn ;;
+  let all_ctors := flat_map ind_ctors (ind_bodies mut) in
+  let all_kns_raw := dedup_knames
+                       (flat_map (fun c => collect_tInd_kn (cstr_type c)) all_ctors)
+                       [] in
+  let mode_names := map fst modes in
+  let aux_kns := filter
+                   (fun kn =>
+                     andb (negb (String.eqb (snd kn) (snd topKn)))
+                          (in_strings (snd kn) mode_names))
+                   all_kns_raw in
+  tmReturn aux_kns.
 
 (** Collect and merge raw clause data from every kn in [knLst]. *)
 Fixpoint collect_all_cdata (knLst : list kername) (modes : mode_map)
@@ -1421,58 +1319,54 @@ match knLst with
   tmReturn (prod_in_out (fixpoint_data all_cdata_merged))
 end.
 
-(** Compile all clauses across a multi-definition mutual block ([topKn :: knLst]),
-    assemble a single mutual fixpoint, and define it as [topKn.AnimatedTopFn]. *)
-Definition animate_multi_aux {A : Type} (topInd : A) (topKn : kername) (knLst : list kername)
- (modes : mode_map) (fuel : nat) : TemplateMonad term:=
-
-ind_data'' <- animate_multi_def topInd (topKn :: knLst) modes fuel ;;
-ind_data <- tmEval all ind_data'';;
-
-match mk_all_ind ind_data topKn modes with
+(** Main entry point: animate an inductive relation into an executable function.
+    Infers any auxiliary relations referenced in [kn]'s constructors (filtering
+    by [modes]) and compiles all blocks together via a two-phase approach.
+    Works for single-block, mutual-inductive ([with]), and separate-block relations. *)
+Definition animate_inductive {A : Type}
+  (ind : A) (kn : kername)
+  (modes : mode_map) (fuel : nat)
+  : TemplateMonad term :=
+knLst      <- infer_aux_knames kn modes ;;
+ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
+ind_data   <- tmEval all ind_data'' ;;
+match mk_all_ind ind_data kn modes with
 | Some defs =>
   let u := mk_rec_fn defs 0 in
-          u' <- tmEval all u ;;
-          match DB.de_bruijn_option u with
-          | Some db_u =>
-            t' <- tmEval all db_u ;;
-               f <- tmUnquote t';;
-              tmEval hnf (my_projT2 f) >>=
-              tmDefinitionRed_ false
-                (snd topKn ++ top_fn_suffix)
-                (Some hnf) ;;
-              tmReturn db_u
-          | None => tmFail "de Bruijn conversion failed in animate_multi_aux"
-          end
-| None => tmFail "dispatch term extraction failed in animate_multi_aux"
+  match DB.de_bruijn_option u with
+  | Some db_u =>
+    t' <- tmEval all db_u ;;
+    f  <- tmUnquote t' ;;
+    tmEval hnf (my_projT2 f) >>=
+    tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
+    tmReturn db_u
+  | None => tmFail "de Bruijn conversion failed in animate_inductive"
+  end
+| None => tmFail "dispatch term extraction failed in animate_inductive"
 end.
 
-(** Like [animate_coinductive] but handles auxiliary relations defined in separate
-    inductive blocks.  Uses the two-phase approach from [animate_multi_def]:
-    merge clause data and type environments from all blocks first, then rewrite
-    and animate with the unified context so that cross-block predicate references
-    are correctly resolved in the corecursive output.
-
-    Generates both the top-level fixpoint ([topKn ++ AnimatedTopFn]) and the
-    lazy [Stream] ([topKn ++ AnimatedStream]) for the main relation [topKn].
-    Auxiliary relations in [knLst] participate in the mutual fixpoint but do
-    not get their own top-level stream definitions. *)
-Definition animate_coinductive_multi_aux {A : Type}
-  (topInd : A) (topKn : kername) (knLst : list kername)
+(** Main entry point: animate a coinductive relation into an executable corecursive stream.
+    Infers any auxiliary relations referenced in [kn]'s constructors (filtering
+    by [modes]) and compiles all blocks together.  Generates both the top-level
+    fixpoint ([kn ++ AnimatedTopFn]) and a lazy [Stream] ([kn ++ AnimatedStream]).
+    Works for single-block, mutual-coinductive ([with]), and separate-block relations. *)
+Definition animate_coinductive {A : Type}
+  (ind : A) (kn : kername)
   (modes : mode_map) (fuel : nat)
   : TemplateMonad (list term) :=
-all_cdata_raw    <- collect_all_cdata (topKn :: knLst) modes ;;
-tp_data_raw      <- collect_all_tp_data (topKn :: knLst) ;;
+knLst            <- infer_aux_knames kn modes ;;
+all_cdata_raw    <- collect_all_cdata (kn :: knLst) modes ;;
+tp_data_raw      <- collect_all_tp_data (kn :: knLst) ;;
 all_cdata_merged <- match rewrite_cl_all all_cdata_raw tp_data_raw with
                     | Some d => tmEval all d
-                    | None   => tmFail "clause rewriting failed in animate_coinductive_multi_aux"
+                    | None   => tmFail "clause rewriting failed in animate_coinductive"
                     end ;;
 let tp_data_merged := finalize_type_info all_cdata_raw tp_data_raw in
 let cl_lst         := all_clauses all_cdata_merged in
-tms <- animate_clause_list_with_data topInd topKn cl_lst modes fuel
+tms <- animate_clause_list_with_data ind kn cl_lst modes fuel
          all_cdata_merged tp_data_merged ;;
 let ind_data := prod_in_out (fixpoint_data all_cdata_merged) in
-match mk_all_coind ind_data topKn modes with
+match mk_all_coind ind_data kn modes with
 | Some defs =>
   let u := mk_rec_fn defs 0 in
   match DB.de_bruijn_option u with
@@ -1480,9 +1374,9 @@ match mk_all_coind ind_data topKn modes with
     t'        <- tmEval all db_u ;;
     f         <- tmUnquote t' ;;
     tmEval hnf (my_projT2 f) >>=
-    tmDefinitionRed_ false (snd topKn ++ top_fn_suffix) (Some hnf) ;;
-    fn_in_tp  <- search_in_tp  ind_data (snd topKn) "cannot find input type" ;;
-    fn_out_tp <- search_out_tp ind_data (snd topKn) "cannot find output type" ;;
+    tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
+    fn_in_tp  <- search_in_tp  ind_data (snd kn) "cannot find input type" ;;
+    fn_out_tp <- search_out_tp ind_data (snd kn) "cannot find output type" ;;
     let t_coind :=
       tApp <%stream_of_fn%>
         [(tApp <%animation_result%> [fn_in_tp]);
@@ -1491,11 +1385,11 @@ match mk_all_coind ind_data topKn modes with
     t_coind'' <- tmEval all t_coind ;;
     f_stm     <- tmUnquote t_coind'' ;;
     tmEval hnf (my_projT2 f_stm) >>=
-    tmDefinitionRed_ false (snd topKn ++ stream_suffix) (Some hnf) ;;
+    tmDefinitionRed_ false (snd kn ++ stream_suffix) (Some hnf) ;;
     tmReturn tms
-  | None => tmFail "de Bruijn conversion failed in animate_coinductive_multi_aux"
+  | None => tmFail "de Bruijn conversion failed in animate_coinductive"
   end
-| None => tmFail "dispatch term extraction failed in animate_coinductive_multi_aux"
+| None => tmFail "dispatch term extraction failed in animate_coinductive"
 end.
 
 Set Universe Checking.

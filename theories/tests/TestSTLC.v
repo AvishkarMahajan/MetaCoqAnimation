@@ -47,6 +47,13 @@ Definition eqFnty (t1 t2 : ty) : bool :=
 Definition eqFntm (t1 t2 : tm) : bool :=
   if decEqTm t1 t2 then true else false.
 
+(* [lookup] is a standalone block; [typing] calls it from a separate block. *)
+
+Inductive lookup : list ty -> nat -> ty -> Prop :=
+| LookupHere : forall (t : ty) (cxt : list ty), lookup (t :: cxt) 0 t
+| LookupThere : forall (m : nat) (t t' : ty) (cxt : list ty),
+    lookup cxt m t -> lookup (t' :: cxt) (S m) t.
+
 Inductive typing : list ty -> tm -> ty -> Prop :=
 | TCon : forall (n : nat) (cxt : list ty), typing cxt (tcon n) TBool
 
@@ -63,12 +70,7 @@ Inductive typing : list ty -> tm -> ty -> Prop :=
 
 | TApp : forall (e1 e2 : tm) (t1 t2 : ty) (cxt : list ty),
     typing cxt e2 t1 /\ typing cxt e1 (TArrow t1 t2) ->
-    typing cxt (tapp e1 e2) t2
-
-with lookup : list ty -> nat -> ty -> Prop :=
-| LookupHere : forall (t : ty) (cxt : list ty), lookup (t :: cxt) 0 t
-| LookupThere : forall (m : nat) (t t' : ty) (cxt : list ty),
-    lookup cxt m t -> lookup (t' :: cxt) (S m) t.
+    typing cxt (tapp e1 e2) t2.
 
 MetaRocq Run (animate_inductive typing <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
 
@@ -304,12 +306,9 @@ Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
   | _ => substAnim x s t
   end.
 
-Inductive bigStepTr : tm -> coLst -> Prop :=
-| bigVal : forall t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
-| bigStep : forall t tr_lst t',
-    step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
-| bigStepUndef : forall t, bigStepTr t (bigStepTrAnim t)
-with step : tm -> tm -> Prop :=
+(* [step] is a standalone block; [bigStepTr] calls it from a separate block. *)
+
+Inductive step : tm -> tm -> Prop :=
 | ST_AppAbs : forall (z : string) (T : ty) (t w : tm),
     step (tapp (tabs z T t) w) (subst z w t)
 | ST_App1 : forall (t1 t1' t2 : tm),
@@ -324,6 +323,12 @@ with step : tm -> tm -> Prop :=
     step (tif t1 t2 t3) (tif t1' t2 t3)
 | ST_Val : forall t t1, isVal t = 1 /\ t1 = t -> step t t1
 | ST_Undef : forall t, step t (stepAnim t).
+
+CoInductive bigStepTr : tm -> coLst -> Prop :=
+| bigVal : forall t, isVal t = 1 -> bigStepTr t (coSeq t coNil)
+| bigStep : forall t tr_lst t',
+    step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst)
+| bigStepUndef : forall t, bigStepTr t (bigStepTrAnim t).
 
 Definition stepRest := fun t : tm => (stepAnim t).
 Definition bigStepTrRest := fun t: tm => (bigStepTrAnim t).

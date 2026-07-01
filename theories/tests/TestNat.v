@@ -18,15 +18,16 @@ Local Open Scope nat_scope.
 Open Scope bs.
 
 (** ** Empty input mode *)
-(* All arguments are outputs — the relation appears in both let-binding
-   and boolean-guard position during compilation. *)
+(* Auxiliary relations in separate blocks; [isGood2] calls both. *)
+
+Inductive isGoodEmptyIn : list nat -> nat -> Prop :=
+| zeroCEmptyIn : isGoodEmptyIn [] 0.
+
+Inductive isGoodEmptyIn' : list nat -> nat -> Prop :=
+| zeroCEmptyIn' : isGoodEmptyIn' [] 1.
 
 Inductive isGood2 : list nat -> nat -> Prop :=
-| isG2 : forall n l, isGoodEmptyIn' l n /\ isGoodEmptyIn l n -> isGood2 l n
-with isGoodEmptyIn : list nat -> nat -> Prop :=
-| zeroCEmptyIn : isGoodEmptyIn [] 0
-with isGoodEmptyIn' : list nat -> nat -> Prop :=
-| zeroCEmptyIn' : isGoodEmptyIn' [] 1.
+| isG2 : forall n l, isGoodEmptyIn' l n /\ isGoodEmptyIn l n -> isGood2 l n.
 
 MetaRocq Run (animate_inductive isGood2 <? isGood2 ?>
   [("isGood2", ([], [0;1]));
@@ -38,14 +39,16 @@ Example testIsGood2 :
 Proof. reflexivity. Qed.
 
 (** ** Empty output mode *)
-(* All arguments are inputs — no output positions. *)
+(* Auxiliary relations in separate blocks; [isGood3] calls both. *)
+
+Inductive isGoodEmptyIn3 : list nat -> nat -> Prop :=
+| zeroCEmptyIn3 : isGoodEmptyIn3 [] 0.
+
+Inductive isGoodEmptyIn'3 : list nat -> nat -> Prop :=
+| zeroCEmptyIn'3 : isGoodEmptyIn'3 [] 0.
 
 Inductive isGood3 : list nat -> nat -> Prop :=
-| isG3 : forall n l, isGoodEmptyIn'3 l n /\ isGoodEmptyIn3 l n -> isGood3 l n
-with isGoodEmptyIn3 : list nat -> nat -> Prop :=
-| zeroCEmptyIn3 : isGoodEmptyIn3 [] 0
-with isGoodEmptyIn'3 : list nat -> nat -> Prop :=
-| zeroCEmptyIn'3 : isGoodEmptyIn'3 [] 0.
+| isG3 : forall n l, isGoodEmptyIn'3 l n /\ isGoodEmptyIn3 l n -> isGood3 l n.
 
 MetaRocq Run (animate_inductive isGood3 <? isGood3 ?>
   [("isGood3", ([0;1], []));
@@ -61,13 +64,13 @@ Example testIsGood3' :
 Proof. reflexivity. Qed.
 
 (** ** Reverse usual modes *)
+(* [isGood'] is a standalone block; [isGood] calls it from a separate block. *)
+
+Inductive isGood' : list nat -> nat -> Prop :=
+| zeroC : isGood' [] 0.
 
 Inductive isGood : list nat -> nat -> Prop :=
-| isG : forall n l, isGood' l n  -> isGood l n
-with
-
-isGood' : list nat -> nat -> Prop :=
-| zeroC : isGood' [] 0.
+| isG : forall n l, isGood' l n -> isGood l n.
 
 MetaRocq Run (animate_inductive isGood <? isGood ?>
   [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 100).
@@ -146,7 +149,9 @@ Proof. reflexivity. Qed.
 End Multiplication.
 
 
-(** ** Even/Odd as mutual relations *)
+(** ** Even/Odd as mutual relations — single [with] block.
+    [even] and [odd] are genuinely mutually recursive so they remain in
+    one block; [animate_inductive] handles this correctly. *)
 
 Module Parity.
 
