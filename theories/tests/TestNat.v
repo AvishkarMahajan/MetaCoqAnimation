@@ -307,19 +307,20 @@ Inductive evn5 : nat -> bool -> Prop :=
 with od5 : nat -> bool -> Prop :=
 | od5_succ : forall n, evn5 n true -> od5 (S n) true.
 
-(** Second mutual block: identity relation, bouncing between two predicates. *)
-Inductive val_check : nat -> nat -> Prop :=
-| vc_zero : val_check 0 0
-| vc_succ : forall n m, val_helper n m -> val_check (S n) (S m)
-with val_helper : nat -> nat -> Prop :=
-| vh_zero : val_helper 0 0
-| vh_succ : forall n m, val_check n m -> val_helper (S n) (S m).
+
 
 (** Top-level: identity on even naturals.
     Combines parity evidence ([evn5]) with value identity ([val_check]). *)
 Inductive even_ident : nat -> nat -> Prop :=
 | ei_rule : forall n m,
-    evn5 n true /\ val_check n m -> even_ident n m.
+    evn5 n true /\ val_check n m -> even_ident n m
+with val_check : nat -> nat -> Prop :=
+| vc_zero : val_check 0 0
+| vc_succ : forall n m, val_helper n m -> val_check (S n) (S m)
+with val_helper : nat -> nat -> Prop :=
+| vh_zero : val_helper 0 0
+| vh_succ : forall n m, val_check n m -> val_helper (S n) (S m).
+    
 
 MetaRocq Run (animate_inductive even_ident <?even_ident?>
   [("even_ident",  ([0], [1]));
