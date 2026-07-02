@@ -92,6 +92,15 @@ Fixpoint has_eq_fn (t : global_term) : bool :=
   | _ => true
   end.
 
+(** Check whether a named term contains no [tVar] nodes (i.e. is variable-free / ground).
+    Used to detect ground constructor patterns in equality guards. *)
+Fixpoint is_var_free (t : named_term) : bool :=
+  match t with
+  | tVar _ => false
+  | tApp f args => andb (is_var_free f) (forallb is_var_free args)
+  | _ => true
+  end.
+
 (** Flatten a conjunction (named) into a list of equality conjuncts (named)
     that will generate let-bindings. *)
 Fixpoint collect_let_conjs (big_conj : named_term) : list named_term :=
@@ -373,6 +382,22 @@ Definition build_guarded_body  (out_tm : global_term) (out_tp : global_term) (gu
                     ; bbody :=
                        tApp <% @None %> [out_tp]
                    |}])).
+
+(** Like [build_guarded_body] but takes explicit [true_body]/[false_body] instead of
+    always returning [Some out_tm] / [None].  Allows nesting equality guards. *)
+Definition build_bool_branch
+  (guard_expr : named_term)
+  (true_body  : named_term)
+  (false_body : named_term)
+  (ret_tp     : global_term) : named_term :=
+  tCase {| ci_ind := {| inductive_mind := <? bool ?>; inductive_ind := 0 |};
+           ci_npar := 0; ci_relevance := Relevant |}
+        {| puinst := []; pparams := [];
+           pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
+           preturn := ret_tp |}
+        guard_expr
+        [{| bcontext := []; bbody := true_body |};
+         {| bcontext := []; bbody := false_body |}].
 
 (** Generate a boolean equality function for a type and define it in the environment.
     Type parameters are global terms; returns a de Bruijn term. *)

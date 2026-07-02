@@ -311,9 +311,134 @@ Fixpoint build_eq_guard_chain (conj : list named_term) (var_env : list (prod str
   | h :: t => animate_conj_guard h (build_eq_guard_chain t var_env) var_env
   end.
 
+(** Build a de Bruijn term that pattern-matches an [animation_result bool] guard
+    and dispatches to one of four continuations: [succ_true] (guard true),
+    [succ_false] (guard false), [no_match], or [fuel_error].
+    Returns a de Bruijn case expression. *)
+Definition branch_on_bool
+  (ret_tp succ_true succ_false
+   no_match fuel_error : term) : term :=
+let splitSuccBinder := {| binder_name := nNamed "splitSuccCase"; binder_relevance := Relevant |} in
+let gcPredBinder := {| binder_name := nNamed "gcPred"; binder_relevance := Relevant |} in
+let boolCase :=
+  tCase
+    {| ci_ind := {| inductive_mind := <?bool?>; inductive_ind := 0 |};
+       ci_npar := 0; ci_relevance := Relevant |}
+    {| puinst := []; pparams := [];
+       pcontext := [splitSuccBinder]; preturn := ret_tp |}
+    (tVar "splitSuccCase")
+    [{| bcontext := []; bbody := succ_true |};
+     {| bcontext := []; bbody := succ_false |}] in
+tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
+  (tCase
+    {| ci_ind := {| inductive_mind := (MPfile ["AnimationResult"; "Animation"], "animation_result");
+                     inductive_ind := 0 |};
+       ci_npar := 1; ci_relevance := Relevant |}
+    {| puinst := []; pparams := [<%bool%>];
+       pcontext := [gcPredBinder]; preturn := ret_tp |}
+    (tVar "gcPred")
+    [{| bcontext := []; bbody := fuel_error |};
+     {| bcontext := [splitSuccBinder]; bbody := boolCase |};
+     {| bcontext := []; bbody := no_match |}]).
+
+(** If [conj] has the form [x = c] or [c = x] where [x] is a [tVar] in [var_env]
+    and [c] is variable-free (a ground constructor), return [(x_name, x_type, c)].
+    Returns [None] for all other shapes. *)
+Definition get_var_ground_eq
+  (conj    : named_term)
+  (var_env : list (string * term))
+  : option (string * term * named_term) :=
+  let lookup nm :=
+    match List.find (fun p => String.eqb nm (fst p)) var_env with
+    | Some p => Some (snd p)
+    | None   => None
+    end in
+  match conj with
+  | tApp <%eq%> [_typeT; tVar x_nm; c] =>
+    if is_var_free c then
+      match lookup x_nm with
+      | Some x_tp => Some (x_nm, x_tp, c)
+      | None      => None
+      end
+    else None
+  | tApp <%eq%> [_typeT; c; tVar x_nm] =>
+    if is_var_free c then
+      match lookup x_nm with
+      | Some x_tp => Some (x_nm, x_tp, c)
+      | None      => None
+      end
+    else None
+  | _ => None
+  end.
+
+(** If [conj] has the form [c1 = c2] where both sides are variable-free (ground
+    constructor terms), return [(typeT, c1, c2)].  Returns [None] otherwise. *)
+Definition get_both_ground_eq
+  (conj : named_term)
+  : option (named_term * named_term * named_term) :=
+  match conj with
+  | tApp <%eq%> [typeT; t1; t2] =>
+    if andb (is_var_free t1) (is_var_free t2)
+    then Some (typeT, t1, t2)
+    else None
+  | _ => None
+  end.
+
+(** Build the guard body ([option out_tp]) for a list of equality guard conjuncts.
+    - [x = c] or [c = x] (variable vs. ground): pattern-match [x] against [c] via
+      [join_pattern_fueled] with output [<%true%>]; succeeds iff the pattern matches.
+    - [c1 = c2] (both ground): pattern-match [c1] against the pattern [c2] the same
+      way; statically resolves equal/unequal constructors at elaboration time.
+    - All other conjuncts fall back to boolean equality via [animate_conj_guard].
+    Returns a named term of type [option out_tp]. *)
+Fixpoint build_eq_guard_body_m {A : Type}
+  (ind     : A) (kn : kername)
+  (conjs   : list named_term)
+  (var_env : list (string * term))
+  (out_tm  : named_term)
+  (out_tp  : global_term)
+  (fuel    : nat)
+  : TemplateMonad named_term :=
+  match conjs with
+  | [] =>
+    tmReturn (tApp <% @Some %> [out_tp; out_tm])
+  | h :: rest_conjs =>
+    rest_body <- build_eq_guard_body_m ind kn rest_conjs var_env out_tm out_tp fuel ;;
+    let none_body := tApp <% @None %> [out_tp] in
+    let opt_tp   := tApp <% @option %> [out_tp] in
+    match get_var_ground_eq h var_env with
+    | Some (x_nm, x_tp, ground_c) =>
+      (* x = c case: pattern-match x against ground_c, return true on success. *)
+      f_pat <- join_pattern_fueled ind ground_c x_tp <%true%> <%bool%>
+                 (snd kn ++ "PEQ") fuel ;;
+      let pat_result :=
+        tApp f_pat [tVar "fuel"; tApp <%Success%> [x_tp; tVar x_nm]] in
+      let br := branch_on_bool opt_tp rest_body none_body none_body none_body in
+      tmReturn (tApp br [pat_result])
+    | None =>
+      match get_both_ground_eq h with
+      | Some (typeT, c1, c2) =>
+        (* c1 = c2 case: pattern-match c1 against the constructor pattern c2.
+           Reuses join_pattern_fueled exactly like the x = c case, but with the
+           ground term c1 as the value to match instead of a variable. *)
+        f_pat <- join_pattern_fueled ind c2 typeT <%true%> <%bool%>
+                   (snd kn ++ "PCEQ") fuel ;;
+        let pat_result :=
+          tApp f_pat [tVar "fuel"; tApp <%Success%> [typeT; c1]] in
+        let br := branch_on_bool opt_tp rest_body none_body none_body none_body in
+        tmReturn (tApp br [pat_result])
+      | None =>
+        (* Fallback: boolean equality via animate_conj_guard / eqb *)
+        let bool_guard := animate_conj_guard h <%true%> var_env in
+        tmReturn (build_bool_branch bool_guard rest_body none_body opt_tp)
+      end
+    end
+  end.
+
 (** Compile a guard-equality clause into an executable function (de Bruijn):
-    build a boolean guard from [g_conjs_eq] via [build_eq_guard_chain], wrap it
-    in a [build_guarded_body] body, and generate a pattern-matching function.
+    build a guard body from [g_conjs_eq] via [build_eq_guard_body_m] (using
+    pattern matching for [x = c] guards and boolean equality otherwise), then
+    generate a pattern-matching function.
     Type params [in_tm], [in_tp], [out_tm], [out_tp] are global. *)
 Definition compile_guard_clause {A : Type}
   (induct : A) (kn : kername)
@@ -322,10 +447,9 @@ Definition compile_guard_clause {A : Type}
   (out_tm : global_term) (out_tp : global_term)
   (fuel : nat) : TemplateMonad term :=
 
-  (let post_out' := build_guarded_body out_tm out_tp
-    (build_eq_guard_chain g_conjs_eq var_env) in
+  post_out' <- build_eq_guard_body_m induct kn g_conjs_eq var_env out_tm out_tp fuel ;;
 
-    let post_out_tp' := tApp <% @option %> [out_tp] in
+  (let post_out_tp' := tApp <% @option %> [out_tp] in
 
     let post_in_tp' := in_tp in
 
@@ -361,36 +485,6 @@ compile_guard_clause induct kn g_conjs_eq (var_env)
   (tele_to_prod_tp var_env)
   (tele_to_prod_tm out_vars)
   (tele_to_prod_tp out_vars) fuel.
-
-(** Build a de Bruijn term that pattern-matches an [animation_result bool] guard
-    and dispatches to one of four continuations: [succ_true] (guard true),
-    [succ_false] (guard false), [no_match], or [fuel_error].
-    Returns a de Bruijn case expression. *)
-Definition branch_on_bool
-  (ret_tp succ_true succ_false
-   no_match fuel_error : term) : term :=
-let splitSuccBinder := {| binder_name := nNamed "splitSuccCase"; binder_relevance := Relevant |} in
-let gcPredBinder := {| binder_name := nNamed "gcPred"; binder_relevance := Relevant |} in
-let boolCase :=
-  tCase
-    {| ci_ind := {| inductive_mind := <?bool?>; inductive_ind := 0 |};
-       ci_npar := 0; ci_relevance := Relevant |}
-    {| puinst := []; pparams := [];
-       pcontext := [splitSuccBinder]; preturn := ret_tp |}
-    (tVar "splitSuccCase")
-    [{| bcontext := []; bbody := succ_true |};
-     {| bcontext := []; bbody := succ_false |}] in
-tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
-  (tCase
-    {| ci_ind := {| inductive_mind := (MPfile ["AnimationResult"; "Animation"], "animation_result");
-                     inductive_ind := 0 |};
-       ci_npar := 1; ci_relevance := Relevant |}
-    {| puinst := []; pparams := [<%bool%>];
-       pcontext := [gcPredBinder]; preturn := ret_tp |}
-    (tVar "gcPred")
-    [{| bcontext := []; bbody := fuel_error |};
-     {| bcontext := [splitSuccBinder]; bbody := boolCase |};
-     {| bcontext := []; bbody := no_match |}]).
 
 (** Animate predicate guard conjuncts and branch on their boolean result:
     passes [guard_eq_an] (the equality guard) as the [true] branch and

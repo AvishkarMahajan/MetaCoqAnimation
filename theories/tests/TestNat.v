@@ -351,3 +351,52 @@ Example test_ei_3_no_match :
 Proof. reflexivity. Qed.
 
 End TwoMutualBlocks.
+
+
+(** ** Pattern-match equality guard: [x = c] where [c] is a ground constructor.
+     *)
+
+Module PatternGuard.
+
+Inductive newTp :Type :=
+| nulCon : newTp
+| unaCon : nat -> newTp -> newTp.
+
+Inductive patGuard : newTp -> newTp -> Prop :=
+| checkEq : forall w u, u = nulCon /\ unaCon 5 (unaCon 6 nulCon) = w /\ unaCon 5 nulCon = unaCon 5 nulCon -> patGuard w u.
+
+
+
+MetaRocq Run (animate_inductive patGuard <?patGuard?>
+  [("patGuard", ([0;1], []))] 100).
+
+Example patGuard0 :
+ patGuardAnimatedTopFn 10 (Success (newTp * newTp) (unaCon 5 (unaCon 6 nulCon), nulCon)) = Success bool true.
+
+Proof. reflexivity. Qed.
+
+Example patGuard1 :
+ patGuardAnimatedTopFn 10 (Success (newTp * newTp) (unaCon 5 (unaCon 6 nulCon), unaCon 2 nulCon)) = NoMatch bool.
+
+Proof. reflexivity. Qed.   
+
+Example patGuard2 :
+ patGuardAnimatedTopFn 10 (Success (newTp * newTp) (unaCon 2 nulCon, nulCon)) = NoMatch bool.
+
+Proof. reflexivity. Qed.
+
+
+Inductive patGuard' : newTp -> newTp -> Prop :=
+| checkEq' : forall w u, u = nulCon /\ unaCon 5 (unaCon 6 nulCon) = w /\ unaCon 5 nulCon = nulCon -> patGuard' w u.
+
+
+
+MetaRocq Run (animate_inductive patGuard' <?patGuard'?>
+  [("patGuard'", ([0;1], []))] 100).
+
+Example patGuard'0 :
+ patGuard'AnimatedTopFn 10 (Success (newTp * newTp) (unaCon 5 (unaCon 6 nulCon), nulCon)) = NoMatch bool.
+
+Proof. reflexivity. Qed.
+
+End PatternGuard.
