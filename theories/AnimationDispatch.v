@@ -347,26 +347,19 @@ tLam "gcPred" (tApp <%animation_result%> [<%bool%>])
 Definition get_var_ground_eq
   (conj    : named_term)
   (var_env : list (string * term))
-  : option (string * term * named_term) :=
-  let lookup nm :=
-    match List.find (fun p => String.eqb nm (fst p)) var_env with
-    | Some p => Some (snd p)
-    | None   => None
-    end in
+  : option (named_term * named_term * named_term) :=
+  let known_vars := List.map fst var_env in
   match conj with
-  | tApp <%eq%> [_typeT; tVar x_nm; c] =>
-    if is_var_free c then
-      match lookup x_nm with
-      | Some x_tp => Some (x_nm, x_tp, c)
-      | None      => None
-      end
-    else None
-  | tApp <%eq%> [_typeT; c; tVar x_nm] =>
-    if is_var_free c then
-      match lookup x_nm with
-      | Some x_tp => Some (x_nm, x_tp, c)
-      | None      => None
-      end
+  | tApp <%eq%> [typeT; t1; t2] =>
+    if is_var_free t2 then
+      if andb (negb (is_var_free t1))
+              (is_subset_strings (ordered_vars t1) known_vars)
+      then Some (t1, typeT, t2)
+      else None
+    else if is_var_free t1 then
+      if is_subset_strings (ordered_vars t2) known_vars
+      then Some (t2, typeT, t1)
+      else None
     else None
   | _ => None
   end.
@@ -407,12 +400,13 @@ Fixpoint build_eq_guard_body_m {A : Type}
     let none_body := tApp <% @None %> [out_tp] in
     let opt_tp   := tApp <% @option %> [out_tp] in
     match get_var_ground_eq h var_env with
-    | Some (x_nm, x_tp, ground_c) =>
-      (* x = c case: pattern-match x against ground_c, return true on success. *)
-      f_pat <- join_pattern_fueled ind ground_c x_tp <%true%> <%bool%>
+    | Some (expr, typeT, ground_c) =>
+      (* expr = c case: pattern-match expr against ground_c, return true on success.
+         expr may be a variable or an arbitrary function application over known vars. *)
+      f_pat <- join_pattern_fueled ind ground_c typeT <%true%> <%bool%>
                  (snd kn ++ "PEQ") fuel ;;
       let pat_result :=
-        tApp f_pat [tVar "fuel"; tApp <%Success%> [x_tp; tVar x_nm]] in
+        tApp f_pat [tVar "fuel"; tApp <%Success%> [typeT; expr]] in
       let br := branch_on_bool opt_tp rest_body none_body none_body none_body in
       tmReturn (tApp br [pat_result])
     | None =>

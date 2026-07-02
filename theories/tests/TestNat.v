@@ -399,4 +399,31 @@ Example patGuard'0 :
 
 Proof. reflexivity. Qed.
 
+(** ** Function-application equality guard: [f(x) = c] where [f] is a defined
+    function, [x] a known variable, and [c] a ground constructor. *)
+
+Definition wrap_nat (n : nat) : newTp :=
+  match n with
+  | 0   => nulCon
+  | S k => unaCon k nulCon
+  end.
+
+Inductive patGuardFnApp : nat -> Prop :=
+| pgfa_rule : forall n, wrap_nat n = nulCon -> patGuardFnApp n.
+
+MetaRocq Run (animate_inductive patGuardFnApp <?patGuardFnApp?>
+  [("patGuardFnApp", ([0], []))] 100).
+
+Example patGuardFnApp_zero :
+  patGuardFnAppAnimatedTopFn 10 (Success nat 0) = Success bool true.
+Proof. reflexivity. Qed.
+
+Example patGuardFnApp_one :
+  patGuardFnAppAnimatedTopFn 10 (Success nat 1) = NoMatch bool.
+Proof. reflexivity. Qed.
+
+Example patGuardFnApp_five :
+  patGuardFnAppAnimatedTopFn 10 (Success nat 5) = NoMatch bool.
+Proof. reflexivity. Qed.
+
 End PatternGuard.
