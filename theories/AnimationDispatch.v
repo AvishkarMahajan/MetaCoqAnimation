@@ -643,16 +643,28 @@ Fixpoint filter_conjs_pred (lst : list named_term) : list named_term :=
 
   | _h :: rest => filter_conjs_pred rest
   end.
+Compute <%0%>.  
 
 (** Check whether a named term is a bare variable or a constructor application —
     shapes that can appear on the output side of a let-binding equation. *)
-Definition has_right_shape (t : named_term) : bool :=
+Fixpoint chkAll (l : list bool) : bool :=
+ match l with
+ | [] => true
+ | h :: t => if h then chkAll t else false
+ end.
+
+Fixpoint has_right_shape (t : named_term) : bool :=
   match t with
-  | tVar str => true
-  | tApp (tConstruct ind_type k lst) lstArgs => true
+  | tVar _ => true
+  | tConstruct _ _ _ => true
+  | tInd _ _ => true
+  | tApp (tConstruct _ _ _) lstArgs => chkAll (map has_right_shape lstArgs)
+  | tApp (tInd _ _) lstArgs => chkAll (map has_right_shape lstArgs)
   | _ => false
   end.
-
+  
+  
+ 
 (** Build a de Bruijn product type from a list of (term * type) pairs;
     base case is [bool]. *)
 Fixpoint mk_lhs_type_pure (lhs_preds : list (term * term)) : term :=
