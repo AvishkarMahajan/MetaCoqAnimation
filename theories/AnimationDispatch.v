@@ -57,7 +57,7 @@ match conjunct with
                                     | tApp (tConstruct ind_type k lst) lstArgs =>
                                       compile_eq_binders_with_vars ind kn
                                         conjunct in_tm in_tp
-                                        out_tm out_tp in_vars fuel
+                                        out_tm out_tp in_vars (map fst modes) fuel
                                     | _ => tmFail "incorrect Conj shape"
                                     end
 
@@ -404,7 +404,7 @@ Fixpoint build_eq_guard_body_m {A : Type}
       (* expr = c case: pattern-match expr against ground_c, return true on success.
          expr may be a variable or an arbitrary function application over known vars. *)
       f_pat <- join_pattern_fueled ind ground_c typeT <%true%> <%bool%>
-                 (snd kn ++ "PEQ") fuel ;;
+                 (snd kn ++ "PEQ") [] fuel ;;
       let pat_result :=
         tApp f_pat [tVar "fuel"; tApp <%Success%> [typeT; expr]] in
       let br := branch_on_bool opt_tp rest_body none_body none_body none_body in
@@ -416,7 +416,7 @@ Fixpoint build_eq_guard_body_m {A : Type}
            Reuses join_pattern_fueled exactly like the x = c case, but with the
            ground term c1 as the value to match instead of a variable. *)
         f_pat <- join_pattern_fueled ind c2 typeT <%true%> <%bool%>
-                   (snd kn ++ "PCEQ") fuel ;;
+                   (snd kn ++ "PCEQ") [] fuel ;;
         let pat_result :=
           tApp f_pat [tVar "fuel"; tApp <%Success%> [typeT; c1]] in
         let br := branch_on_bool opt_tp rest_body none_body none_body none_body in

@@ -416,7 +416,7 @@ tBody' <- mk_pattern_match_fn induct
    (tApp <%FuelError%> [post_in_tp'],
     tApp <%FuelError%> [post_out_tp'])]
   post_in_tp post_out_tp
-  (tApp <%NoMatch%> [post_out_tp']) fuel ;;
+  (tApp <%NoMatch%> [post_out_tp']) [] fuel ;;
 
 let u :=
  (tLam "fuel" <%nat%>
@@ -555,7 +555,7 @@ let conjunct := conjunct'.(tc_conjunct) in
                       tIn' <- join_pattern_fueled induct
                         (inputVarProdTm) (inputVarProdTp)
                         predInProdTm predInProdTp
-                        (snd kn ++ "IN")
+                        (snd kn ++ "IN") (map fst modes)
                         fuel ;;
                       (* Compose: user input -> pred input ->
                          pred output (via recursive call) *)
@@ -569,7 +569,7 @@ let conjunct := conjunct'.(tc_conjunct) in
                       tOut <- join_pattern_fueled induct
                         predOutProdTm predOutProdTp
                         (out_tm) (out_tp)
-                        (snd kn ++ "OUT")
+                        (snd kn ++ "OUT") (map fst modes)
                         fuel ;;
                       (* Final composition:
                          user input -> pred output ->
@@ -666,7 +666,7 @@ let conjunct := conjunct'.(tc_conjunct) in
                       tOut <- join_pattern_fueled induct
                         predOutProdTm predOutProdTp
                         (out_tm) (out_tp)
-                        (snd kn ++ "OUT")
+                        (snd kn ++ "OUT") (map fst modes)
                         fuel ;;
                       let u :=
                         (tApp <%compose_outcome_no_in%>

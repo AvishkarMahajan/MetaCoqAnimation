@@ -40,21 +40,44 @@ Definition get_ind_body (x : global_decl) : option mutual_inductive_body :=
 Definition get_type_data (p : program) : list (option mutual_inductive_body) :=
   map get_ind_body (map snd (declarations (fst p))).
 
-(** Generate a fresh variable name of the form "vN" where N is a number. *)
-Definition gen_var (n : nat) : string :=
-  "v" ++ string_of_nat n.
+(** Collect every [tVar] string that appears anywhere in a named term. *)
+Fixpoint collect_tvar_names (t : named_term) : list string :=
+  match t with
+  | tVar str           => [str]
+  | tApp f args        => collect_tvar_names f ++ flat_map collect_tvar_names args
+  | tProd _ t1 t2      => collect_tvar_names t1 ++ collect_tvar_names t2
+  | tLambda _ t1 t2    => collect_tvar_names t1 ++ collect_tvar_names t2
+  | tLetIn _ t1 t2 t3  => collect_tvar_names t1 ++ collect_tvar_names t2 ++ collect_tvar_names t3
+  | _                  => []
+  end.
 
-(** Generate a list of fresh variables paired with terms (named), starting from index s. *)
-Fixpoint gen_var_list (s : nat) (ls : list named_term) : list (string * named_term) :=
+(** Generate a slot-name prefix guaranteed to be strictly longer than every
+    [tVar] name in [t], every name in [rel_names] (the user's relation names),
+    and every "NewFreshVarInitN" name produced by the variable-renaming pass.
+    Uses repeated 'j' characters. *)
+Definition gen_slot_prefix (rel_names : list string) (t : named_term) : string :=
+  let term_max  := list_max (map String.length (collect_tvar_names t)) in
+  let rel_max   := list_max (map String.length rel_names) in
+  let fresh_min := String.length "NewFreshVarInit" in
+  let needed    := 5 + (Nat.max (Nat.max term_max rel_max) fresh_min) in
+  String.concat "" (repeat "j" needed).
+
+(** Generate a slot name [prefix ++ string_of_nat n]. *)
+Definition gen_var (prefix : string) (n : nat) : string :=
+  prefix ++ string_of_nat n.
+
+(** Generate a list of fresh slot-name/term pairs, starting from index s. *)
+Fixpoint gen_var_list (prefix : string) (s : nat) (ls : list named_term) : list (string * named_term) :=
   match ls with
   | [] => []
-  | h :: t => (gen_var (s + 1), h) :: gen_var_list (s + 1) t
+  | h :: t => (gen_var prefix (s + 1), h) :: gen_var_list prefix (s + 1) t
   end.
 
 (** Unfold one step of constructor applications in pattern matching (named).
     Takes an index counter, current named terms to process, resolved terms, and remaining terms.
     Returns updated counter, unprocessed terms, resolved terms, and new remaining terms. *)
 Definition unfold_cons
+  (prefix : string)
   (i : nat)
   (curr_ts : list (string * named_term))
   (resolved_ts : list resolved_var)
@@ -66,8 +89,8 @@ Definition unfold_cons
  | (str, tApp (tConstruct typeInfo cstrInd ls') args) :: t =>
      (i + (length args), t,
       {| rv_name := str; rv_term := tConstruct typeInfo cstrInd ls';
-         rv_bound := map fst (gen_var_list i args) |} :: resolved_ts,
-      app (gen_var_list i args) rem_ts)
+         rv_bound := map fst (gen_var_list prefix i args) |} :: resolved_ts,
+      app (gen_var_list prefix i args) rem_ts)
  | (str, tRel k) :: t =>
      (i, t, {| rv_name := str; rv_term := tRel k; rv_bound := [] |} :: resolved_ts, rem_ts)
  | (str, tVar varStr) :: t =>
@@ -77,8 +100,8 @@ Definition unfold_cons
  | (str, tApp <%eq%> args) :: t =>
      (i + length args, t,
       {| rv_name := str; rv_term := <%eq%>;
-         rv_bound := map fst (gen_var_list i args) |} :: resolved_ts,
-      app (gen_var_list i args) rem_ts)
+         rv_bound := map fst (gen_var_list prefix i args) |} :: resolved_ts,
+      app (gen_var_list prefix i args) rem_ts)
 
  | (str, tApp func args) :: t =>
      (i, t, {| rv_name := str; rv_term := tApp func args; rv_bound := [] |} :: resolved_ts, rem_ts)
@@ -92,21 +115,21 @@ Definition unfold_cons
       {| rv_name := str;
          rv_term := tProd {| binder_name := nAnon; binder_relevance := Relevant |} tp1 tp2;
          rv_bound := [] |} :: resolved_ts, rem_ts)
- 
+
  | (str, tPro str'' tp1 tp2)  :: t =>
      (i, t,
       {| rv_name := str;
          rv_term := tPro str'' tp1 tp2;
-         rv_bound := [] |} :: resolved_ts, rem_ts)        
+         rv_bound := [] |} :: resolved_ts, rem_ts)
 
- 
+
  | (str, _) :: t =>
      (i, t, resolved_ts, rem_ts)
  end.
 
-(** Iterate the constructor unfolding step (named) for a given amount of fuel.
-    Processes named terms by repeatedly applying unfold_cons. *)
+(** Iterate the constructor unfolding step (named) for a given amount of fuel. *)
 Fixpoint unfold_cons_iter
+  (prefix : string)
   (fuel : nat)
   (st : (((nat *  list (string * named_term)) *
             list resolved_var) * list (string * named_term)))
@@ -115,18 +138,19 @@ Fixpoint unfold_cons_iter
      list (string * named_term)) :=
   match fuel with
   | 0 => st
-  | S m => unfold_cons_iter m
-             (unfold_cons
+  | S m => unfold_cons_iter prefix m
+             (unfold_cons prefix
                 (fst (fst (fst st))) (snd (fst (fst st))) (snd (fst st)) (snd st))
   end.
 
-(** Pre-process a constructor term (named) by unfolding it into a list of variable-term pairs. *)
-Definition preprocess_cons (fuel : nat) (t : named_term) : list resolved_var :=
-  rev (snd (fst (unfold_cons_iter fuel (0, [("x"%bs, t)], [], [])))).
+(** Pre-process a constructor term (named) by unfolding it into a list of variable-term pairs.
+    [prefix] is used for generated slot names and must not clash with any [tVar] in [t]. *)
+Definition preprocess_cons (prefix : string) (fuel : nat) (t : named_term) : list resolved_var :=
+  rev (snd (fst (unfold_cons_iter prefix fuel (0, [(prefix ++ "root", t)], [], [])))).
 
 (** Check if all terms have been processed (no remaining named terms). *)
-Definition preprocess_remainder (fuel : nat) (t : named_term) : bool :=
-  let st := unfold_cons_iter fuel (0, [("x"%bs, t)], [], []) in
+Definition preprocess_remainder (prefix : string) (fuel : nat) (t : named_term) : bool :=
+  let st := unfold_cons_iter prefix fuel (0, [(prefix ++ "root", t)], [], []) in
   let r := app (snd st) (snd (fst (fst st))) in
   match r with
   | [] => true
@@ -643,6 +667,7 @@ Definition mk_lam_wild
     into a lambda (named) that pattern-matches [conj_tm] and returns [out_tm] (named).
     Returns [None] if the constructor cannot be fully unfolded within [fuel] steps. *)
 Definition mk_lam_from_ind
+  (prefix : string)
   (conj_tm : named_term) (lstP : list program)
   (out_tm : named_term) (out_tp : global_term)
   (wildcard : named_term) (fuel : nat)
@@ -651,13 +676,11 @@ Definition mk_lam_from_ind
     concat (map (typeConstrPatMatch.get_type_data)
               lstP) in
   let pmd := conj_tm in
-  if (typeConstrPatMatch.preprocess_remainder
-        fuel pmd)
+  if (typeConstrPatMatch.preprocess_remainder prefix fuel pmd)
   then
     (mk_lam_wild
        (change_vars
-          (typeConstrPatMatch.preprocess_cons
-             fuel pmd))
+          (typeConstrPatMatch.preprocess_cons prefix fuel pmd))
        out_tm out_tp wildcard td)
   else None.
 
@@ -673,17 +696,20 @@ Definition animate_one_pattern
            (out_tm : named_term)
            (out_tp : global_term)
            (wildcard : named_term)
+           (rel_names : list string)
            (fuel : nat)
   : TemplateMonad term :=
   termFull <- tmQuoteRecTransp induct false ;;
   outcomePolyProg <- tmQuoteRecTransp animation_result false ;;
   prodTpProg <- tmQuoteRecTransp prod false ;;
-  let in_tm := tApp <%eq%> [in_tp; in_tm'; tVar "v_init"] in
-  if andb (no_repeat (fst (collect_var_sets (typeConstrPatMatch.preprocess_cons fuel in_tm)))
-                    (snd (collect_var_sets (typeConstrPatMatch.preprocess_cons fuel in_tm))))
-          (typeConstrPatMatch.preprocess_remainder fuel in_tm)
+  let prefix      := typeConstrPatMatch.gen_slot_prefix rel_names in_tm' in
+  let v_init_name := prefix ++ "init" in
+  let in_tm       := tApp <%eq%> [in_tp; in_tm'; tVar v_init_name] in
+  if andb (no_repeat (fst (collect_var_sets (typeConstrPatMatch.preprocess_cons prefix fuel in_tm)))
+                    (snd (collect_var_sets (typeConstrPatMatch.preprocess_cons prefix fuel in_tm))))
+          (typeConstrPatMatch.preprocess_remainder prefix fuel in_tm)
   then
-    match mk_lam_from_ind in_tm
+    match mk_lam_from_ind prefix in_tm
             [termFull; outcomePolyProg; prodTpProg]
             out_tm out_tp wildcard fuel with
     | Some named_t =>
@@ -706,6 +732,7 @@ Fixpoint animate_patterns
          (branch_data : list (prod named_term named_term))
          (in_tp : global_term)
          (out_tp : global_term)
+         (rel_names : list string)
          (fuel : nat)
   : TemplateMonad (list term) :=
   match branch_data with
@@ -717,8 +744,8 @@ Fixpoint animate_patterns
              (tApp <%option%> [out_tp])
              (tApp (tConstruct {| inductive_mind := <?option?>; inductive_ind := 0 |} 1 [])
                    [out_tp])
-             fuel ;;
-      lstT <- animate_patterns induct rest in_tp out_tp fuel ;;
+             rel_names fuel ;;
+      lstT <- animate_patterns induct rest in_tp out_tp rel_names fuel ;;
       tmReturn (t :: lstT)
   end.
 
@@ -749,9 +776,10 @@ Definition mk_pattern_match_fn
            (in_tp : global_term)
            (out_tp : global_term)
            (wildcard : named_term)
+           (rel_names : list string)
            (fuel : nat)
   : TemplateMonad term :=
-  subfns <- animate_patterns induct branch_data in_tp out_tp fuel ;;
+  subfns <- animate_patterns induct branch_data in_tp out_tp rel_names fuel ;;
   tmReturn (mk_pattern_fn_core subfns wildcard in_tp out_tp).
 
 (** Fuel-aware join without LHS predicates (base case).
@@ -760,7 +788,7 @@ Definition join_pattern_fueled
   {A : Type} (induct : A)
   (post_in' : named_term) (post_in_tp' : global_term)
   (post_out' : named_term) (post_out_tp' : global_term)
-  (nm_con : string) (fuel : nat)
+  (nm_con : string) (rel_names : list string) (fuel : nat)
   : TemplateMonad term :=
 (* Wrap raw terms in Success/animation_result for the pattern match fn *)
 let post_in := tApp <%Success%> [post_in_tp'; post_in'] in
@@ -775,7 +803,7 @@ tBody' <-
      (tApp <%FuelError%> [post_in_tp'],
       tApp <%FuelError%> [post_out_tp'])]
     post_in_tp post_out_tp
-    (tApp <%NoMatch%> [post_out_tp']) fuel ;;
+    (tApp <%NoMatch%> [post_out_tp']) rel_names fuel ;;
 (* Wrap in a fuel-decrementing case: 0 -> fuel_error, S n -> dispatch *)
 let u :=
  (tLam "fuel" <%nat%>
@@ -824,16 +852,16 @@ Definition compile_eq_binders
   (conjunct : named_term)
   (in_tm : named_term) (in_tp : global_term)
   (out_tm : named_term) (out_tp : global_term)
-  (fuel : nat) : TemplateMonad term :=
+  (rel_names : list string) (fuel : nat) : TemplateMonad term :=
   match conjunct with
   | tApp <%eq%> [typeVar; patMatTerm; rhsTerm] =>
       tIn <- join_pattern_fueled induct
                in_tm in_tp rhsTerm typeVar
-               (snd kn ++ "IN")
+               (snd kn ++ "IN") rel_names
                fuel ;;
       tOut <- join_pattern_fueled induct
                 patMatTerm typeVar out_tm out_tp
-                (snd kn ++ "OUT")
+                (snd kn ++ "OUT") rel_names
                 fuel ;;
       let u := tApp <%compose_outcome%> [in_tp; typeVar; out_tp; tIn; tOut] in
       match DB.de_bruijn_option u with
@@ -852,7 +880,7 @@ Definition compile_eq_binders_with_vars
   (conjunct : named_term)
   (in_tm : named_term) (in_tp : global_term)
   (out_tm : named_term) (out_tp : global_term)
-  (in_vars : list string) (fuel : nat)
+  (in_vars : list string) (rel_names : list string) (fuel : nat)
   : TemplateMonad term :=
   match conjunct with
   | tApp <%eq%> [typeVar; t1; t2] =>
@@ -861,13 +889,13 @@ Definition compile_eq_binders_with_vars
     then
       compile_eq_binders induct kn
         (tApp <%eq%> [typeVar; t2; t1])
-        in_tm in_tp out_tm out_tp fuel
+        in_tm in_tp out_tm out_tp rel_names fuel
     else
       (if is_subset_strings (ordered_vars t2)
             in_vars
        then
          compile_eq_binders induct kn conjunct
-           in_tm in_tp out_tm out_tp fuel
+           in_tm in_tp out_tm out_tp rel_names fuel
        else tmFail "incorrect inductive shape")
   | _ => tmFail "incorrect inductive shape"
   end.

@@ -1321,12 +1321,14 @@ Definition apply_ren_tp_entry (renaming : list (string * string)) (te : type_env
 
 (** Rename every clause-level variable in [all_cdata] and [tp_data] to a fresh
     "NewFreshVarInit<n>" name, preventing clashes with engine-internal names.
-    Relation names (the [cd_ind_name] entries) are excluded from renaming. *)
+    Relation names are identified from [modes] (the user-supplied mode list),
+    which is the authoritative oracle for what counts as a relation name. *)
 Definition rename_clause_vars
   (all_cdata : list clause_data)
   (tp_data   : list type_env_entry)
+  (modes     : mode_map)
   : list clause_data * list type_env_entry :=
-  let rel_names := map cd_ind_name all_cdata in
+  let rel_names := map fst modes in
   let all_vars  :=
     dedup_strings
       (flat_map (fun cd =>
@@ -1400,7 +1402,7 @@ match knLst with
                        end ;;
   let tp_data_merged              := finalize_type_info all_cdata_raw tp_data_raw in
   let (all_cdata_final, tp_data_final) :=
-    rename_clause_vars all_cdata_merged tp_data_merged in
+    rename_clause_vars all_cdata_merged tp_data_merged modes in
   let cl_lst                      := all_clauses all_cdata_final in
   animate_clause_list_with_data ind topKn cl_lst modes fuel
     all_cdata_final tp_data_final ;;

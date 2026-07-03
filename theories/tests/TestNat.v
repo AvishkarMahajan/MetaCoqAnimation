@@ -434,12 +434,16 @@ End PatternGuard.
 
 Module ClashRelName.
 Inductive v2 : nat -> nat -> Prop :=
-| vCon : forall v0 v1 , x v0 v1 -> v2 v0 v1
+| vCon : forall v0 v3 , v1 v0 v3 -> v2 v0 v3
 with x : nat -> nat -> Prop :=
 | x_base : x 0 0
-| x_step : forall (v0 v1 : nat), x v0 v1 -> x (S v0) (S v1).
+| x_step : forall (v0 v1 : nat), x v0 v1 -> x (S v0) (S v1)
+with v1 : nat -> nat -> Prop :=
 
-MetaRocq Run (animate_inductive x <?x?> [("x", ([0], [1])); ("v2", ([0], [1]))] 100).
+| v1_step : forall (v0 v2 : nat), x v0 v2 -> v1 (v0) (v2).
+
+
+MetaRocq Run (animate_inductive x <?x?> [("x", ([0], [1])); ("v1", ([0], [1])); ("v2", ([0], [1]))] 200).
 
 Example test_v2_0 :
   v2AnimatedTopFn 50 (Success nat 0) = Success nat 0.
