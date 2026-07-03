@@ -1252,6 +1252,92 @@ Fixpoint collect_all_tp_data (knLst : list kername)
                   tmReturn (app (clause_type_info (ind_bodies mut)) rest_tp)
   end.
 
+(** Collect all [tVar] names from a named term, excluding those in [excluded]. *)
+Fixpoint collect_named_vars (t : named_term) (excluded : list string) : list string :=
+  match t with
+  | tVar str            => if in_strings str excluded then [] else [str]
+  | tApp f args         => collect_named_vars f excluded ++
+                           flat_map (fun a => collect_named_vars a excluded) args
+  | tProd _ t1 t2       => collect_named_vars t1 excluded ++ collect_named_vars t2 excluded
+  | tLambda _ t1 t2     => collect_named_vars t1 excluded ++ collect_named_vars t2 excluded
+  | tLetIn _ t1 t2 t3   => collect_named_vars t1 excluded ++
+                            collect_named_vars t2 excluded ++
+                            collect_named_vars t3 excluded
+  | _                   => []
+  end.
+
+(** Build a bijective renaming from each name in [nms] to ["NewFreshVarInit" ++ n]. *)
+Fixpoint mk_fresh_renaming (nms : list string) (n : nat) : list (string * string) :=
+  match nms with
+  | []           => []
+  | str :: rest  => (str, "NewFreshVarInit" ++ string_of_nat n)
+                    :: mk_fresh_renaming rest (S n)
+  end.
+
+(** Look up [str] in [renaming]; return the mapped name if found, else [str]. *)
+Definition apply_name_ren (renaming : list (string * string)) (str : string) : string :=
+  match List.find (fun p => String.eqb str (fst p)) renaming with
+  | Some p => snd p
+  | None   => str
+  end.
+
+(** Apply [renaming] to every [tVar] node in a named term. *)
+Fixpoint apply_ren_named (renaming : list (string * string)) (t : named_term) : named_term :=
+  match t with
+  | tVar str            => tVar (apply_name_ren renaming str)
+  | tApp f args         => tApp (apply_ren_named renaming f)
+                                (map (apply_ren_named renaming) args)
+  | tProd bd t1 t2      => tProd bd   (apply_ren_named renaming t1)
+                                      (apply_ren_named renaming t2)
+  | tLambda bd t1 t2    => tLambda bd (apply_ren_named renaming t1)
+                                      (apply_ren_named renaming t2)
+  | tLetIn bd t1 t2 t3  => tLetIn bd  (apply_ren_named renaming t1)
+                                      (apply_ren_named renaming t2)
+                                      (apply_ren_named renaming t3)
+  | tCase ci pr scr brs =>
+      tCase ci pr (apply_ren_named renaming scr)
+            (map (fun br => {| bcontext := br.(bcontext);
+                               bbody    := apply_ren_named renaming br.(bbody) |}) brs)
+  | _                   => t
+  end.
+
+(** Apply [renaming] to all [tVar] nodes in every clause body of [cd]. *)
+Definition apply_ren_cdata (renaming : list (string * string)) (cd : clause_data) : clause_data :=
+  {| cd_ind_name  := cd.(cd_ind_name);
+     cd_in_types  := cd.(cd_in_types);
+     cd_out_types := cd.(cd_out_types);
+     cd_clauses   :=
+       map (fun p => (fst p, apply_ren_named renaming (snd p))) cd.(cd_clauses) |}.
+
+(** Apply [renaming] to all variable-name keys in the constructor-variable map of [te]. *)
+Definition apply_ren_tp_entry (renaming : list (string * string)) (te : type_env_entry) : type_env_entry :=
+  {| te_pred_name := te.(te_pred_name);
+     te_pred_type := te.(te_pred_type);
+     te_cstr_vars :=
+       map (fun p =>
+              (fst p,
+               map (fun q => (apply_name_ren renaming (fst q), snd q)) (snd p)))
+           te.(te_cstr_vars) |}.
+
+(** Rename every clause-level variable in [all_cdata] and [tp_data] to a fresh
+    "NewFreshVarInit<n>" name, preventing clashes with engine-internal names.
+    Relation names (the [cd_ind_name] entries) are excluded from renaming. *)
+Definition rename_clause_vars
+  (all_cdata : list clause_data)
+  (tp_data   : list type_env_entry)
+  : list clause_data * list type_env_entry :=
+  let rel_names := map cd_ind_name all_cdata in
+  let all_vars  :=
+    dedup_strings
+      (flat_map (fun cd =>
+         flat_map (fun p => collect_named_vars (snd p) rel_names)
+                  cd.(cd_clauses))
+         all_cdata)
+      [] in
+  let renaming := mk_fresh_renaming all_vars 0 in
+  (map (apply_ren_cdata    renaming) all_cdata,
+   map (apply_ren_tp_entry renaming) tp_data).
+
 (** Like [animate_one_clause] but receives pre-computed, merged [all_cdata] and
     [tp_data] covering every inductive block.  Eliminates the single-[kn]
     re-derivation that caused cross-block predicate references to produce free
@@ -1312,10 +1398,12 @@ match knLst with
                        | Some d => tmEval all d
                        | None   => tmFail "clause rewriting failed in animate_multi_def"
                        end ;;
-  let tp_data_merged := finalize_type_info all_cdata_raw tp_data_raw in
-  let cl_lst         := all_clauses all_cdata_merged in
+  let tp_data_merged              := finalize_type_info all_cdata_raw tp_data_raw in
+  let (all_cdata_final, tp_data_final) :=
+    rename_clause_vars all_cdata_merged tp_data_merged in
+  let cl_lst                      := all_clauses all_cdata_final in
   animate_clause_list_with_data ind topKn cl_lst modes fuel
-    all_cdata_merged tp_data_merged ;;
+    all_cdata_final tp_data_final ;;
   tmReturn (prod_in_out (fixpoint_data all_cdata_merged))
 end.
 
@@ -1347,25 +1435,17 @@ end.
 
 (** Main entry point: animate a coinductive relation into an executable corecursive stream.
     Infers any auxiliary relations referenced in [kn]'s constructors (filtering
-    by [modes]) and compiles all blocks together.  Generates both the top-level
-    fixpoint ([kn ++ AnimatedTopFn]) and a lazy [Stream] ([kn ++ AnimatedStream]).
+    by [modes]) and compiles all blocks together via [animate_multi_def].
+    Generates both the top-level fixpoint ([kn ++ AnimatedTopFn]) and a lazy
+    [Stream] ([kn ++ AnimatedStream]).
     Works for single-block, mutual-coinductive ([with]), and separate-block relations. *)
 Definition animate_coinductive {A : Type}
   (ind : A) (kn : kername)
   (modes : mode_map) (fuel : nat)
-  : TemplateMonad (list term) :=
-knLst            <- infer_aux_knames kn modes ;;
-all_cdata_raw    <- collect_all_cdata (kn :: knLst) modes ;;
-tp_data_raw      <- collect_all_tp_data (kn :: knLst) ;;
-all_cdata_merged <- match rewrite_cl_all all_cdata_raw tp_data_raw with
-                    | Some d => tmEval all d
-                    | None   => tmFail "clause rewriting failed in animate_coinductive"
-                    end ;;
-let tp_data_merged := finalize_type_info all_cdata_raw tp_data_raw in
-let cl_lst         := all_clauses all_cdata_merged in
-tms <- animate_clause_list_with_data ind kn cl_lst modes fuel
-         all_cdata_merged tp_data_merged ;;
-let ind_data := prod_in_out (fixpoint_data all_cdata_merged) in
+  : TemplateMonad term :=
+knLst      <- infer_aux_knames kn modes ;;
+ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
+ind_data   <- tmEval all ind_data'' ;;
 match mk_all_coind ind_data kn modes with
 | Some defs =>
   let u := mk_rec_fn defs 0 in
@@ -1386,7 +1466,7 @@ match mk_all_coind ind_data kn modes with
     f_stm     <- tmUnquote t_coind'' ;;
     tmEval hnf (my_projT2 f_stm) >>=
     tmDefinitionRed_ false (snd kn ++ stream_suffix) (Some hnf) ;;
-    tmReturn tms
+    tmReturn db_u
   | None => tmFail "de Bruijn conversion failed in animate_coinductive"
   end
 | None => tmFail "dispatch term extraction failed in animate_coinductive"

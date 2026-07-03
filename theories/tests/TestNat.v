@@ -88,8 +88,8 @@ Proof. reflexivity. Qed.
 Module Addition.
 
 Inductive add : nat -> nat -> nat -> Prop :=
-| add_zero : forall (n : nat), add 0 n n
-| add_succ : forall (m n k : nat), add m n k -> add (S m) n (S k).
+| add_zero : forall (x : nat), add 0 x x
+| add_succ : forall (v0 x v1 : nat), add v0 x v1 -> add (S v0) x (S v1).
 
 MetaRocq Run (animate_inductive add <?add?> [("add", ([0;1], [2]))] 100).
 
