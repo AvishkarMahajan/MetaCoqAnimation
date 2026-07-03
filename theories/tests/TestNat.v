@@ -427,3 +427,30 @@ Example patGuardFnApp_five :
 Proof. reflexivity. Qed.
 
 End PatternGuard.
+
+(** ** Relation named [x;v2] with constructor variables [v0]/[v1].
+    Exercises the renaming pass when the relation name itself is a potential
+    clash candidate and the data variables are engine-internal names. *)
+
+Module ClashRelName.
+Inductive v2 : nat -> nat -> Prop :=
+| vCon : forall v0 v1 , x v0 v1 -> v2 v0 v1
+with x : nat -> nat -> Prop :=
+| x_base : x 0 0
+| x_step : forall (v0 v1 : nat), x v0 v1 -> x (S v0) (S v1).
+
+MetaRocq Run (animate_inductive x <?x?> [("x", ([0], [1])); ("v2", ([0], [1]))] 100).
+
+Example test_v2_0 :
+  v2AnimatedTopFn 50 (Success nat 0) = Success nat 0.
+Proof. reflexivity. Qed.
+
+Example test_v2_3 :
+  v2AnimatedTopFn 50 (Success nat 3) = Success nat 3.
+Proof. reflexivity. Qed.
+
+Example test_v2_5 :
+  v2AnimatedTopFn 50 (Success nat 5) = Success nat 5.
+Proof. reflexivity. Qed.
+
+End ClashRelName.
