@@ -408,22 +408,22 @@ Definition wrap_nat (n : nat) : newTp :=
   | S k => unaCon k nulCon
   end.
 
-Inductive patGuardFnApp : nat -> Prop :=
-| pgfa_rule : forall n, wrap_nat n = nulCon -> patGuardFnApp n.
+Inductive patGuardFnApp : nat -> nat -> Prop :=
+| pgfa_rule : forall n m, nulCon = wrap_nat n /\ wrap_nat m = nulCon   -> patGuardFnApp n m.
 
 MetaRocq Run (animate_inductive patGuardFnApp <?patGuardFnApp?>
-  [("patGuardFnApp", ([0], []))] 100).
+  [("patGuardFnApp", ([0;1], []))] 100).
 
 Example patGuardFnApp_zero :
-  patGuardFnAppAnimatedTopFn 10 (Success nat 0) = Success bool true.
+  patGuardFnAppAnimatedTopFn 10 (Success (nat * nat) (0,0)) = Success bool true.
 Proof. reflexivity. Qed.
 
 Example patGuardFnApp_one :
-  patGuardFnAppAnimatedTopFn 10 (Success nat 1) = NoMatch bool.
+  patGuardFnAppAnimatedTopFn 10 (Success (nat * nat) (0,1)) = NoMatch bool.
 Proof. reflexivity. Qed.
 
 Example patGuardFnApp_five :
-  patGuardFnAppAnimatedTopFn 10 (Success nat 5) = NoMatch bool.
+  patGuardFnAppAnimatedTopFn 10 (Success (nat * nat) (5,0)) = NoMatch bool.
 Proof. reflexivity. Qed.
 
 End PatternGuard.
@@ -434,16 +434,16 @@ End PatternGuard.
 
 Module ClashRelName.
 Inductive v2 : nat -> nat -> Prop :=
-| vCon : forall v0 v3 , v1 v0 v3 -> v2 v0 v3
+| vCon : forall x v3 , fuel x v3 -> v2 x v3
 with x : nat -> nat -> Prop :=
 | x_base : x 0 0
 | x_step : forall (v0 v1 : nat), x v0 v1 -> x (S v0) (S v1)
-with v1 : nat -> nat -> Prop :=
+with fuel : nat -> nat -> Prop :=
 
-| v1_step : forall (v0 v2 : nat), x v0 v2 -> v1 (v0) (v2).
+| v1_step : forall (v0 v2 : nat), x v0 v2 -> fuel (v0) (v2).
 
 
-MetaRocq Run (animate_inductive x <?x?> [("x", ([0], [1])); ("v1", ([0], [1])); ("v2", ([0], [1]))] 200).
+MetaRocq Run (animate_inductive x <?x?> [("x", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
 
 Example test_v2_0 :
   v2AnimatedTopFn 50 (Success nat 0) = Success nat 0.
