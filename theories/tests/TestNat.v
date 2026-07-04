@@ -428,17 +428,17 @@ Proof. reflexivity. Qed.
 
 End PatternGuard.
 
-(** ** Relation named [fuel;remFuel;v2] with constructor variables [v0]/[v1;x].
+(** ** Relation named [fuel;remFuel;v2] with constructor variables [v0]/[v1;x;fuel].
     Exercises the renaming pass when the relation name itself is a potential
     clash candidate and the data variables are engine-internal names. However ok to mandate that data var names and rel
-    names are disjoint*)
+    names are disjoint, clashing data var names and rel names can cause issues Got error when relname and data name both fuel*)
 
 Module ClashRelName.
 Inductive v2 : nat -> nat -> Prop :=
 | vCon : forall v0 v3 , fuel v0 v3 -> v2 v0 v3
 with remFuel : nat -> nat -> Prop :=
 | x_base : remFuel 0 0
-| x_step : forall (v0 v1 : nat), remFuel v0 v1 -> remFuel (S v0) (S v1)
+| x_step : forall (v0 fuel' : nat), remFuel v0 fuel' -> remFuel (S v0) (S fuel')
 with fuel : nat -> nat -> Prop :=
 
 | v1_step : forall (x v1 : nat), remFuel x v1 -> fuel (x) (v1).
@@ -459,7 +459,7 @@ Example test_v2_5 :
 Proof. reflexivity. Qed.
 
 Inductive rel : nat -> nat -> Prop :=
-| x : forall v0 v2 , rel2 v0 v2 -> rel v0 v2
+| x : forall v0 v1 , rel2 v0 v1 -> rel v0 v1
 with rel2 : nat -> nat -> Prop :=
 | x_base' : rel2 0 0
 | x_step' : forall (x v1 : nat), rel2 x v1 -> rel2 (S x) (S v1).
@@ -479,5 +479,27 @@ Example test_rel_5 :
   relAnimatedTopFn 50 (Success nat 5) = Success nat 5.
 Proof. reflexivity. Qed.
 
+Inductive v2' : nat -> nat -> Prop :=
+| vCon' : forall v0 v3 , fuel' v0 v3 -> v2' v0 v3
+with remFuel' : nat -> nat -> Prop :=
+| x_base'' : remFuel' 0 0
+| x_step'' : forall (v0 fuel : nat), remFuel' v0 fuel -> remFuel' (S v0) (S fuel)
+with fuel' : nat -> nat -> Prop :=
 
+| v1_step' : forall (x v1 : nat), remFuel' x v1 -> fuel' (x) (v1).
+
+
+MetaRocq Run (animate_inductive v2' <?v2'?> [("remFuel'", ([0], [1])); ("fuel'", ([0], [1])); ("v2'", ([0], [1]))] 200).
+
+Example test_v2'_0 :
+  v2'AnimatedTopFn 50 (Success nat 0) = Success nat 0.
+Proof. reflexivity. Qed.
+
+Example test_v2'_3 :
+  v2'AnimatedTopFn 50 (Success nat 3) = Success nat 3.
+Proof. reflexivity. Qed.
+
+Example test_v2'_5 :
+  v2'AnimatedTopFn 50 (Success nat 5) = Success nat 5.
+Proof. reflexivity. Qed.
 End ClashRelName.
