@@ -52,14 +52,13 @@ Fixpoint collect_tvar_names (t : named_term) : list string :=
   end.
 
 (** Generate a slot-name prefix guaranteed to be strictly longer than every
-    [tVar] name in [t], every name in [rel_names] (the user's relation names),
-    and every "NewFreshVarInitN" name produced by the variable-renaming pass.
-    Uses repeated 'j' characters. *)
+    [tVar] name in [t] (including any "NewFreshVarInitN" names produced by the
+    variable-renaming pass) and every name in [rel_names] (the user's relation
+    names from the modes list). Uses repeated 'j' characters. *)
 Definition gen_slot_prefix (rel_names : list string) (t : named_term) : string :=
-  let term_max  := list_max (map String.length (collect_tvar_names t)) in
-  let rel_max   := list_max (map String.length rel_names) in
-  let fresh_min := String.length "NewFreshVarInit" in
-  let needed    := 5 + (Nat.max (Nat.max term_max rel_max) fresh_min) in
+  let term_max := list_max (map String.length (collect_tvar_names t)) in
+  let rel_max  := list_max (map String.length rel_names) in
+  let needed   := 5 + (Nat.max term_max rel_max) in
   String.concat "" (repeat "j" needed).
 
 (** Generate a slot name [prefix ++ string_of_nat n]. *)
