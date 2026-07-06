@@ -334,6 +334,72 @@ Definition top_fn_suffix : string := "AnimatedTopFn".
 Definition stream_suffix : string := "AnimatedTopFnStream".
 Definition anim_suffix : string := "Animated".
 
+(** True iff [p] is a prefix of [s]. *)
+Definition string_has_prefix (p s : string) : bool := String.prefix p s.
+
+(** True iff [suf] is a suffix of [s]. *)
+Definition string_has_suffix (suf s : string) : bool :=
+  let ls  := String.length s   in
+  let lsuf := String.length suf in
+  if Nat.ltb ls lsuf then false
+  else String.eqb suf (String.substring (ls - lsuf) lsuf s).
+
+(** Strings that no user relation name may START with.  Covers every hard-coded
+    local binder name and every generated-name prefix used by the engine:
+      "fuel"               animation fuel counter
+      "rem_fuel"           remaining fuel binder
+      "input"              animation input binder
+      "splitSuccCase"      case-split scrutinee in build_eq_guard_body_m
+      "gcPred"             guard predicate binder in build_eq_guard_body_m
+      "NewFreshVarInit"    prefix for all renamed data variables
+      "j"                  prefix for fresh slot variables (gen_slot_prefix)
+                           and compound-expression rewrite variables (fresh_var_prefix)
+      "n"                  prefix for wildcard-branch binder names (gen_binder_names: n1, n2, ...)
+      "Animated"           prefix of all animated-clause definition suffixes
+      "AnimatedTopFn"      top-level animated function suffix
+      "AnimatedTopFnStream" stream variant suffix *)
+Definition engine_reserved_prefixes : list string :=
+  [ "fuel"
+  ; "rem_fuel"
+  ; "input"
+  ; "splitSuccCase"
+  ; "gcPred"
+  ; "NewFreshVarInit"
+  ; "j"
+  ; "n"
+  ; "Animated"
+  ; "AnimatedTopFn"
+  ; "AnimatedTopFnStream"
+  ].
+
+(** Strings that no user relation name may END with. *)
+Definition engine_reserved_suffixes : list string :=
+  [ "Animated"
+  ; "AnimatedTopFn"
+  ; "AnimatedTopFnStream"
+  ].
+
+(** Check that a single relation name does not clash with any engine-reserved
+    prefix or suffix.  Returns [None] on success, [Some msg] on failure. *)
+Definition check_one_rel_name (nm : string) : option string :=
+  if existsb (fun p => string_has_prefix p nm) engine_reserved_prefixes then
+    Some ("relation name '" ++ nm ++ "' starts with an engine-reserved string")
+  else if existsb (fun s => string_has_suffix s nm) engine_reserved_suffixes then
+    Some ("relation name '" ++ nm ++ "' ends with an engine-reserved string")
+  else
+    None.
+
+(** Check all relation names in [modes].  Returns [None] on success,
+    [Some msg] describing the first violation found. *)
+Definition check_mode_names (modes : list (string * (list nat * list nat)))
+    : option string :=
+  let rel_names := map fst modes in
+  match find (fun nm => match check_one_rel_name nm with Some _ => true | None => false end)
+             rel_names with
+  | Some bad => check_one_rel_name bad
+  | None     => None
+  end.
+
 (** Append [top_fn_suffix] to every function name in the [(name, type)] list,
     producing the names used for the generated animated definitions. *)
 Definition mk_animated_names (l : list (string * term)) : list (string * term) :=

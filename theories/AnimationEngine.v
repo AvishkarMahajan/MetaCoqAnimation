@@ -1396,6 +1396,20 @@ match knLst with
 | topKn :: _ =>
   all_cdata_raw    <- collect_all_cdata knLst modes ;;
   tp_data_raw      <- collect_all_tp_data knLst ;;
+  let rel_names_check := map fst modes in
+  let all_data_vars :=
+    dedup_strings
+      (flat_map (fun te =>
+         flat_map (fun '(_, vars) => map fst vars)
+                  te.(te_cstr_vars))
+         tp_data_raw)
+      [] in
+  match find (fun v => in_strings v rel_names_check) all_data_vars with
+  | Some v =>
+      tmFail ("data variable '" ++ v ++
+              "' has the same name as a relation in the modes list")
+  | None => tmReturn tt
+  end ;;
   all_cdata_merged  <- match rewrite_cl_all all_cdata_raw tp_data_raw with
                        | Some d => tmEval all d
                        | None   => tmFail "clause rewriting failed in animate_multi_def"
@@ -1417,6 +1431,10 @@ Definition animate_inductive {A : Type}
   (ind : A) (kn : kername)
   (modes : mode_map) (fuel : nat)
   : TemplateMonad term :=
+match check_mode_names modes with
+| Some msg => tmFail msg
+| None     => tmReturn tt
+end ;;
 knLst      <- infer_aux_knames kn modes ;;
 ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
 ind_data   <- tmEval all ind_data'' ;;
@@ -1445,6 +1463,10 @@ Definition animate_coinductive {A : Type}
   (ind : A) (kn : kername)
   (modes : mode_map) (fuel : nat)
   : TemplateMonad term :=
+match check_mode_names modes with
+| Some msg => tmFail msg
+| None     => tmReturn tt
+end ;;
 knLst      <- infer_aux_knames kn modes ;;
 ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
 ind_data   <- tmEval all ind_data'' ;;
