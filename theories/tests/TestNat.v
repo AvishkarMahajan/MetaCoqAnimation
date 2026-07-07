@@ -448,6 +448,7 @@ with fuel : nat -> nat -> Prop :=
    The relation name 'fuel' is forbidden because the engine uses "fuel" as its
    internal animation fuel-counter binder. *)
 Fail MetaRocq Run (animate_inductive v2 <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_coinductive v2 <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
 
 Inductive rel : nat -> nat -> Prop :=
 | x : forall v0 v1 , rel2 v0 v1 -> rel v0 v1
@@ -485,4 +486,6 @@ with rel3 : nat -> nat -> Prop :=
 (* 
     data-variable/relation-name disjointness check. *)
 Fail MetaRocq Run (animate_inductive v2' <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_coinductive v2' <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
+
 End clashFuel.
