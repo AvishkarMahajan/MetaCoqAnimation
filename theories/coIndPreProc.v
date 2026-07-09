@@ -484,44 +484,6 @@ Polymorphic Definition preprocess_coind_types
 
 
 (* ================================================================== *)
-(** ** Example: lift types for the Integrate relation                 *)
-(* ================================================================== *)
-
-(** Running this declares [nat'] and [stream'] in dependency order.
-    [nat'] is declared first (no cross-type deps); [stream'] second.
-
-    Expected result:
-      CoInductive stream' : Type :=
-        nil'         : stream'
-      | Seq'         : nat' -> stream' -> stream'
-      | IntegrateAn1 : stream' -> stream'            (* from Integrate output pos 1 *)
-      | addStmAn2    : nat' -> stream' -> stream'.   (* from addStm output pos 2   *)
-
-      Inductive nat' : Set :=
-        O'          : nat'
-      | S'          : nat' -> nat'
-      | addNatAn2   : nat' -> nat' -> nat'.          (* from addNat output pos 2   *) *)
-MetaRocq Run (
-  mapping <- preprocess_coind_types
-    [("Integrate", ([0], [1]));
-     ("addStm",   ([0; 1], [2]));
-     ("addNat",   ([0; 1], [2]))] ;;
-  tmPrint mapping).
-Print stream'.
-Print nat'.  
-  
-
-(** Spot-check the declared types. *)
-Check (nil'          : stream').
-Check (Seq'          : nat' -> stream' -> stream').
-Check (IntegrateAn1  : stream' -> stream').
-Check (addStmAn2     : nat' -> stream' -> stream').
-Check (O'            : nat').
-Check (S'            : nat' -> nat').
-Check (addNatAn2     : nat' -> nat' -> nat').
-
-
-(* ================================================================== *)
 (** ** Lifting relations over lifted types                            *)
 (* ================================================================== *)
 
@@ -825,20 +787,50 @@ Polymorphic Definition lift_relation_names
   | _ => @tmFail unit "lift_relation_names: failed to resolve knames"
   end.
 
+(** Combined entry point: lift all coinductive types referenced by [modes]
+    and then lift the relation itself, in a single [MetaRocq Run].
+    [rel_nm] : short name of the top-level relation (e.g. "Integrate").
+    [modes]  : input/output positions for every body of the mutual block. *)
+Polymorphic Definition lift_coinductive_relation
+    (rel_nm : string)
+    (modes  : mode_map)
+    : TemplateMonad unit :=
+  rel_kn_list <- monad_fold_left (fun acc nm =>
+    refs <- tmLocate nm ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) refs with
+    | Some (IndRef ind) => tmReturn (List.app acc [inductive_mind ind])
+    | _ => tmFail ("lift_coinductive_relation: cannot find '" ++ nm ++ "'")
+    end)
+    [rel_nm] [] ;;
+  match rel_kn_list return TemplateMonad unit with
+  | [rel_kn] =>
+    type_mapping <- preprocess_coind_types modes ;;
+    lift_relation rel_kn type_mapping modes
+  | _ => @tmFail unit "lift_coinductive_relation: failed to resolve relation"
+  end.
+
 
 (* ================================================================== *)
-(** ** Example: lift Integrate over stream' and nat'                 *)
+(** ** Example: lift Integrate and its coinductive types               *)
 (* ================================================================== *)
 
-MetaRocq Run (lift_relation_names "Integrate"
-               [("stream", "stream'"); ("nat", "nat'")]
+MetaRocq Run (lift_coinductive_relation "Integrate"
                [("Integrate", ([0],    [1]));
                 ("addStm",   ([0; 1], [2]));
                 ("addNat",   ([0; 1], [2]))]).
-Print Integrate'.
-Print addStm'.
-Print addNat'.
 
+(** Lifted data types. *)
+Print stream'. Print nat'.
+Check (nil'         : stream').
+Check (Seq'         : nat' -> stream' -> stream').
+Check (IntegrateAn1 : stream' -> stream').
+Check (addStmAn2    : nat' -> stream' -> stream').
+Check (O'           : nat').
+Check (S'           : nat' -> nat').
+Check (addNatAn2    : nat' -> nat' -> nat').
+
+(** Lifted relations. *)
+Print Integrate'. Print addStm'. Print addNat'.
 Check (integNil'           : Integrate' nil' nil').
 Check (integ'              : forall s2 s3 n s5,
          Integrate' s2 s3 /\ addStm' n s3 s5 ->
