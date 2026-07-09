@@ -519,3 +519,336 @@ Check (addStmAn2     : nat' -> stream' -> stream').
 Check (O'            : nat').
 Check (S'            : nat' -> nat').
 Check (addNatAn2     : nat' -> nat' -> nat').
+
+
+(* ================================================================== *)
+(** ** Lifting relations over lifted types                            *)
+(* ================================================================== *)
+
+(** Resolve an inductive's kername by short name via [tmLocate]. *)
+Definition tmLocateInd (nm : string) : TemplateMonad kername :=
+  refs <- tmLocate nm ;;
+  match find (fun g => match g with IndRef _ => true | _ => false end) refs with
+  | Some (IndRef ind) => tmReturn (inductive_mind ind)
+  | _ => tmFail ("tmLocateInd: cannot find inductive '" ++ nm ++ "'")
+  end.
+
+(** Substitute both [tInd] and [tConstruct] knames throughout a term.
+    Constructor indices are preserved: the extra constructors appended to
+    lifted types come after the originals, so original indices stay valid. *)
+Fixpoint subst_inds_and_ctors (mapping : list (kername * kername)) (t : term) : term :=
+  let lookup kn :=
+    match find (fun p => eq_kername (fst p) kn) mapping with
+    | Some (_, kn') => kn'
+    | None          => kn
+    end in
+  match t with
+  | tInd ind univs =>
+    tInd {| inductive_mind := lookup (inductive_mind ind);
+            inductive_ind  := inductive_ind ind |} univs
+  | tConstruct ind idx univs =>
+    tConstruct {| inductive_mind := lookup (inductive_mind ind);
+                  inductive_ind  := inductive_ind ind |} idx univs
+  | tEvar n args         => tEvar n (List.map (subst_inds_and_ctors mapping) args)
+  | tCast c k v          => tCast (subst_inds_and_ctors mapping c) k
+                                   (subst_inds_and_ctors mapping v)
+  | tProd na ty body     => tProd na (subst_inds_and_ctors mapping ty)
+                                      (subst_inds_and_ctors mapping body)
+  | tLambda na ty body   => tLambda na (subst_inds_and_ctors mapping ty)
+                                        (subst_inds_and_ctors mapping body)
+  | tLetIn na val ty body =>
+    tLetIn na (subst_inds_and_ctors mapping val)
+              (subst_inds_and_ctors mapping ty)
+              (subst_inds_and_ctors mapping body)
+  | tApp f args =>
+    tApp (subst_inds_and_ctors mapping f)
+         (List.map (subst_inds_and_ctors mapping) args)
+  | tCase ci pred disc brs =>
+    let ci' :=
+      {| ci_ind := {| inductive_mind := lookup (inductive_mind ci.(ci_ind));
+                      inductive_ind  := inductive_ind ci.(ci_ind) |};
+         ci_npar      := ci.(ci_npar);
+         ci_relevance := ci.(ci_relevance) |} in
+    let pred' :=
+      {| pparams  := List.map (subst_inds_and_ctors mapping) pred.(pparams);
+         puinst   := pred.(puinst);
+         pcontext := pred.(pcontext);
+         preturn  := subst_inds_and_ctors mapping pred.(preturn) |} in
+    tCase ci' pred' (subst_inds_and_ctors mapping disc)
+      (List.map (fun br =>
+        {| bcontext := br.(bcontext);
+           bbody    := subst_inds_and_ctors mapping br.(bbody) |}) brs)
+  | tProj p c     => tProj p (subst_inds_and_ctors mapping c)
+  | tFix mfix idx =>
+    tFix (List.map (fun d =>
+      {| dname := d.(dname);
+         dtype := subst_inds_and_ctors mapping d.(dtype);
+         dbody := subst_inds_and_ctors mapping d.(dbody);
+         rarg  := d.(rarg) |}) mfix) idx
+  | tCoFix mfix idx =>
+    tCoFix (List.map (fun d =>
+      {| dname := d.(dname);
+         dtype := subst_inds_and_ctors mapping d.(dtype);
+         dbody := subst_inds_and_ctors mapping d.(dbody);
+         rarg  := d.(rarg) |}) mfix) idx
+  | _ => t
+  end.
+
+Definition subst_inds_and_ctors_decl
+    (mapping : list (kername * kername)) (d : context_decl) : context_decl :=
+  {| decl_name := d.(decl_name);
+     decl_body := option_map (subst_inds_and_ctors mapping) d.(decl_body);
+     decl_type := subst_inds_and_ctors mapping d.(decl_type) |}.
+
+(** Find the 0-based index of a constructor by name in a constructor list. *)
+Fixpoint find_ctor_idx (nm : string) (ctors : list constructor_body) (acc : nat)
+    : option nat :=
+  match ctors with
+  | [] => None
+  | c :: rest =>
+    if String.eqb c.(cstr_name) nm then Some acc
+    else find_ctor_idx nm rest (S acc)
+  end.
+
+(** Find the 0-based index of [x] in a list of nats. *)
+Fixpoint find_nat_idx (x : nat) (l : list nat) (acc : nat) : option nat :=
+  match l with
+  | [] => None
+  | y :: rest =>
+    if Nat.eqb x y then Some acc
+    else find_nat_idx x rest (S acc)
+  end.
+
+(** Compute the [<rel>'Undefined] constructor for one body of the lifted
+    relation block.
+
+    The constructor universally quantifies over all input-position variables
+    and maps every output position to the extra constructor of the lifted
+    data type (named [relNm ++ "An" ++ pos]) applied to those inputs.
+    Example: [Integrate'Undefined : forall v0, Integrate' v0 (IntegrateAn1 v0)].
+
+    de Bruijn convention (same as [compute_extra_cstrs]):
+      - cstr_type = [it_mkProd_or_LetIn input_decls return_t].
+      - in input_decls (snoc order), the j-th input (= in_pos[j]'s var) is
+        at [tRel (n_params + n_inputs - 1 - j)] in return_t.
+      - input_var_list = [tRel(n_params+n_inputs-1); ...; tRel n_params]
+        = [v0; v1; ...] in in_pos order (v0 outermost).
+      - body [body_idx] of the mutual block is at
+        [tRel (n_params + n_inputs + n_bodies - 1 - body_idx)] in return_t. *)
+Definition compute_undefined_cstr
+    (oib            : one_inductive_body)
+    (body_idx       : nat)
+    (n_params       : nat)
+    (n_bodies       : nat)
+    (type_mapping   : list (kername * kername))
+    (modes_with_idx : list ((string * (list nat * list nat)) * list context_decl))
+    (type_body_map  : list (kername * one_inductive_body))
+    : list constructor_body :=
+  match find (fun mwi => String.eqb (fst (fst mwi)) oib.(ind_name)) modes_with_idx with
+  | None => []
+  | Some mwi =>
+    let in_pos   := fst (snd (fst mwi)) in
+    let out_pos  := snd (snd (fst mwi)) in
+    let idx_ctx  := snd mwi in
+    let n_idx    := #|idx_ctx| in
+    let n_inputs := #|in_pos| in
+    let input_decls :=
+      List.rev (snd (fold_left (fun da ip =>
+        let snoc_ip := n_idx - 1 - ip in
+        match nth_error idx_ctx snoc_ip with
+        | None => (S (fst da), snd da)
+        | Some d =>
+          (S (fst da), List.app (snd da)
+            [{| decl_name := d.(decl_name);
+                decl_body := None;
+                decl_type := subst_ind_kns type_mapping d.(decl_type) |}])
+        end)
+      in_pos (0, []))) in
+    let input_var_list := List.map tRel (List.rev (seq n_params n_inputs)) in
+    let arg_terms :=
+      List.map (fun pos =>
+        match find_nat_idx pos in_pos 0 with
+        | Some j =>
+          tRel (n_params + n_inputs - 1 - j)
+        | None =>
+          if existsb (Nat.eqb pos) out_pos then
+            let extra_nm := oib.(ind_name) ++ "An" ++ string_of_nat pos in
+            let snoc_pos := n_idx - 1 - pos in
+            match nth_error idx_ctx snoc_pos with
+            | None => tVar "error_idx"
+            | Some d =>
+              match collect_tind_kns d.(decl_type) with
+              | [] => tVar "error_no_type"
+              | old_kn :: _ =>
+                let new_kn :=
+                  match find (fun p => eq_kername (fst p) old_kn) type_mapping with
+                  | Some (_, kn') => kn'
+                  | None          => old_kn
+                  end in
+                let ctor_idx :=
+                  match find (fun p => eq_kername (fst p) new_kn) type_body_map with
+                  | Some (_, new_oib) =>
+                    match find_ctor_idx extra_nm new_oib.(ind_ctors) 0 with
+                    | Some i => i
+                    | None   => 0
+                    end
+                  | None => 0
+                  end in
+                let new_ind := {| inductive_mind := new_kn; inductive_ind := 0 |} in
+                if Nat.eqb n_inputs 0
+                then tConstruct new_ind ctor_idx []
+                else tApp (tConstruct new_ind ctor_idx []) input_var_list
+              end
+            end
+          else
+            tVar "error_unmapped_pos"
+        end)
+      (seq 0 n_idx) in
+    let self_rel  := n_params + n_inputs + n_bodies - 1 - body_idx in
+    let return_t  := tApp (tRel self_rel) arg_terms in
+    let cstr_type := it_mkProd_or_LetIn input_decls return_t in
+    [{| cstr_name    := oib.(ind_name) ++ "'Undefined";
+        cstr_args    := input_decls;
+        cstr_indices := [];
+        cstr_type    := cstr_type;
+        cstr_arity   := n_inputs |}]
+  end.
+
+(** Build the lifted [mutual_inductive_body] for a relation block,
+    appending a [<rel>'Undefined] constructor to every body. *)
+Definition make_lifted_relation_mind
+    (old_mind       : mutual_inductive_body)
+    (old_rel_kn     : kername)
+    (new_rel_kn     : kername)
+    (type_mapping   : list (kername * kername))
+    (modes_with_idx : list ((string * (list nat * list nat)) * list context_decl))
+    (type_body_map  : list (kername * one_inductive_body))
+    : mutual_inductive_body :=
+  let full_mapping := (old_rel_kn, new_rel_kn) :: type_mapping in
+  let params'  := List.map (subst_inds_and_ctors_decl full_mapping) old_mind.(ind_params) in
+  let n_params := #|params'| in
+  let n_bodies := #|old_mind.(ind_bodies)| in
+  {| ind_finite    := old_mind.(ind_finite);
+     ind_npars     := old_mind.(ind_npars);
+     ind_universes := old_mind.(ind_universes);
+     ind_variance  := old_mind.(ind_variance);
+     ind_params    := params';
+     ind_bodies    :=
+       mapi (fun i oib =>
+         let undef :=
+           compute_undefined_cstr oib i n_params n_bodies
+             type_mapping modes_with_idx type_body_map in
+         {| ind_name      := oib.(ind_name) ++ "'";
+            ind_indices   := List.map (subst_inds_and_ctors_decl full_mapping) oib.(ind_indices);
+            ind_sort      := oib.(ind_sort);
+            ind_type      := subst_inds_and_ctors full_mapping oib.(ind_type);
+            ind_kelim     := oib.(ind_kelim);
+            ind_ctors     :=
+              List.map (fun c =>
+                {| cstr_name    := c.(cstr_name) ++ "'";
+                   cstr_args    := List.map (subst_inds_and_ctors_decl full_mapping) c.(cstr_args);
+                   cstr_indices := List.map (subst_inds_and_ctors full_mapping) c.(cstr_indices);
+                   cstr_type    := subst_inds_and_ctors full_mapping c.(cstr_type);
+                   cstr_arity   := c.(cstr_arity) |})
+              oib.(ind_ctors) ++ undef;
+            ind_projs     := oib.(ind_projs);
+            ind_relevance := oib.(ind_relevance) |})
+       old_mind.(ind_bodies) |}.
+
+(** Declare the lifted version of a mutual relation block.
+    [modes] supplies the input/output positions for each body, used to
+    build the Undefined constructors. *)
+Polymorphic Definition lift_relation
+    (rel_kn       : kername)
+    (type_mapping : list (kername * kername))
+    (modes        : mode_map)
+    : TemplateMonad unit :=
+  cur_mp   <- tmCurrentModPath tt ;;
+  old_mind <- tmQuoteInductive rel_kn ;;
+  let new_rel_kn := (cur_mp, snd rel_kn ++ "'") in
+  let modes_with_idx :=
+    List.map (fun me =>
+      let nm     := fst me in
+      let in_out := snd me in
+      let idx_ctx :=
+        match find (fun oib => String.eqb oib.(ind_name) nm) old_mind.(ind_bodies) with
+        | Some oib => oib.(ind_indices)
+        | None     => []
+        end in
+      ((nm, in_out), idx_ctx))
+    modes in
+  type_body_map <- monad_map (fun p =>
+    let new_kn := snd p in
+    new_mind <- tmQuoteInductive new_kn ;;
+    match new_mind.(ind_bodies) with
+    | oib :: _ => tmReturn (new_kn, oib)
+    | []       => @tmFail (kername * one_inductive_body) "lift_relation: empty lifted type"
+    end)
+    type_mapping ;;
+  tmMkInductivePreserveFinite
+    (make_lifted_relation_mind old_mind rel_kn new_rel_kn type_mapping modes_with_idx type_body_map).
+
+
+(** Convert [k1; k2; k3; k4; ...] into [(k1,k2); (k3,k4); ...]. *)
+Fixpoint pair_up {A : Type} (l : list A) : list (A * A) :=
+  match l with
+  | x :: y :: rest => (x, y) :: pair_up rest
+  | _ => []
+  end.
+
+(** Resolve string names and lift a mutual relation block.
+    [rel_nm]      : short name of the relation block (e.g. "Integrate").
+    [type_nm_map] : pairs of (old-type-name, lifted-type-name).
+    [modes]       : input/output positions for each body.
+
+    Kname resolution uses the same proven [monad_fold_left] pattern as
+    [preprocess_coind_types]: all names are collected in one pass in
+    the order [rel; old1; new1; old2; new2; ...], then [pair_up]
+    reconstructs the type-mapping list. *)
+Polymorphic Definition lift_relation_names
+    (rel_nm      : string)
+    (type_nm_map : list (string * string))
+    (modes       : mode_map)
+    : TemplateMonad unit :=
+  let all_nms :=
+    rel_nm :: List.concat (List.map (fun p => [fst p; snd p]) type_nm_map) in
+  kns <- monad_fold_left (fun acc nm =>
+    refs <- tmLocate nm ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) refs with
+    | Some (IndRef ind) => tmReturn (List.app acc [inductive_mind ind])
+    | _ => tmFail ("lift_relation_names: cannot find '" ++ nm ++ "'")
+    end)
+    all_nms [] ;;
+  match kns return TemplateMonad unit with
+  | rel_kn :: kns_rest =>
+    lift_relation rel_kn (pair_up kns_rest) modes
+  | _ => @tmFail unit "lift_relation_names: failed to resolve knames"
+  end.
+
+
+(* ================================================================== *)
+(** ** Example: lift Integrate over stream' and nat'                 *)
+(* ================================================================== *)
+
+MetaRocq Run (lift_relation_names "Integrate"
+               [("stream", "stream'"); ("nat", "nat'")]
+               [("Integrate", ([0],    [1]));
+                ("addStm",   ([0; 1], [2]));
+                ("addNat",   ([0; 1], [2]))]).
+Print Integrate'.
+Print addStm'.
+Print addNat'.
+
+Check (integNil'           : Integrate' nil' nil').
+Check (integ'              : forall s2 s3 n s5,
+         Integrate' s2 s3 /\ addStm' n s3 s5 ->
+         Integrate' (Seq' n s2) (Seq' n s5)).
+Check (Integrate'Undefined : forall v0, Integrate' v0 (IntegrateAn1 v0)).
+Check (addStmNil'          : forall m, addStm' m nil' nil').
+Check (plusm'              : forall m s1 n n' s2,
+         addStm' m s1 s2 /\ addNat' m n n' ->
+         addStm' m (Seq' n s1) (Seq' n' s2)).
+Check (addStm'Undefined    : forall v0 v1, addStm' v0 v1 (addStmAn2 v0 v1)).
+Check (addZero'            : forall n, addNat' O' n n).
+Check (addSucc'            : forall n m p, addNat' n m p -> addNat' (S' n) m (S' p)).
+Check (addNat'Undefined    : forall v0 v1, addNat' v0 v1 (addNatAn2 v0 v1)).
