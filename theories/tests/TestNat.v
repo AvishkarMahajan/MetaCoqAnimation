@@ -17,9 +17,17 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
+
+(* Clause with no premise and universally quantified vars *)
+Inductive tripleIn : nat -> nat -> bool -> nat -> nat -> bool-> Prop :=
+| tInC : forall a b c, tripleIn a b c a b c.  
+MetaRocq Run (animate_inductive tripleIn <?tripleIn?> [("tripleIn", ([0;1;2], [3;4;5]))] 200).
+Example testtripleIn :
+  tripleInAnimatedTopFn 5 (Success (nat * (nat * bool)) (1, (2, true))) = (Success (nat * (nat * bool)) (1, (2, true))).
+Proof. reflexivity. Qed.  
+
 (** ** Empty input mode *)
 (* Auxiliary relations in separate blocks; [isGood2] calls both. *)
-
 Inductive isGoodEmptyIn : list nat -> nat -> Prop :=
 | zeroCEmptyIn : isGoodEmptyIn [] 0.
 

@@ -1046,6 +1046,8 @@ Fixpoint conj_vars_projected
                    binder_relevance := Relevant |}
             t1 (tApp (tVar str) lstVar) =>
             var_names (proj (snd h)) lstVar
+        | tApp (tVar str) lstVar =>
+            var_names (proj (snd h)) lstVar
         | _ => []
         end
       else conj_vars_projected proj c rest

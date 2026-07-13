@@ -28,41 +28,7 @@ Local Open Scope nat_scope.
 Open Scope bs.
 
 
-(** A stream of naturals, with explicit undefined and nil sentinels. *)
-CoInductive stream : Type :=
-| nil : stream
-| Seq : nat -> stream -> stream.
 
-
-
-(* ------------------------------------------------------------------ *)
-(** ** Integrate *)
-
-CoInductive Integrate : stream -> stream -> Prop :=
-| integNil : Integrate nil nil
-| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
-with addStm : nat -> stream -> stream -> Prop :=
-| addStmNil : forall m, addStm m nil nil
-| plusm : forall m s1 n n' s2, addStm m s1 s2 /\ addNat m n n' -> addStm m (Seq n s1) (Seq (n') s2)
-with
-addNat : nat -> nat -> nat -> Prop :=
-| addZero : forall n, addNat 0 n n
-| addSucc : forall n m p, addNat n m p -> addNat (S n) m (S p).
-
-
-
-
-
-
-Inductive isZero : bool -> nat -> Prop :=
-| isT : isZero true 0
-| isF : isZero false 1.
-
-  
-Inductive Len : list nat -> list nat -> nat -> Prop :=
-| nilLen : forall l l' m, isZero true m /\ l = [] /\ l' = l -> Len l l' m
-| ConsLen : forall l m x l', l' = l /\  Len l l' m -> Len (x::l) (x::l') (S m).
-  
 
 (*
 MetaRocq Run (animate_coinductive Integrate <? Integrate ?>
@@ -1911,6 +1877,200 @@ Polymorphic Fixpoint generate_fnSymb_params
     generate_fnSymb_params rest type_map app_kn_map)))
   end.
 
+(* ================================================================== *)
+(** ** Rest function generation                                        *)
+(* ================================================================== *)
+
+(** Extract the first [n] argument types from a [tProd]-chain,
+    skipping [skip] leading binders (parameters). *)
+Fixpoint extract_arg_types (skip n : nat) (t : term) : list term :=
+  match skip with
+  | S k => match t with
+            | tProd _ _ body => extract_arg_types k n body
+            | _ => []
+            end
+  | 0 =>
+    match n, t with
+    | 0, _            => []
+    | _, tSort _      => []
+    | S k, tProd _ ty body => ty :: extract_arg_types 0 k body
+    | _, _ => []
+    end
+  end.
+
+(** Get the inductive reference from a type term ([tInd] or
+    [tApp (tInd _ _) _]). *)
+Definition ind_of_type (t : term) : option inductive :=
+  match t with
+  | tInd ind _           => Some ind
+  | tApp (tInd ind _) _  => Some ind
+  | _                    => None
+  end.
+
+(** Build a right-associative product type [T0 * (T1 * (... * T_{n-1}))].
+    Singleton: returns [T0] unchanged. *)
+Fixpoint make_prod_type (prod_kn : kername) (tys : list term) : term :=
+  let prod_ind := {| inductive_mind := prod_kn; inductive_ind := 0 |} in
+  match tys with
+  | []        => tVar "make_prod_type:empty"
+  | [t]       => t
+  | t :: rest => tApp (tInd prod_ind []) [t; make_prod_type prod_kn rest]
+  end.
+
+(** Build a right-associative pair value [(v0, (v1, ...))] given parallel
+    lists of types and values. Singleton: returns [v0] unchanged. *)
+Fixpoint build_pair_term (prod_kn : kername) (tys vals : list term) : term :=
+  let prod_ind := {| inductive_mind := prod_kn; inductive_ind := 0 |} in
+  match tys, vals with
+  | [_], [v]       => v
+  | t :: rt, v :: rv =>
+    tApp (tConstruct prod_ind 0 [])
+         [t; make_prod_type prod_kn rt; v; build_pair_term prod_kn rt rv]
+  | _, _ => tVar "build_pair_term:mismatch"
+  end.
+
+(** Build [n_in - 1] nested [match p with (a, b) => ...] case expressions
+    to destructure the right-associative input pair.
+    The scrutinee at each level is always [tRel 0] (the current pair).
+    [out_type] is the overall return type used in each [preturn]. *)
+Fixpoint build_nested_cases
+    (prod_kn  : kername)
+    (in_types : list term)
+    (out_type : term)
+    : term -> term :=
+  let prod_ind := {| inductive_mind := prod_kn; inductive_ind := 0 |} in
+  let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  match in_types with
+  | [] => fun body => body
+  | [_] => fun body => body
+  | T0 :: rest =>
+    let rest_type := make_prod_type prod_kn rest in
+    let ci   := {| ci_ind := prod_ind; ci_npar := 2; ci_relevance := Relevant |} in
+    let pred := {| puinst   := [];
+                   pparams  := [T0; rest_type];
+                   pcontext := [anon_b];
+                   preturn  := out_type |} in
+    let inner := build_nested_cases prod_kn rest out_type in
+    fun body =>
+      tCase ci pred (tRel 0)
+        [{| bcontext := [anon_b; anon_b];
+            bbody    := inner body |}]
+  end.
+
+(** De Bruijn index for the [i]-th input (0-based) inside the innermost
+    branch, after all [n_in - 1] pair destructions have added binders.
+    Each match level binds 2 variables; the last input is always [tRel 0]
+    (the rightmost leaf of the right-associative nest). *)
+Definition input_var (i n_in : nat) : term :=
+  if Nat.eqb i (n_in - 1) then tRel 0
+  else tRel (2 * (n_in - 1 - i) - 1).
+
+(** Build the raw term for [R'Rest]:
+    a function taking the (possibly paired) input lifted types and
+    returning the (possibly paired) output by applying the extra [An]
+    constructor at each output position to all inputs. *)
+Definition make_rest_term
+    (prod_kn   : kername)
+    (in_types  : list term)
+    (out_types : list term)
+    (out_ctors : list (inductive * nat))
+    : term :=
+  let n_in       := List.length in_types in
+  let in_type    := match in_types  with [t] => t | _ => make_prod_type prod_kn in_types  end in
+  let out_type_t := match out_types with [t] => t | _ => make_prod_type prod_kn out_types end in
+  let in_vars    := mapi (fun i _ => input_var i n_in) in_types in
+  let anon_b    := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let ctor_apps :=
+    List.map (fun oc =>
+      let out_ind  := fst oc in
+      let ctor_idx := snd oc in
+      match in_vars with
+      | [] => tConstruct out_ind ctor_idx []
+      | _  => tApp (tConstruct out_ind ctor_idx []) in_vars
+      end)
+    out_ctors in
+  let body_inner :=
+    match ctor_apps with
+    | [app] =>
+      match out_types with
+      | [_] => app
+      | _   => build_pair_term prod_kn out_types ctor_apps
+      end
+    | _ => build_pair_term prod_kn out_types ctor_apps
+    end in
+  let body :=
+    match in_types with
+    | []  => body_inner
+    | [_] => body_inner
+    | _   => build_nested_cases prod_kn in_types out_type_t body_inner
+    end in
+  tLambda anon_b in_type body.
+
+(** Resolve the [(lifted_ind, ctor_idx)] for the extra [<rel>An<p>]
+    constructor at output position [p], given the type term at that
+    position from the lifted relation's [ind_type]. *)
+Definition get_out_ctor
+    (rel_name : string)
+    (p        : nat)
+    (out_type : term)
+    : TemplateMonad (inductive * nat) :=
+  match ind_of_type out_type with
+  | None =>
+    tmFail ("get_out_ctor: no inductive at position " ++ string_of_nat p)
+  | Some out_ind =>
+    tmBind (tmQuoteInductive (inductive_mind out_ind)) (fun out_mind =>
+    let ctor_nm := rel_name ++ "An" ++ string_of_nat p in
+    match nth_error out_mind.(ind_bodies) (inductive_ind out_ind) with
+    | None =>
+      tmFail ("get_out_ctor: no body at index " ++ string_of_nat (inductive_ind out_ind))
+    | Some out_oib =>
+      let idx :=
+        match find_ctor_idx ctor_nm out_oib.(ind_ctors) 0 with
+        | Some i => i
+        | None   => 0
+        end in
+      tmReturn (out_ind, idx)
+    end)
+  end.
+
+(** For each entry in [todo], declare [[rel_name]'Rest]: a function that
+    takes the (possibly paired) lifted input types and applies the extra
+    [An] constructor for each output position, producing a (possibly
+    paired) output.  The lifted relations must already exist in the
+    global environment when this is called. *)
+Polymorphic Fixpoint generate_rest_fns
+    (todo    : list (kername * (string * (list nat * list nat))))
+    (cur_mp  : modpath)
+    (prod_kn : kername)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | (block_kn, (rel_name, (in_pos, out_pos))) :: rest_todo =>
+    (* The lifted block is registered under snd(block_kn) ++ prime,
+       so we quote that block and then search for the body by name. *)
+    let lifted_block_kn := (cur_mp, snd block_kn ++ "'") in
+    let lifted_nm       := rel_name ++ "'" in
+    tmBind (tmQuoteInductive lifted_block_kn) (fun new_mind =>
+    let n_params := new_mind.(ind_npars) in
+    let n_total  := List.length in_pos + List.length out_pos in
+    match find (fun ob => String.eqb ob.(ind_name) lifted_nm)
+               new_mind.(ind_bodies) with
+    | None =>
+      tmFail ("generate_rest_fns: cannot find body " ++ lifted_nm)
+    | Some oib =>
+      let all_types := extract_arg_types n_params n_total oib.(ind_type) in
+      let in_types  := List.map (fun p => nth p all_types (tVar "?")) in_pos in
+      let out_types := List.map (fun p => nth p all_types (tVar "?")) out_pos in
+      tmBind (monad_map (fun p =>
+                get_out_ctor rel_name p (nth p all_types (tVar "?")))
+              out_pos)
+      (fun out_ctors =>
+      let fn_term := make_rest_term prod_kn in_types out_types out_ctors in
+      tmBind (tmMkDefinition (rel_name ++ "'Rest") fn_term) (fun _ =>
+      generate_rest_fns rest_todo cur_mp prod_kn))
+    end)
+  end.
+
 (** Resolve string names and lift a mutual relation block.
     [rel_nm]      : short name of the relation block (e.g. "Integrate").
     [type_nm_map] : pairs of (old-type-name, lifted-type-name).
@@ -1980,11 +2140,17 @@ Polymorphic Definition lift_coinductive_relation
         unique_block_kns in
     _ <- generate_lift_fns type_mapping type_mapping app_kn_mapping cur_mp ;;
     _ <- generate_fnSymb_params type_mapping type_mapping app_kn_mapping ;;
-    monad_fold_left (fun _ block_kn =>
+    _ <- monad_fold_left (fun _ block_kn =>
       let block_modes :=
         List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
       lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
-      unique_block_kns tt
+      unique_block_kns tt ;;
+    prod_refs <- tmLocate "prod" ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs with
+    | Some (IndRef prod_ind) =>
+      generate_rest_fns kn_mode_list cur_mp (inductive_mind prod_ind)
+    | _ => @tmFail unit "lift_coinductive_relation: cannot locate prod"
+    end
   end.
   
 
@@ -2002,11 +2168,50 @@ Polymorphic Definition lift_coinductive_relation
 
 Unset Universe Checking.
 
+(** A stream of naturals, with explicit undefined and nil sentinels. *)
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+
+
+(* ------------------------------------------------------------------ *)
+(** ** Integrate *)
+
+CoInductive Integrate : stream -> stream -> Prop :=
+| integNil : Integrate nil nil
+| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
+with addStm : nat -> stream -> stream -> Prop :=
+| addStmNil : forall m, addStm m nil nil
+| plusm : forall m s1 n n' s2, addStm m s1 s2 /\ addNat m n n' -> addStm m (Seq n s1) (Seq (n') s2)
+with
+addNat : nat -> nat -> nat -> Prop :=
+| addZero : forall n, addNat 0 n n
+| addSucc : forall n m p, addNat n m p -> addNat (S n) m (S p).
+
+
+
+
+
+
+Inductive isZero : bool -> nat -> Prop :=
+| isT : isZero true 0
+| isF : isZero false 1.
+
+  
+Inductive Len : list nat -> list nat -> nat -> Prop :=
+| nilLen : forall l l' m, isZero true m /\ l = [] /\ l' = l -> Len l l' m
+| ConsLen : forall l m x l', l' = l /\  Len l l' m -> Len (x::l) (x::l') (S m).
+  
+Inductive tripleIn : nat -> nat -> bool -> nat -> nat -> Prop :=
+| tInC : forall a b c, tripleIn a b c a b.  
+
 MetaRocq Run (lift_coinductive_relation "Integrate"
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
                 ("addNat",    ([0;1], [2]));
                 ("isZero",    ([0],   [1]));
+                ("tripleIn",       ([0;1;2], [3;4]));
                 ("Len",       ([0],   [1;2]))]).
               
 Set Universe Checking.
@@ -2016,8 +2221,18 @@ Print natLift.
 Print boolLift.
 Print stream'. 
 
-
-(* fnSymb parameters are now auto-generated by generate_fnSymb_params *)
+Print Integrate'.
+Print Len'.
+Print Integrate'Rest.
+Print addStm'Rest.
+Print addNat'Rest.
+Print isZero'Rest.
+Print Len'Rest.
+Print tripleIn'Rest.
+(*
+MetaRocq Run (animate_inductive tripleIn <?tripleIn?> [("tripleIn", ([0;1;2], [3;4]))] 200).
+*)
+(* Rest functions and fnSymb parameters are now auto-generated. *)
 
 Print nat'.
 
