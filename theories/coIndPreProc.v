@@ -1771,6 +1771,146 @@ Polymorphic Fixpoint generate_lift_fns
     generate_lift_fns rest all_map app_kn_map cur_mp))
   end.
 
+(* ------------------------------------------------------------------ *)
+(** ** fnSymb parameter generation                                   *)
+(* ------------------------------------------------------------------ *)
+
+(** Map a single lifted inductive back to its old-type term.
+    Parametric specialisations map to the applied form, e.g.
+    [listnat' → list nat]. *)
+Definition subst_ind_to_old
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    (ind : inductive) : term :=
+  match find (fun e =>
+                andb (eq_kername (inductive_mind (snd e)) (inductive_mind ind))
+                     (Nat.eqb (inductive_ind (snd e)) (inductive_ind ind)))
+             type_map with
+  | None => tInd ind []
+  | Some (old_kn, _) =>
+    let old_ind := {| inductive_mind := old_kn; inductive_ind := 0 |} in
+    match find (fun e =>
+                  andb (eq_kername (inductive_mind (snd e)) (inductive_mind ind))
+                       (Nat.eqb (inductive_ind (snd e)) (inductive_ind ind)))
+               app_kn_map with
+    | Some e =>
+      let head_ind  := {| inductive_mind := fst (fst e); inductive_ind := 0 |} in
+      let par_terms :=
+        List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} [])
+                 (snd (fst e)) in
+      match par_terms with
+      | [] => tInd head_ind []
+      | _  => tApp (tInd head_ind []) par_terms
+      end
+    | None => tInd old_ind []
+    end
+  end.
+
+(** Substitute [tInd] and [tRel]-encoded mutual-block body refs back to old
+    types, given the current binder [depth] in the [cstr_type]/[cstr_args]
+    telescope.
+    In the mutual block with [n_bodies] bodies, body [j] appears as
+    [tRel (depth + n_bodies - 1 - j)] at that depth. *)
+Fixpoint subst_to_old_at_depth
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    (block_kn   : kername)
+    (n_bodies   : nat)
+    (depth      : nat)
+    (t          : term) : term :=
+  let sub d := subst_to_old_at_depth type_map app_kn_map block_kn n_bodies d in
+  match t with
+  | tInd ind _ =>
+    subst_ind_to_old type_map app_kn_map ind
+  | tRel k =>
+    (* Check whether k encodes a block-body reference at this depth.
+       body j is at tRel (depth + n_bodies - 1 - j), valid for j in [0, n_bodies). *)
+    if andb (Nat.leb depth k) (Nat.ltb k (depth + n_bodies)) then
+      let j := (depth + n_bodies - 1) - k in
+      subst_ind_to_old type_map app_kn_map
+        {| inductive_mind := block_kn; inductive_ind := j |}
+    else
+      tRel k
+  | tApp f args =>
+    tApp (sub depth f) (List.map (sub depth) args)
+  | tProd nm ty body =>
+    tProd nm (sub depth ty) (sub (S depth) body)
+  | _ => t
+  end.
+
+(** Build the raw type term for the fnSymb parameter of extra constructor
+    [ctor] belonging to body [new_ind] in a block with [n_bodies] bodies and
+    [n_params] parameters.
+    For snoc-position [snoc_i], the binder depth in the [cstr_type] tProd
+    chain is [n_params + n_args - 1 - snoc_i]. *)
+Definition make_fnSymb_type
+    (new_ind    : inductive)
+    (n_bodies   : nat)
+    (n_params   : nat)
+    (ctor       : constructor_body)
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    : term :=
+  let block_kn := inductive_mind new_ind in
+  let n_args   := ctor.(cstr_arity) in
+  let sub_at   := subst_to_old_at_depth type_map app_kn_map block_kn n_bodies in
+  let ret := sub_at (n_params + n_args) (tInd new_ind []) in
+  (* Build (nm, old_type) pairs in snoc order, then reverse for declaration order *)
+  let arg_pairs :=
+    mapi (fun snoc_i d =>
+      (d.(decl_name), sub_at (n_params + n_args - 1 - snoc_i) d.(decl_type)))
+    ctor.(cstr_args) in
+  List.fold_right
+    (fun '(nm, ty) acc => tProd nm ty acc)
+    ret
+    (List.rev arg_pairs).
+
+(** Declare a Coq Parameter (axiom) whose type is given as a raw MetaRocq term.
+    [tmUnquoteTyped Type ty] converts the raw type term to a Coq [Type] value,
+    which [tmAxiomRed] then uses to declare the axiom. *)
+Definition tmMkParameter (id : ident) (ty : term) : TemplateMonad unit :=
+  tmBind (tmUnquoteTyped Type ty) (fun T =>
+  tmBind (tmAxiomRed id None T) (fun _ =>
+  tmReturn tt)).
+
+(** For each entry in [todo], declare a [<ctor>fnSymb] parameter for every
+    constructor added to the lifted type beyond the original constructors.
+    The parameter type is the constructor's function type with each lifted
+    inductive substituted back to the corresponding old type. *)
+Polymorphic Fixpoint generate_fnSymb_params
+    (todo        : list (kername * inductive))
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let old_kn  := fst entry in
+    let new_ind := snd entry in
+    tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+    let n_old_ctors :=
+      match nth_error old_mind.(ind_bodies) 0 with
+      | None    => 0
+      | Some ob => List.length ob.(ind_ctors)
+      end in
+    tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+    let n_bodies := List.length new_mind.(ind_bodies) in
+    let n_params := new_mind.(ind_npars) in
+    tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+            | None     => tmReturn tt
+            | Some nob =>
+              let extra := List.skipn n_old_ctors nob.(ind_ctors) in
+              List.fold_left
+                (fun acc c =>
+                   tmBind acc (fun _ =>
+                   tmMkParameter (c.(cstr_name) ++ "fnSymb")
+                                 (make_fnSymb_type new_ind n_bodies n_params
+                                                  c type_map app_kn_map)))
+                extra (tmReturn tt)
+            end) (fun _ =>
+    generate_fnSymb_params rest type_map app_kn_map)))
+  end.
+
 (** Resolve string names and lift a mutual relation block.
     [rel_nm]      : short name of the relation block (e.g. "Integrate").
     [type_nm_map] : pairs of (old-type-name, lifted-type-name).
@@ -1839,6 +1979,7 @@ Polymorphic Definition lift_coinductive_relation
         (kn, {| inductive_mind := (cur_mp, snd kn ++ "'"); inductive_ind := 0 |}))
         unique_block_kns in
     _ <- generate_lift_fns type_mapping type_mapping app_kn_mapping cur_mp ;;
+    _ <- generate_fnSymb_params type_mapping type_mapping app_kn_mapping ;;
     monad_fold_left (fun _ block_kn =>
       let block_modes :=
         List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
@@ -1876,13 +2017,7 @@ Print boolLift.
 Print stream'. 
 
 
-Parameter IntegrateAn1fnSymb : stream -> stream.
-Parameter addStmAn2fnSymb : nat -> stream -> stream.
-Parameter addNatAn2fnSymb : nat -> nat -> nat.
-Parameter isZeroAn1fnSymb : bool -> nat.
-Parameter LenAn2fnSymb : list nat -> nat.
-
-Parameter LenAn1fnSymb : list nat -> list nat. 
+(* fnSymb parameters are now auto-generated by generate_fnSymb_params *)
 
 Print nat'.
 
