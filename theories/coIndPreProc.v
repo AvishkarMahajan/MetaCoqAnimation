@@ -1615,6 +1615,162 @@ Fixpoint pair_up {A : Type} (l : list A) : list (A * A) :=
   | _ => []
   end.
 
+(* ================================================================== *)
+(** ** Lift function generation                                        *)
+(* ================================================================== *)
+
+(** Classify a constructor arg type for a standalone original type
+    (1 body, 0 params) at snoc position [snoc_i].
+    Returns:
+      None           = unrelated, pass through as identity
+      Some None      = self-reference, apply recursive call
+      Some (Some kn) = other lifted type [kn], call [snd kn ++ "Lift"] *)
+Definition lift_arg_class
+    (old_kn   : kername)
+    (n_args   : nat)
+    (snoc_i   : nat)
+    (type_map : list (kername * inductive))
+    (t        : term) : option (option kername) :=
+  match t with
+  | tRel n =>
+    (* In a standalone type's cstr_args telescope (snoc order), the type of the
+       arg at snoc_i is in a context where the (n_args-1-snoc_i) more-outer args
+       are already bound (at tRel 0..n_args-2-snoc_i), so the mind body is at
+       tRel (n_args-1-snoc_i).  That is the self-reference index. *)
+    if Nat.eqb n (n_args - 1 - snoc_i) then Some None else None
+  | tInd ind _ =>
+    let kn := inductive_mind ind in
+    if eq_kername kn old_kn then Some None
+    else if existsb (fun p => eq_kername (fst p) kn) type_map
+         then Some (Some kn)
+         else None
+  | _ => None
+  end.
+
+(** Build the tFix/tCoFix [def term] entry for the lift function of
+    [old_kn] (body 0, described by [oib]) mapping to [new_ind].
+    De Bruijn inside a branch with [n_args] args:
+      tRel snoc_i      = constructor arg at snoc position [snoc_i]
+      tRel n_args      = outer lambda variable (the scrutinee)
+      tRel (n_args+1)  = the fix/cofix function itself
+    [orig_form] is [Some (head_kn, arg_kns)] when [old_kn] is a
+    specialization of a parametric type [head_kn] applied to [arg_kns];
+    in that case the lift function takes [head_kn arg_kns...] as input
+    rather than the intermediate specialized type [old_kn]. *)
+Definition make_lift_def
+    (old_kn    : kername)
+    (oib       : one_inductive_body)
+    (new_ind   : inductive)
+    (type_map  : list (kername * inductive))
+    (cur_mp    : modpath)
+    (orig_form : option (kername * list kername))
+    : def term :=
+  let old_ind  := {| inductive_mind := old_kn; inductive_ind := 0 |} in
+  (* Determine the case-expression's inductive, npar, params, and input type. *)
+  let case_ind  :=
+    match orig_form with
+    | None              => old_ind
+    | Some (head_kn, _) => {| inductive_mind := head_kn; inductive_ind := 0 |}
+    end in
+  let n_par    :=
+    match orig_form with None => 0 | Some (_, aks) => List.length aks end in
+  let par_terms :=
+    match orig_form with
+    | None              => []
+    | Some (_, arg_kns) =>
+      List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} []) arg_kns
+    end in
+  let old_type :=
+    match orig_form with
+    | None      => tInd old_ind []
+    | Some _    => match par_terms with
+                   | [] => tInd case_ind []
+                   | _  => tApp (tInd case_ind []) par_terms
+                   end
+    end in
+  let new_type := tInd new_ind [] in
+  let branches :=
+    mapi (fun ctor_idx ctor =>
+      let n_args := ctor.(cstr_arity) in
+      (* Compute lifted args in snoc order, then reverse to constructor order *)
+      let lifted_snoc :=
+        List.map (fun snoc_i =>
+          let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                       | Some d => d.(decl_type) | None => tVar "?" end in
+          match lift_arg_class old_kn n_args snoc_i type_map arg_t with
+          | Some None =>
+            tApp (tRel (n_args + 1)) [tRel snoc_i]
+          | Some (Some kn) =>
+            tApp (tConst (cur_mp, snd kn ++ "Lift") []) [tRel snoc_i]
+          | None =>
+            tRel snoc_i
+          end)
+        (seq 0 n_args) in
+      let lifted_args := List.rev lifted_snoc in
+      let bbody := match lifted_args with
+                   | [] => tConstruct new_ind ctor_idx []
+                   | _  => tApp (tConstruct new_ind ctor_idx []) lifted_args
+                   end in
+      (* bcontext must be outermost-first = reverse of snoc-order cstr_args *)
+      {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
+         bbody    := bbody |})
+    oib.(ind_ctors) in
+  let pred := {| puinst := []; pparams := par_terms;
+                 pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
+                 preturn  := new_type |} in
+  let ci   := {| ci_ind := case_ind; ci_npar := n_par; ci_relevance := Relevant |} in
+  let dbody :=
+    tLambda {| binder_name := nAnon; binder_relevance := Relevant |} old_type
+      (tCase ci pred (tRel 0) branches) in
+  {| dname := {| binder_name := nNamed (snd old_kn ++ "Lift");
+                 binder_relevance := Relevant |};
+     dtype  := tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                     old_type new_type;
+     dbody  := dbody;
+     rarg   := 0 |}.
+
+(** Declare a lift function for each type in [type_mapping] (in order, so
+    dependencies come first).  Each [old_nm ++ "Lift"] maps original
+    constructors to the corresponding lifted constructors.
+    CoInductive types get tCoFix; Inductive types get tFix.
+    If [old_kn] is a specialization of a parametric type recorded in
+    [app_kn_map], the lift function takes the original parametric application
+    as input (e.g. [list nat -> listnat']) rather than the intermediate
+    specialized type. *)
+Polymorphic Fixpoint generate_lift_fns
+    (todo        : list (kername * inductive))
+    (all_map     : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    (cur_mp      : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let old_kn  := fst entry in
+    let new_ind := snd entry in
+    (* Check whether new_ind appears in app_kn_map, meaning old_kn is a
+       specialization of a parametric type. *)
+    let orig_form :=
+      match find (fun e =>
+                    andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                         (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+                 app_kn_map with
+      | Some e => Some (fst (fst e), snd (fst e))
+      | None   => None
+      end in
+    tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+    tmBind (match nth_error old_mind.(ind_bodies) 0 with
+            | None => tmFail ("generate_lift_fns: no body for " ++ snd old_kn)
+            | Some oib =>
+              let is_coind :=
+                match old_mind.(ind_finite) with CoFinite => true | _ => false end in
+              let d := make_lift_def old_kn oib new_ind all_map cur_mp orig_form in
+              let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
+              tmMkDefinition (snd old_kn ++ "Lift") fn_term
+            end) (fun _ =>
+    generate_lift_fns rest all_map app_kn_map cur_mp))
+  end.
+
 (** Resolve string names and lift a mutual relation block.
     [rel_nm]      : short name of the relation block (e.g. "Integrate").
     [type_nm_map] : pairs of (old-type-name, lifted-type-name).
@@ -1682,6 +1838,7 @@ Polymorphic Definition lift_coinductive_relation
       List.map (fun kn =>
         (kn, {| inductive_mind := (cur_mp, snd kn ++ "'"); inductive_ind := 0 |}))
         unique_block_kns in
+    _ <- generate_lift_fns type_mapping type_mapping app_kn_mapping cur_mp ;;
     monad_fold_left (fun _ block_kn =>
       let block_modes :=
         List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
@@ -1710,7 +1867,13 @@ MetaRocq Run (lift_coinductive_relation "Integrate"
                 ("addNat",    ([0;1], [2]));
                 ("isZero",    ([0],   [1]));
                 ("Len",       ([0],   [1;2]))]).
+              
 Set Universe Checking.
+Print listnatLift.
+Print streamLift.
+Print natLift.
+Print boolLift.
+Print stream'. 
 
 
 Parameter IntegrateAn1fnSymb : stream -> stream.
@@ -1725,31 +1888,7 @@ Print nat'.
 
 
 
-Definition boolLift (b : bool) : bool' :=
-match b with
-| true => true'
-| false => false'
-end.
-
-Fixpoint natLift (n : nat) : nat' :=
-match n with
-| 0 => O'
-| S m => S' (natLift m)
-end.
-
-Fixpoint listnatLift (l : list nat) : listnat' :=
-match l with
-| [] => listnat_nil'
-| v0 :: l' => listnat_cons' (natLift v0) (listnatLift l')
-end.
 Print stream'.
-
-CoFixpoint streamLift (s : stream) : stream' :=
-match s with
-| nil => nil'
-| Seq v0 v1 => Seq' (natLift v0) (streamLift v1)
-end.
-
 Print stream.
 
 
