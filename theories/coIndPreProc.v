@@ -1077,7 +1077,52 @@ Polymorphic Definition preprocess_coind_types
         end)
       body_kns)
     computed_bodies in
-  let groups := group_connected_components sorted_kns dep_edges in
+  let orig_groups := group_connected_components sorted_kns dep_edges in
+  (* Reject circular dependencies between Inductive and CoInductive types: Rocq
+     does not allow mixed mutual blocks, and if A (Finite) and B (CoFinite)
+     reference each other, neither can be declared first without a forward ref.
+     Detect this: a mixed connected component with dep_edges in BOTH directions. *)
+  _ <- monad_fold_left (fun _ grp =>
+    let cofinite := filter (fun kn =>
+      match find (fun p => eq_kername (fst p) kn) type_minds with
+      | Some (_, m) => match m.(ind_finite) with CoFinite => true | _ => false end
+      | None        => false
+      end) grp in
+    let finite := filter (fun kn =>
+      negb (existsb (eq_kername kn) cofinite)) grp in
+    match cofinite, finite with
+    | [], _ | _, [] => tmReturn tt
+    | _,  _ =>
+      let cf_refs_f := existsb (fun e =>
+        andb (existsb (eq_kername (fst e)) cofinite)
+             (existsb (eq_kername (snd e)) finite)) dep_edges in
+      let f_refs_cf := existsb (fun e =>
+        andb (existsb (eq_kername (fst e)) finite)
+             (existsb (eq_kername (snd e)) cofinite)) dep_edges in
+      if andb cf_refs_f f_refs_cf
+      then tmFail ("cannot handle inductive/co-inductive type dependency: " ++
+                   fold_left (fun s kn => s ++ " " ++ snd kn) cofinite "(CoInductive)" ++
+                   " <-> " ++
+                   fold_left (fun s kn => s ++ " " ++ snd kn) finite "(Inductive)")
+      else tmReturn tt
+    end)
+  orig_groups tt ;;
+  (* Split groups that mix Finite and CoFinite types: Rocq forbids mixed
+     mutual blocks, and a group whose first member is Finite would silently
+     make a CoInductive type (e.g. stream') appear as Inductive. *)
+  let groups :=
+    flat_map (fun grp =>
+      let cofinite := filter (fun kn =>
+        match find (fun p => eq_kername (fst p) kn) type_minds with
+        | Some (_, m) => match m.(ind_finite) with CoFinite => true | _ => false end
+        | None        => false
+        end) grp in
+      let finite := filter (fun kn =>
+        negb (existsb (eq_kername kn) cofinite)) grp in
+      match cofinite, finite with
+      | [], _ | _, [] => [grp]
+      | _,  _         => [cofinite; finite]
+      end) orig_groups in
   let sorted_groups :=
     snd (fold_left (fun acc kn =>
       let seen   := fst acc in
@@ -1110,7 +1155,10 @@ Polymorphic Definition preprocess_coind_types
       (* Build a corrected app_kn_mapping for this group: replace any pre-mapping entry
          whose target spec inductive is a group member with the correct block inductive.
          This ensures extra constructors reference, e.g., {mind:block_kn,ind:2} for
-         listnat' rather than the stale standalone placeholder {mind:(mp,"listnat'"),ind:0}. *)
+         listnat' rather than the stale standalone placeholder {mind:(mp,"listnat'"),ind:0}.
+         For spec types outside this group, use [acc] (already-declared actual mappings)
+         rather than [pre_ind_mapping], since [pre_ind_mapping] carries stale knames when
+         a previously-declared group was combined under a different block_kn. *)
       let grp_app_kn_mapping :=
         flat_map (fun e =>
           let head_kn   := fst (fst e) in
@@ -1119,8 +1167,8 @@ Polymorphic Definition preprocess_coind_types
           match find (fun p => eq_kername (fst p) spec_kn) group_ind_mapping with
           | Some (_, grp_ind) => [((head_kn, arg_kns_e), grp_ind)]
           | None =>
-            match find (fun p => eq_kername (fst p) spec_kn) pre_ind_mapping with
-            | Some (_, pre_ind) => [((head_kn, arg_kns_e), pre_ind)]
+            match find (fun p => eq_kername (fst p) spec_kn) acc with
+            | Some (_, acc_ind) => [((head_kn, arg_kns_e), acc_ind)]
             | None => []
             end
           end)
@@ -1135,11 +1183,14 @@ Polymorphic Definition preprocess_coind_types
           | Some (_, old_mind_i) =>
             let pre_new_ind_i :=
               {| inductive_mind := block_kn; inductive_ind := block_body_offset |} in
-            (* ext: other group members at correct block indices + types outside this group *)
+            (* ext: other group members at correct block indices + types outside this group.
+               Use [acc] (already-declared actual inds) for external types so that we get
+               the real block kname ({mind:"bool'",ind:1} for nat') rather than the stale
+               pre_ind_mapping placeholder ({mind:"nat'",ind:0}). *)
             let ext_i :=
               List.app
                 (filter (fun q => negb (eq_kername (fst q) kn_i)) group_ind_mapping)
-                (filter (fun q => negb (existsb (eq_kername (fst q)) grp)) pre_ind_mapping) in
+                (filter (fun q => negb (existsb (eq_kername (fst q)) grp)) acc) in
             let m := make_lifted_mind old_mind_i kn_i pre_new_ind_i ext_i
                        grp_app_kn_mapping spec_kn_pairs modes_with_idx
                        block_n_bodies block_body_offset in
@@ -1652,7 +1703,7 @@ Polymorphic Definition lift_coinductive_relation
 
 
 Unset Universe Checking.
-(*
+
 MetaRocq Run (lift_coinductive_relation "Integrate"
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
@@ -1660,23 +1711,53 @@ MetaRocq Run (lift_coinductive_relation "Integrate"
                 ("isZero",    ([0],   [1]));
                 ("Len",       ([0],   [1;2]))]).
 Set Universe Checking.
-Print Len'.
 
-Print stream'. Print nat'. Print bool'.
-Print Integrate'. Print addStm'. Print addNat'.
-Print isZero'. Print Len'.
-*)
 
-MetaRocq Run (lift_coinductive_relation "Len"
-               [
-                ("isZero",    ([0],   [1]));
-                ("Len",       ([0],   [1;2]))]).
-                
-                
-Print listnat'. 
-Print Len'.
-Print isZero'. 
+Parameter IntegrateAn1fnSymb : stream -> stream.
+Parameter addStmAn2fnSymb : nat -> stream -> stream.
+Parameter addNatAn2fnSymb : nat -> nat -> nat.
+Parameter isZeroAn1fnSymb : bool -> nat.
+Parameter LenAn2fnSymb : list nat -> nat.
 
+Parameter LenAn1fnSymb : list nat -> list nat. 
+
+Print nat'.
+
+
+
+Definition boolLift (b : bool) : bool' :=
+match b with
+| true => true'
+| false => false'
+end.
+
+Fixpoint natLift (n : nat) : nat' :=
+match n with
+| 0 => O'
+| S m => S' (natLift m)
+end.
+
+Fixpoint listnatLift (l : list nat) : listnat' :=
+match l with
+| [] => listnat_nil'
+| v0 :: l' => listnat_cons' (natLift v0) (listnatLift l')
+end.
+Print stream'.
+
+CoFixpoint streamLift (s : stream) : stream' :=
+match s with
+| nil => nil'
+| Seq v0 v1 => Seq' (natLift v0) (streamLift v1)
+end.
+
+Print stream.
+
+
+
+
+
+
+ 
 
 
         
