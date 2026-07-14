@@ -2281,6 +2281,262 @@ Polymorphic Fixpoint generate_push_fns
     generate_push_fns rest all_map app_kn_map cur_mp)))
   end.
 
+(* ------------------------------------------------------------------ *)
+(** ** InputLift function generation                                  *)
+(* ------------------------------------------------------------------ *)
+
+(** Given an original type term, return [(lifted_type, Some lift_fn)] if
+    the type is tracked in [type_map]/[app_kn_map], or [(t, None)] if not. *)
+Definition classify_in_type
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    (cur_mp     : modpath)
+    (t          : term)
+    : term * option term :=
+  match t with
+  | tInd ind _ =>
+    let kn := inductive_mind ind in
+    match find (fun e => eq_kername (fst e) kn) type_map with
+    | Some (old_kn, new_ind) =>
+      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Lift") []))
+    | None => (t, None)
+    end
+  | tApp (tInd ind _) args =>
+    let kn      := inductive_mind ind in
+    let arg_kns := List.concat (List.map (fun a =>
+      match a with tInd i _ => [inductive_mind i] | _ => [] end) args) in
+    let found :=
+      find (fun e =>
+              andb (eq_kername (fst (fst e)) kn)
+                   (andb (Nat.eqb #|arg_kns| #|snd (fst e)|)
+                         (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                                  (combine arg_kns (snd (fst e))))))
+           app_kn_map in
+    match found with
+    | Some (_, new_ind) =>
+      match find (fun e =>
+                    andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                         (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+                 type_map with
+      | Some (old_kn, _) =>
+        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Lift") []))
+      | None => (t, None)
+      end
+    | None => (t, None)
+    end
+  | _ => (t, None)
+  end.
+
+(** Build the raw term for [<rel_name>inputLift]:
+      fun inp => match inp with
+                 | Success v => Success lifted_out_type (apply lifts to v)
+                 | _         => NoMatch lifted_out_type
+                 end
+    [in_types]     : original types at input positions (from original relation's ind_type)
+    [lifted_types] : corresponding lifted types
+    [lift_fns]     : [Some fn] to apply, or [None] for identity, per input *)
+Definition make_inputLift_term
+    (prod_kn      : kername)
+    (anim_res_kn  : kername)
+    (in_types     : list term)
+    (lifted_types : list term)
+    (lift_fns     : list (option term))
+    : term :=
+  let anim_res_ind  := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
+  let anon_b        := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let in_type       := match in_types     with [t] => t | _ => make_prod_type prod_kn in_types     end in
+  let lifted_type   := match lifted_types with [t] => t | _ => make_prod_type prod_kn lifted_types end in
+  let anim_in_type  := tApp (tInd anim_res_ind []) [in_type] in
+  let anim_out_type := tApp (tInd anim_res_ind []) [lifted_type] in
+  let n_in          := List.length in_types in
+  let no_match_body := tApp (tConstruct anim_res_ind 2 []) [lifted_type] in
+  (* Apply each lift function (or identity) to the corresponding input variable *)
+  let lifted_vals :=
+    mapi (fun i lf =>
+      match lf with
+      | Some fn => tApp fn [input_var i n_in]
+      | None    => input_var i n_in
+      end)
+    lift_fns in
+  let lifted_val    := build_pair_term prod_kn lifted_types lifted_vals in
+  let success_inner := tApp (tConstruct anim_res_ind 1 []) [lifted_type; lifted_val] in
+  (* For multiple inputs, destructure the nested pair before applying lifts *)
+  let success_body  :=
+    match in_types with
+    | [] | [_] => success_inner
+    | _        => build_nested_cases prod_kn in_types anim_out_type success_inner
+    end in
+  let case_expr :=
+    tCase
+      {| ci_ind := anim_res_ind; ci_npar := 1; ci_relevance := Relevant |}
+      {| puinst := []; pparams := [in_type]; pcontext := [anon_b]; preturn := anim_out_type |}
+      (tRel 0)
+      [ {| bcontext := []; bbody := no_match_body |}         (* FuelError *)
+      ; {| bcontext := [anon_b]; bbody := success_body |}    (* Success v *)
+      ; {| bcontext := []; bbody := no_match_body |} ]       (* NoMatch *)
+  in
+  tLambda anon_b anim_in_type case_expr.
+
+(** Declare [<rel_name>inputLift] for every entry in [kn_mode_list]. *)
+Polymorphic Fixpoint generate_inputLift_fns
+    (todo        : list (kername * (string * (list nat * list nat))))
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    (prod_kn     : kername)
+    (anim_res_kn : kername)
+    (cur_mp      : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let block_kn := fst entry in
+    let rel_name := fst (snd entry) in
+    let in_pos   := fst (snd (snd entry)) in
+    let out_pos  := snd (snd (snd entry)) in
+    tmBind (tmQuoteInductive block_kn) (fun orig_mind =>
+    match find (fun ob => String.eqb ob.(ind_name) rel_name) orig_mind.(ind_bodies) with
+    | None => tmFail ("generate_inputLift_fns: cannot find body " ++ rel_name)
+    | Some oib =>
+      let n_params   := orig_mind.(ind_npars) in
+      let n_total    := List.length in_pos + List.length out_pos in
+      let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
+      let in_types   := List.map (fun p => nth p all_types (tVar "?")) in_pos in
+      let classified := List.map (classify_in_type type_map app_kn_map cur_mp) in_types in
+      let lifted_types := List.map fst classified in
+      let lift_fns     := List.map snd classified in
+      let fn_term := make_inputLift_term prod_kn anim_res_kn in_types lifted_types lift_fns in
+      tmBind (tmMkDefinition (rel_name ++ "inputLift") fn_term) (fun _ =>
+      generate_inputLift_fns rest type_map app_kn_map prod_kn anim_res_kn cur_mp)
+    end)
+  end.
+
+(* ------------------------------------------------------------------ *)
+(** ** OutputPush function generation                                  *)
+(* ------------------------------------------------------------------ *)
+
+(** Given an original output type term, return [(lifted_type, Some push_fn)] if
+    the type is tracked in [type_map]/[app_kn_map], or [(t, None)] if not. *)
+Definition classify_out_type
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    (cur_mp     : modpath)
+    (t          : term)
+    : term * option term :=
+  match t with
+  | tInd ind _ =>
+    let kn := inductive_mind ind in
+    match find (fun e => eq_kername (fst e) kn) type_map with
+    | Some (old_kn, new_ind) =>
+      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
+    | None => (t, None)
+    end
+  | tApp (tInd ind _) args =>
+    let kn      := inductive_mind ind in
+    let arg_kns := List.concat (List.map (fun a =>
+      match a with tInd i _ => [inductive_mind i] | _ => [] end) args) in
+    let found :=
+      find (fun e =>
+              andb (eq_kername (fst (fst e)) kn)
+                   (andb (Nat.eqb #|arg_kns| #|snd (fst e)|)
+                         (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                                  (combine arg_kns (snd (fst e))))))
+           app_kn_map in
+    match found with
+    | Some (_, new_ind) =>
+      match find (fun e =>
+                    andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                         (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+                 type_map with
+      | Some (old_kn, _) =>
+        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
+      | None => (t, None)
+      end
+    | None => (t, None)
+    end
+  | _ => (t, None)
+  end.
+
+(** Build the raw term for [<rel_name>outputPush]:
+      fun out => match out with
+                 | Success v => Success orig_out_type (apply pushes to v)
+                 | _         => NoMatch orig_out_type
+                 end
+    [orig_types]   : original types at output positions (from original relation's ind_type)
+    [lifted_types] : corresponding lifted types (input to this function)
+    [push_fns]     : [Some fn] to apply, or [None] for identity, per output *)
+Definition make_outputPush_term
+    (prod_kn      : kername)
+    (anim_res_kn  : kername)
+    (orig_types   : list term)
+    (lifted_types : list term)
+    (push_fns     : list (option term))
+    : term :=
+  let anim_res_ind  := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
+  let anon_b        := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let lifted_type   := match lifted_types with [t] => t | _ => make_prod_type prod_kn lifted_types end in
+  let orig_type     := match orig_types   with [t] => t | _ => make_prod_type prod_kn orig_types   end in
+  let anim_in_type  := tApp (tInd anim_res_ind []) [lifted_type] in
+  let anim_out_type := tApp (tInd anim_res_ind []) [orig_type] in
+  let n_in          := List.length lifted_types in
+  let no_match_body := tApp (tConstruct anim_res_ind 2 []) [orig_type] in
+  let pushed_vals :=
+    mapi (fun i pf =>
+      match pf with
+      | Some fn => tApp fn [input_var i n_in]
+      | None    => input_var i n_in
+      end)
+    push_fns in
+  let pushed_val    := build_pair_term prod_kn orig_types pushed_vals in
+  let success_inner := tApp (tConstruct anim_res_ind 1 []) [orig_type; pushed_val] in
+  let success_body  :=
+    match lifted_types with
+    | [] | [_] => success_inner
+    | _        => build_nested_cases prod_kn lifted_types anim_out_type success_inner
+    end in
+  let case_expr :=
+    tCase
+      {| ci_ind := anim_res_ind; ci_npar := 1; ci_relevance := Relevant |}
+      {| puinst := []; pparams := [lifted_type]; pcontext := [anon_b]; preturn := anim_out_type |}
+      (tRel 0)
+      [ {| bcontext := []; bbody := no_match_body |}
+      ; {| bcontext := [anon_b]; bbody := success_body |}
+      ; {| bcontext := []; bbody := no_match_body |} ]
+  in
+  tLambda anon_b anim_in_type case_expr.
+
+(** Declare [<rel_name>outputPush] for every entry in [kn_mode_list]. *)
+Polymorphic Fixpoint generate_outputPush_fns
+    (todo        : list (kername * (string * (list nat * list nat))))
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    (prod_kn     : kername)
+    (anim_res_kn : kername)
+    (cur_mp      : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let block_kn := fst entry in
+    let rel_name := fst (snd entry) in
+    let in_pos   := fst (snd (snd entry)) in
+    let out_pos  := snd (snd (snd entry)) in
+    tmBind (tmQuoteInductive block_kn) (fun orig_mind =>
+    match find (fun ob => String.eqb ob.(ind_name) rel_name) orig_mind.(ind_bodies) with
+    | None => tmFail ("generate_outputPush_fns: cannot find body " ++ rel_name)
+    | Some oib =>
+      let n_params   := orig_mind.(ind_npars) in
+      let n_total    := List.length in_pos + List.length out_pos in
+      let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
+      let orig_types := List.map (fun p => nth p all_types (tVar "?")) out_pos in
+      let classified   := List.map (classify_out_type type_map app_kn_map cur_mp) orig_types in
+      let lifted_types := List.map fst classified in
+      let push_fns     := List.map snd classified in
+      let fn_term := make_outputPush_term prod_kn anim_res_kn orig_types lifted_types push_fns in
+      tmBind (tmMkDefinition (rel_name ++ "outputPush") fn_term) (fun _ =>
+      generate_outputPush_fns rest type_map app_kn_map prod_kn anim_res_kn cur_mp)
+    end)
+  end.
+
 (** Resolve string names and lift a mutual relation block.
     [rel_nm]      : short name of the relation block (e.g. "Integrate").
     [type_nm_map] : pairs of (old-type-name, lifted-type-name).
@@ -2356,12 +2612,20 @@ Polymorphic Definition lift_coinductive_relation
       lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
       unique_block_kns tt ;;
     prod_refs <- tmLocate "prod" ;;
-    match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs with
-    | Some (IndRef prod_ind) =>
-      tmBind (generate_rest_fns kn_mode_list cur_mp (inductive_mind prod_ind)) (fun _ =>
+    anim_refs <- tmLocate "animation_result" ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
+          find (fun g => match g with IndRef _ => true | _ => false end) anim_refs with
+    | Some (IndRef prod_ind), Some (IndRef anim_ind) =>
+      let prod_kn     := inductive_mind prod_ind in
+      let anim_res_kn := inductive_mind anim_ind in
+      tmBind (generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
+                                     prod_kn anim_res_kn cur_mp) (fun _ =>
+      tmBind (generate_rest_fns kn_mode_list cur_mp prod_kn) (fun _ =>
       tmBind (generate_push_params type_mapping type_mapping app_kn_mapping) (fun _ =>
-      generate_push_fns type_mapping type_mapping app_kn_mapping cur_mp))
-    | _ => @tmFail unit "lift_coinductive_relation: cannot locate prod"
+      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping cur_mp) (fun _ =>
+      generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping
+                              prod_kn anim_res_kn cur_mp))))
+    | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
   
@@ -2431,7 +2695,17 @@ Set Universe Checking.
 Print listnatPush.
 Print streamPush.
 Print nat'.
- 
+Print IntegrateinputLift.
+Print LeninputLift.
+Print addStminputLift.
+Print tripleIninputLift.
+Print IntegrateoutputPush.
+Print addStmoutputPush.
+Print addNatoutputPush.
+Print isZerooutputPush.
+Print tripleInoutputPush.
+Print LenoutputPush.
+
 
 
 
