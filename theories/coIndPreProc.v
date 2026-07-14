@@ -2102,6 +2102,185 @@ Polymorphic Fixpoint generate_push_params
     generate_push_params rest type_map app_kn_map)))
   end.
 
+(* ------------------------------------------------------------------ *)
+(** ** Push function generation                                        *)
+(* ------------------------------------------------------------------ *)
+
+(** Classify a constructor arg type from a LIFTED inductive's constructor.
+    [new_kn]   : the mutual block kername (inductive_mind new_ind)
+    [n_block]  : number of bodies in that block
+    [body_idx] : index of the current body (inductive_ind new_ind)
+    In a block with [n_block] bodies, body [j]'s self-ref at arg depth [d]
+    is [tRel(d + n_block - 1 - j)].  We invert this to identify block refs.
+    Returns:
+    - [Some None]       : self-reference → apply the push fixpoint recursively
+    - [Some (Some kn)]  : cross-block ref with original kername [kn] → [kn ++ "Push"]
+    - [None]            : unrelated type → pass through as identity *)
+Definition push_arg_class
+    (new_kn   : kername)
+    (n_block  : nat)
+    (body_idx : nat)
+    (type_map : list (kername * inductive))
+    (n_args   : nat)
+    (snoc_i   : nat)
+    (t        : term) : option (option kername) :=
+  let depth := n_args - 1 - snoc_i in
+  match t with
+  | tRel n =>
+    if andb (Nat.leb depth n) (Nat.ltb (n - depth) n_block) then
+      let j := n_block - 1 - (n - depth) in
+      if Nat.eqb j body_idx then Some None
+      else
+        match find (fun e =>
+                      andb (eq_kername (inductive_mind (snd e)) new_kn)
+                           (Nat.eqb (inductive_ind (snd e)) j))
+                   type_map with
+        | Some (old_kn, _) => Some (Some old_kn)
+        | None             => None
+        end
+    else None
+  | tInd ind _ =>
+    let kn := inductive_mind ind in
+    let j  := inductive_ind ind in
+    if andb (eq_kername kn new_kn) (Nat.eqb j body_idx) then Some None
+    else
+      match find (fun e =>
+                    andb (eq_kername (inductive_mind (snd e)) kn)
+                         (Nat.eqb (inductive_ind (snd e)) j))
+                 type_map with
+      | Some (old_kn, _) => Some (Some old_kn)
+      | None             => None
+      end
+  | _ => None
+  end.
+
+(** Build the [def term] entry for the push function of [old_kn] mapping
+    the lifted inductive [new_ind] (body [new_oib] in a block with [n_block]
+    bodies) back to the original type.
+    For parametric specialisations (e.g. [listnat] is [list nat]), the return
+    type and constructor heads use the parametric head ([list]) with params
+    applied, mirroring [make_lift_def]'s [orig_form] logic.
+    De Bruijn inside a branch with [n_args] args:
+      tRel snoc_i     = constructor arg at snoc position [snoc_i]
+      tRel n_args     = outer lambda variable (the scrutinee, unused)
+      tRel (n_args+1) = the fix/cofix function itself (self-push) *)
+Definition make_push_def
+    (old_kn      : kername)
+    (new_ind     : inductive)
+    (n_block     : nat)
+    (new_oib     : one_inductive_body)
+    (n_old_ctors : nat)
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    (cur_mp      : modpath)
+    : def term :=
+  (* Detect parametric specialisation: is new_ind in app_kn_map? *)
+  let orig_form :=
+    match find (fun e =>
+                  andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                       (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+               app_kn_map with
+    | Some e => Some (fst (fst e), snd (fst e))
+    | None   => None
+    end in
+  let head_ind :=
+    match orig_form with
+    | None              => {| inductive_mind := old_kn; inductive_ind := 0 |}
+    | Some (head_kn, _) => {| inductive_mind := head_kn; inductive_ind := 0 |}
+    end in
+  let par_terms :=
+    match orig_form with
+    | None              => []
+    | Some (_, arg_kns) =>
+      List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} []) arg_kns
+    end in
+  let old_type :=
+    match par_terms with
+    | [] => tInd head_ind []
+    | _  => tApp (tInd head_ind []) par_terms
+    end in
+  let new_type := tInd new_ind [] in
+  let type_nm  := snd old_kn in
+  let new_kn   := inductive_mind new_ind in
+  let body_idx := inductive_ind new_ind in
+  let branches :=
+    mapi (fun ctor_idx ctor =>
+      let n_args := ctor.(cstr_arity) in
+      let bbody :=
+        if Nat.ltb ctor_idx n_old_ctors then
+          let pushed_snoc :=
+            List.map (fun snoc_i =>
+              let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                           | Some d => d.(decl_type) | None => tVar "?" end in
+              match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+              | Some None      => tApp (tRel (n_args + 1)) [tRel snoc_i]
+              | Some (Some kn) => tApp (tConst (cur_mp, snd kn ++ "Push") []) [tRel snoc_i]
+              | None           => tRel snoc_i
+              end)
+            (seq 0 n_args) in
+          let pushed_args := List.rev pushed_snoc in
+          (* For parametric types, type params precede value args in tApp *)
+          let all_args := List.app par_terms pushed_args in
+          match all_args with
+          | [] => tConstruct head_ind ctor_idx []
+          | _  => tApp (tConstruct head_ind ctor_idx []) all_args
+          end
+        else
+          tConst (cur_mp, "undefined" ++ type_nm) []
+      in
+      {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
+         bbody    := bbody |})
+    new_oib.(ind_ctors) in
+  let pred  := {| puinst := []; pparams := [];
+                  pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
+                  preturn  := old_type |} in
+  let ci    := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
+  let dbody :=
+    tLambda {| binder_name := nAnon; binder_relevance := Relevant |} new_type
+      (tCase ci pred (tRel 0) branches) in
+  {| dname := {| binder_name := nNamed (type_nm ++ "Push");
+                 binder_relevance := Relevant |};
+     dtype  := tProd {| binder_name := nAnon; binder_relevance := Relevant |}
+                     new_type old_type;
+     dbody  := dbody;
+     rarg   := 0 |}.
+
+(** Declare a push function for every type in [todo].  Inductive types get
+    [tFix]; coinductive types get [tCoFix].  Each function maps the lifted
+    constructor back to the original, and extra constructors to [undefined<T>]. *)
+Polymorphic Fixpoint generate_push_fns
+    (todo        : list (kername * inductive))
+    (all_map     : list (kername * inductive))
+    (app_kn_map  : list (kername * list kername * inductive))
+    (cur_mp      : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let old_kn  := fst entry in
+    let new_ind := snd entry in
+    tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+    tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+    tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+            | None =>
+              tmFail ("generate_push_fns: no body for " ++ snd old_kn)
+            | Some new_oib =>
+              let is_coind :=
+                match old_mind.(ind_finite) with CoFinite => true | _ => false end in
+              let n_old_ctors :=
+                match nth_error old_mind.(ind_bodies) 0 with
+                | Some ob => List.length ob.(ind_ctors)
+                | None    => 0
+                end in
+              let n_block := List.length new_mind.(ind_bodies) in
+              let d := make_push_def old_kn new_ind n_block new_oib n_old_ctors
+                                     all_map app_kn_map cur_mp in
+              let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
+              tmMkDefinition (snd old_kn ++ "Push") fn_term
+            end) (fun _ =>
+    generate_push_fns rest all_map app_kn_map cur_mp)))
+  end.
+
 (** Resolve string names and lift a mutual relation block.
     [rel_nm]      : short name of the relation block (e.g. "Integrate").
     [type_nm_map] : pairs of (old-type-name, lifted-type-name).
@@ -2180,7 +2359,8 @@ Polymorphic Definition lift_coinductive_relation
     match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs with
     | Some (IndRef prod_ind) =>
       tmBind (generate_rest_fns kn_mode_list cur_mp (inductive_mind prod_ind)) (fun _ =>
-      generate_push_params type_mapping type_mapping app_kn_mapping)
+      tmBind (generate_push_params type_mapping type_mapping app_kn_mapping) (fun _ =>
+      generate_push_fns type_mapping type_mapping app_kn_mapping cur_mp))
     | _ => @tmFail unit "lift_coinductive_relation: cannot locate prod"
     end
   end.
@@ -2247,8 +2427,25 @@ MetaRocq Run (lift_coinductive_relation "Integrate"
                 ("Len",       ([0],   [1;2]))]).
               
 Set Universe Checking.
+
+Print listnatPush.
+Print streamPush.
 Print nat'.
-Parameter natPush  : nat' -> nat.
+ 
+
+
+
+
+(*
+CoFixpoint streamPushTransparent (s' : stream')  : stream :=
+match s' with
+ | nil' => nil
+ | Seq' n s => Seq (natPush n) (streamPushTransparent s)
+ | IntegrateAn1 s => IntegrateAn1fnSymb (streamPushSymbol s)
+ | addStmAn2 n s => addStmAn2fnSymb (natPush n) (streamPushSymbol s)
+end. 
+*)
+
 (*
 Fixpoint streamPushTransparent (s' : stream') (n : nat) : stream :=
 match n with 
@@ -2261,58 +2458,6 @@ match n with
          end 
 end. 
 *)
-
-CoFixpoint streamPush (s' : stream')  : stream :=
-match s' with
- | nil' => nil
- | Seq' n s => Seq (natPush n) (streamPush s)
- | IntegrateAn1 s => IntegrateAn1fnSymb (streamPushSymbol s)
- | addStmAn2 n s => addStmAn2fnSymb (natPush n) (streamPushSymbol s)
-end. 
-
-
-CoFixpoint streamPushOpaque (s' : stream') : stream :=
- match s' with
- | nil' => nil
- | Seq' n s => Seq (natPush n) (streamPushOpaque s)
- | IntegrateAn1 s => undefinedstream
- | addStmAn2 n s => undefinedstream
- end.         
- 
-
-Print nat'.
-
-
-Print listnatLift.
-Print streamLift.
-Print natLift.
-Print boolLift.
-Print stream'. 
-
-Print Integrate'.
-Print Len'.
-Print Integrate'Rest.
-Print addStm'Rest.
-Print addNat'Rest.
-Print isZero'Rest.
-Print Len'Rest.
-Print tripleIn'Rest.
-(*
-MetaRocq Run (animate_inductive tripleIn <?tripleIn?> [("tripleIn", ([0;1;2], [3;4]))] 200).
-*)
-(* Rest functions and fnSymb parameters are now auto-generated. *)
-
-Print nat'.
-
-
-
-Print stream'.
-Print stream.
-
-
-
-
-
 
  
 
