@@ -2088,18 +2088,18 @@ Polymorphic Fixpoint generate_push_params
     tmBind (tmQuoteInductive old_kn) (fun old_mind =>
     let is_coind :=
       match old_mind.(ind_finite) with CoFinite => true | _ => false end in
+    let type_nm  := snd old_kn in
+    let old_type := subst_ind_to_old type_map app_kn_map new_ind in
+    let new_type := tInd new_ind [] in
+    tmBind (tmMkParameter ("undefined" ++ type_nm) old_type) (fun _ =>
     tmBind (if negb is_coind then tmReturn tt
             else
-              let type_nm  := snd old_kn in
-              let old_type := subst_ind_to_old type_map app_kn_map new_ind in
-              let new_type := tInd new_ind [] in
               let push_ty  :=
                 tProd {| binder_name := nAnon; binder_relevance := Relevant |}
                       new_type old_type in
-              tmBind (tmMkParameter ("undefined" ++ type_nm) old_type) (fun _ =>
-              tmMkParameter (type_nm ++ "PushSymbol") push_ty))
+              tmMkParameter (type_nm ++ "PushSymbol") push_ty)
     (fun _ =>
-    generate_push_params rest type_map app_kn_map))
+    generate_push_params rest type_map app_kn_map)))
   end.
 
 (** Resolve string names and lift a mutual relation block.
