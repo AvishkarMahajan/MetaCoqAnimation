@@ -2750,7 +2750,7 @@ Definition animate_coinductive_with_lift
   | _, None  => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
   | Some _, _ => tmFail ("animate_coinductive_with_lift: unexpected ref for '" ++ rel_nm ++ "'")
   end.
-
+(*
 (* ================================================================== *)
 (** ** Example: all relations (single mutual block + separate blocks)  *)
 (*                                                                      *)
@@ -2810,10 +2810,8 @@ Unset Universe Checking.
 MetaRocq Run (animate_coinductive_with_lift "Integrate"
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
-                ("addNat",    ([0;1], [2]));
-                ("isZero",    ([0],   [1]));
-                ("tripleIn",  ([0;1;2], [3;4]));
-                ("Len",       ([0],   [1;2]))]
+                ("addNat",    ([0;1], [2]))
+                ]
                100).
 
 
@@ -2823,39 +2821,17 @@ MetaRocq Run (animate_coinductive_with_lift "Integrate"
 
 Set Universe Checking.
 
-Fixpoint streamPush1 (d : nat) (s' : stream')  : stream :=
-match d with
-| 0 => undefinedstream
-| S m => match s' with
-         | nil' => nil
-         | Seq' n s => Seq (natPush m n) (streamPush1 m s)
-         | IntegrateAn1 s => undefinedstream
-         | addStmAn2 n s => undefinedstream
-         end
-end.
 
-Print listnatPush.
-Print streamPush.
-Print natPush.
-Print IntegrateinputLift.
-Print LeninputLift.
-Print addStminputLift.
-Print tripleIninputLift.
-Print IntegrateoutputPush.
-Print addStmoutputPush.
-Print addNatoutputPush.
-Print isZerooutputPush.
-Print tripleInoutputPush.
-Print LenoutputPush.
-Print Integrate'AnimatedTopFn.
+
+
 Print IntegrateAnimatedTopFn.
 
 CoFixpoint from (n : nat) : stream :=
 Seq n (from (S n)).
 
-Compute IntegrateAnimatedTopFn 18 18 (Success stream (from 0)). 
+Compute IntegrateAnimatedTopFn 25 (Success stream (from 0)). 
 
-
+*)
 
 
 
