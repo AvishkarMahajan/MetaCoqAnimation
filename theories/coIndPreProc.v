@@ -514,8 +514,15 @@ Definition compute_extra_cstrs
               | Some d =>
                 let t := subst_idx_type old_kn self_base ext app_kn_mapping
                            spec_unlifted_kn_map depth d.(decl_type) in
+                let nm' :=
+                  match binder_name d.(decl_name) with
+                  | nNamed _ => d.(decl_name)
+                  | nAnon    =>
+                    {| binder_name     := nNamed ("v" ++ string_of_nat (List.length acc));
+                       binder_relevance := binder_relevance d.(decl_name) |}
+                  end in
                 (S depth, List.app acc
-                   [{| decl_name := d.(decl_name);
+                   [{| decl_name := nm';
                        decl_body := None;
                        decl_type := t |}])
               end)
@@ -1399,8 +1406,15 @@ Definition compute_undefined_cstr
         match nth_error idx_ctx snoc_ip with
         | None => (S (fst da), snd da)
         | Some d =>
+          let nm' :=
+            match binder_name d.(decl_name) with
+            | nNamed _ => d.(decl_name)
+            | nAnon    =>
+              {| binder_name     := nNamed ("v" ++ string_of_nat (List.length (snd da)));
+                 binder_relevance := binder_relevance d.(decl_name) |}
+            end in
           (S (fst da), List.app (snd da)
-            [{| decl_name := d.(decl_name);
+            [{| decl_name := nm';
                 decl_body := None;
                 decl_type :=
                   subst_inds_and_ctors app_kn_mapping type_mapping d.(decl_type) |}])
@@ -2633,6 +2647,82 @@ Polymorphic Definition lift_coinductive_relation
 
 
 (* ================================================================== *)
+(** ** Composite entry point: lift + animate + wrap                   *)
+(* ================================================================== *)
+
+(** Combined entry point that:
+    1. Lifts all relations (and their types) via [lift_coinductive_relation].
+    2. Runs the original [animate_coinductive] on the lifted top relation,
+       using mode names primed to match the lifted body names.
+    3. Builds a composite function named [rel_nm ++ "AnimatedTopFn"] that:
+         fun fuel inp => <rel_nm>outputPush (<rel_nm>'AnimatedTopFn fuel (<rel_nm>inputLift inp))
+       where [inp : animation_result <orig_in_type>]. *)
+Definition animate_coinductive_with_lift
+    (rel_nm : string)
+    (modes  : mode_map)
+    (fuel   : nat)
+    : TemplateMonad unit :=
+  (* Step 1: lift all relations and generate all helper functions *)
+  lift_coinductive_relation rel_nm modes ;;
+  cur_mp <- tmCurrentModPath tt ;;
+  (* Step 2: animate the lifted top relation; use primed names for bodies.
+     We unquote Integrate' (the lifted relation) as the `ind` argument so that
+     tmQuoteRecTransp inside animate_one_pattern sees stream' in termFull.
+     Using the original `ind` (e.g. Integrate) would omit stream' from termFull,
+     causing Array.map2 when the kernel checks a tCase with the wrong branch count. *)
+  let lifted_kn    := (cur_mp, rel_nm ++ "'") in
+  let lifted_modes := List.map (fun me => (fst me ++ "'", snd me)) modes in
+  let lifted_ind_ref := {| inductive_mind := lifted_kn; inductive_ind := 0 |} in
+  lifted_pack <- tmUnquote (tInd lifted_ind_ref []) ;;
+  _ <- animate_coinductive (my_projT2 lifted_pack) lifted_kn lifted_modes fuel ;;
+  (* Step 3: build the composite wrapper using the original top relation's in-type *)
+  refs <- tmLocate rel_nm ;;
+  match find (fun g => match g with IndRef _ => true | _ => false end) refs,
+        find (fun me => String.eqb (fst me) rel_nm) modes with
+  | Some (IndRef top_ind), Some (_, (in_pos, out_pos)) =>
+    top_mind <- tmQuoteInductive (inductive_mind top_ind) ;;
+    match find (fun ob => String.eqb ob.(ind_name) rel_nm) top_mind.(ind_bodies) with
+    | None => tmFail ("animate_coinductive_with_lift: cannot find body " ++ rel_nm)
+    | Some top_oib =>
+      let n_params  := top_mind.(ind_npars) in
+      let n_total   := List.length in_pos + List.length out_pos in
+      let all_types := extract_arg_types n_params n_total top_oib.(ind_type) in
+      prod_refs <- tmLocate "prod" ;;
+      anim_refs <- tmLocate "animation_result" ;;
+      match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
+            find (fun g => match g with IndRef _ => true | _ => false end) anim_refs with
+      | Some (IndRef prod_ind), Some (IndRef anim_ind) =>
+        let prod_kn      := inductive_mind prod_ind in
+        let anim_res_kn  := inductive_mind anim_ind in
+        let anim_res_ind := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
+        let nat_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+        let anon_b  := {| binder_name := nAnon; binder_relevance := Relevant |} in
+        let in_types  := List.map (fun p => nth p all_types (tVar "?")) in_pos in
+        let in_type   := match in_types with [t] => t | _ => make_prod_type prod_kn in_types end in
+        let anim_in_type  := tApp (tInd anim_res_ind []) [in_type] in
+        let inputLift_fn  := tConst (cur_mp, rel_nm ++ "inputLift") [] in
+        let outputPush_fn := tConst (cur_mp, rel_nm ++ "outputPush") [] in
+        let animFn := tConst (cur_mp, rel_nm ++ "'" ++ top_fn_suffix) [] in
+        (* fun (fuel : nat) (inp : animation_result in_type) =>
+               <rel>outputPush (<rel>'AnimatedTopFn fuel (<rel>inputLift inp)) *)
+        let composite :=
+          tLambda anon_b (tInd nat_ind [])
+          (tLambda anon_b anim_in_type
+          (tApp outputPush_fn
+            [tApp animFn
+              [tRel 1;
+               tApp inputLift_fn [tRel 0]]])) in
+        tmMkDefinition (rel_nm ++ top_fn_suffix) composite
+      | _, _ =>
+        tmFail "animate_coinductive_with_lift: cannot locate prod or animation_result"
+      end
+    end
+  | None, _ => tmFail ("animate_coinductive_with_lift: cannot locate '" ++ rel_nm ++ "'")
+  | _, None  => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
+  | Some _, _ => tmFail ("animate_coinductive_with_lift: unexpected ref for '" ++ rel_nm ++ "'")
+  end.
+
+(* ================================================================== *)
 (** ** Example: all relations (single mutual block + separate blocks)  *)
 (*                                                                      *)
 (*  Integrate / addStm / addNat are declared with [with], so they      *)
@@ -2642,7 +2732,6 @@ Polymorphic Definition lift_coinductive_relation
 (* ================================================================== *)
 
 
-Unset Universe Checking.
 
 (** A stream of naturals, with explicit undefined and nil sentinels. *)
 CoInductive stream : Type :=
@@ -2682,16 +2771,40 @@ Inductive Len : list nat -> list nat -> nat -> Prop :=
 Inductive tripleIn : nat -> nat -> bool -> nat -> nat -> Prop :=
 | tInC : forall a b c, tripleIn a b c a b.  
 
-MetaRocq Run (lift_coinductive_relation "Integrate"
+Unset Universe Checking.
+
+
+
+
+                
+
+MetaRocq Run (animate_coinductive_with_lift "Integrate"
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
                 ("addNat",    ([0;1], [2]));
                 ("isZero",    ([0],   [1]));
-                ("tripleIn",       ([0;1;2], [3;4]));
-                ("Len",       ([0],   [1;2]))]).
-              
-Set Universe Checking.
+                ("tripleIn",  ([0;1;2], [3;4]));
+                ("Len",       ([0],   [1;2]))]
+               100).
 
+
+
+
+
+
+Set Universe Checking.
+(*
+Fixpoint streamPush (d : nat) (s' : stream')  : stream :=
+match d with 
+| 0 => undefinedstream
+| S m => match s' with
+         | nil' => nil
+         | Seq' n s => Seq (natPush n) (streamPush m s)
+         | IntegrateAn1 s => undefinedstream
+         | addStmAn2 n s => undefinedstream
+         end 
+end. 
+*)
 Print listnatPush.
 Print streamPush.
 Print nat'.
@@ -2705,6 +2818,8 @@ Print addNatoutputPush.
 Print isZerooutputPush.
 Print tripleInoutputPush.
 Print LenoutputPush.
+Print Integrate'AnimatedTopFn.
+Print IntegrateAnimatedTopFn.
 
 
 
@@ -2720,7 +2835,22 @@ match s' with
 end. 
 *)
 
+
+
 (*
+MetaRocq Run (animate_coinductive_with_lift "Integrate"
+               [("Integrate", ([0],   [1]));
+                ("addStm",    ([0;1], [2]));
+                ("addNat",    ([0;1], [2]))
+                ] 300).
+
+Print IntegrateAnimatedTopFn.
+Set Universe Checking.
+CoFixpoint from (n : nat) : stream :=
+Seq n (from (S n)).
+CoFixpoint from' (n' : nat') : stream' :=
+Seq' n' (from' (S' n')).
+
 Fixpoint streamPushTransparent (s' : stream') (n : nat) : stream :=
 match n with 
 | 0 => streamPushSymbol s'
@@ -2731,9 +2861,55 @@ match n with
          | addStmAn2 n s => addStmAn2fnSymb (natPush n) (streamPushTransparent s m)
          end 
 end. 
-*)
 
- 
+Fixpoint streamPushTransparent2 (s' : stream') (n : nat) : stream :=
+match n with 
+| 0 => undefinedstream
+| S m => match s' with
+         | nil' => nil
+         | Seq' n s => Seq (natPush n) (streamPushTransparent2 s m)
+         | IntegrateAn1 s => undefinedstream
+         | addStmAn2 n s => undefinedstream
+         end 
+end. 
+
+Print IntegrateAnimatedTopFn.
+MetaRocq Run (res <- tmEval all (IntegrateAnimatedTopFn 10 (Success stream (from O )));; tmDefinition "res" res).
+
+Compute streamPushTransparent2 (
+            (Seq' O'
+               (Seq' (S' O')
+                  (Seq' (S' (S' (S' O')))
+                     (Seq' (addNatAn2 (S' O') (addNatAn2 (S' (S' O')) (S' (S' (S' O')))))
+                        (addStmAn2 O'
+                           (addStmAn2 (S' O')
+                              (addStmAn2 (S' (S' O'))
+                                 (addStmAn2 (S' (S' (S' O')))
+                                    (IntegrateAn1
+                                       ((cofix Fcofix (x : stream) : stream' :=
+                                           match x with
+                                           | nil => nil'
+                                           | Seq x0 x1 =>
+                                               Seq'
+                                                 ((fix Ffix (x2 : nat) : nat' :=
+                                                     match x2 with
+                                                     | 0 => O'
+                                                     | S x3 => S' (Ffix x3)
+                                                     end)
+                                                    x0)
+                                                 (Fcofix x1)
+                                           end)
+                                          ((cofix Fcofix (x : nat) : stream := Seq x (Fcofix (S x))) 4)))))))))))) 10.
+   
+
+
+
+
+
+
+Print res.
+
+*) 
 
 
         

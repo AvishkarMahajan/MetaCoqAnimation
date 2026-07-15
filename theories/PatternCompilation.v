@@ -382,6 +382,29 @@ Fixpoint lookup_arity_by_name (type_nm : string) (r : list (string * list nat)) 
 Definition get_arity_list (type_nm : string) (muts : list mutual_inductive_body) : list nat :=
  lookup_arity_by_name type_nm (collect_cstr_arities muts).
 
+(** Look up constructor arities using the mutual block's kname ident and body index.
+    For single-body inductives (inductive_ind=0) the kname ident equals ind_name, so this
+    subsumes get_arity_list.  For mutual-block bodies (inductive_ind>0) the kname ident is
+    the FIRST body's ind_name; we index into ind_bodies with ind_idx to get the right arities. *)
+Fixpoint lookup_body_arities_by_ind
+    (kname_ident : string) (ind_idx : nat)
+    (muts : list mutual_inductive_body) : list nat :=
+  match muts with
+  | [] => []
+  | h :: t =>
+    match ind_bodies h with
+    | [] => lookup_body_arities_by_ind kname_ident ind_idx t
+    | first_body :: _ =>
+      if String.eqb (ind_name first_body) kname_ident then
+        match nth_error (ind_bodies h) ind_idx with
+        | Some body => map cstr_arity (ind_ctors body)
+        | None => []
+        end
+      else
+        lookup_body_arities_by_ind kname_ident ind_idx t
+    end
+  end.
+
 (** Create a branch that returns None for a non-matching constructor case. *)
 Definition mk_option_none_branch (n : nat) : branch term :=
   mk_wildcard_branch n (tApp
@@ -411,9 +434,9 @@ Definition mk_branch_list
   (s : resolved_var)
   (l : list mutual_inductive_body)
   (t : named_term) : option (list (branch term)) :=
-  match get_type_name s, cstr_match_index s return option (list (branch term)) with
-  | Some tn, Some index =>
-    let cs_arity := get_arity_list tn l in
+  match get_type s, cstr_match_index s return option (list (branch term)) with
+  | Some ind, Some index =>
+    let cs_arity := lookup_body_arities_by_ind (snd (inductive_mind ind)) (inductive_ind ind) l in
     let branches := app (app (map mk_option_none_branch (firstn index cs_arity))
       [mk_option_some_branch (rev s.(rv_bound)) t])
       (map mk_option_none_branch (skipn (S index) cs_arity)) in
@@ -504,9 +527,9 @@ Definition mk_branch_list_wild
   (l : list mutual_inductive_body)
   (t : named_term) (wildcard : named_term)
   : option (list (branch term)) :=
-  match typeConstrPatMatch.get_type_name s, typeConstrPatMatch.cstr_match_index s with
-  | Some tn, Some index =>
-    let cs_arity := typeConstrPatMatch.get_arity_list tn l in
+  match typeConstrPatMatch.get_type s, typeConstrPatMatch.cstr_match_index s with
+  | Some ind, Some index =>
+    let cs_arity := typeConstrPatMatch.lookup_body_arities_by_ind (snd (inductive_mind ind)) (inductive_ind ind) l in
     let branches := app (app (map (mk_wildcard_ret_branch wildcard) (firstn index cs_arity))
       [typeConstrPatMatch.mk_option_some_branch (rev s.(rv_bound)) t])
       (map (mk_wildcard_ret_branch wildcard) (skipn (S index) cs_arity)) in
