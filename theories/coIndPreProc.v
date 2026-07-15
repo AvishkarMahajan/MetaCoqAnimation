@@ -2622,7 +2622,6 @@ Polymorphic Definition lift_relation_names
     [modes]  : input/output positions for every body of the mutual block. *)
 Unset Universe Checking.
 Polymorphic Definition lift_coinductive_relation
-    (rel_nm : string)
     (modes  : mode_map)
     : TemplateMonad unit :=
   (* Resolve every mode entry to its mutual-block kname, in order. *)
@@ -2692,63 +2691,58 @@ Set Universe Checking.
            <rel>outputPush depth (<rel>'AnimatedTopFn fuel (<rel>inputLift inp))
     All push functions take a depth argument, so the composite always does too. *)
 Definition animate_coinductive_with_lift
-    (rel_nm : string)
+    (rel_kn : kername)
     (modes  : mode_map)
     (fuel   : nat)
     : TemplateMonad unit :=
-  lift_coinductive_relation rel_nm modes ;;
+  let rel_nm := snd rel_kn in
+  lift_coinductive_relation modes ;;
   cur_mp <- tmCurrentModPath tt ;;
   let lifted_kn      := (cur_mp, rel_nm ++ "'") in
   let lifted_modes   := List.map (fun me => (fst me ++ "'", snd me)) modes in
   let lifted_ind_ref := {| inductive_mind := lifted_kn; inductive_ind := 0 |} in
   lifted_pack <- tmUnquote (tInd lifted_ind_ref []) ;;
   _ <- animate_coinductive (my_projT2 lifted_pack) lifted_kn lifted_modes fuel ;;
-  refs <- tmLocate rel_nm ;;
-  match find (fun g => match g with IndRef _ => true | _ => false end) refs,
-        find (fun me => String.eqb (fst me) rel_nm) modes with
-  | Some (IndRef top_ind), Some (_, (in_pos, out_pos)) =>
-    top_mind <- tmQuoteInductive (inductive_mind top_ind) ;;
-    match find (fun ob => String.eqb ob.(ind_name) rel_nm) top_mind.(ind_bodies) with
-    | None => tmFail ("animate_coinductive_with_lift: cannot find body " ++ rel_nm)
-    | Some top_oib =>
-      let n_params  := top_mind.(ind_npars) in
-      let n_total   := List.length in_pos + List.length out_pos in
-      let all_types := extract_arg_types n_params n_total top_oib.(ind_type) in
-      prod_refs <- tmLocate "prod" ;;
-      anim_refs <- tmLocate "animation_result" ;;
-      match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
-            find (fun g => match g with IndRef _ => true | _ => false end) anim_refs with
-      | Some (IndRef prod_ind), Some (IndRef anim_ind) =>
-        let prod_kn      := inductive_mind prod_ind in
-        let anim_res_kn  := inductive_mind anim_ind in
-        let anim_res_ind := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
-        let nat_ind      := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
-        let anon_b       := {| binder_name := nAnon; binder_relevance := Relevant |} in
-        let in_types     := List.map (fun p => nth p all_types (tVar "?")) in_pos in
-        let out_types    := List.map (fun p => nth p all_types (tVar "?")) out_pos in
-        let in_type      := match in_types with [t] => t | _ => make_prod_type prod_kn in_types end in
-        let anim_in_type := tApp (tInd anim_res_ind []) [in_type] in
-        let inputLift_fn  := tConst (cur_mp, rel_nm ++ "inputLift") [] in
-        let outputPush_fn := tConst (cur_mp, rel_nm ++ "outputPush") [] in
-        let animFn        := tConst (cur_mp, rel_nm ++ "'" ++ top_fn_suffix) [] in
-        (* All outputPush functions take a leading nat depth argument.
-           We use the same value for both fuel and depth. *)
-        let composite :=
-          (* fun n inp => outputPush n (animFn n (inputLift inp)) *)
-          tLambda anon_b (tInd nat_ind [])   (* n   = tRel 1 inside next lambda *)
-          (tLambda anon_b anim_in_type       (* inp = tRel 0 *)
-          (tApp outputPush_fn
-            [tRel 1;                          (* n = depth *)
-             tApp animFn [tRel 1; tApp inputLift_fn [tRel 0]]]))  (* n = fuel *)
-        in
-        tmMkDefinition (rel_nm ++ top_fn_suffix) composite
-      | _, _ =>
-        tmFail "animate_coinductive_with_lift: cannot locate prod or animation_result"
-      end
+  top_mind <- tmQuoteInductive rel_kn ;;
+  match find (fun me => String.eqb (fst me) rel_nm) modes,
+        find (fun ob => String.eqb ob.(ind_name) rel_nm) top_mind.(ind_bodies) with
+  | Some (_, (in_pos, out_pos)), Some top_oib =>
+    let n_params  := top_mind.(ind_npars) in
+    let n_total   := List.length in_pos + List.length out_pos in
+    let all_types := extract_arg_types n_params n_total top_oib.(ind_type) in
+    prod_refs <- tmLocate "prod" ;;
+    anim_refs <- tmLocate "animation_result" ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
+          find (fun g => match g with IndRef _ => true | _ => false end) anim_refs with
+    | Some (IndRef prod_ind), Some (IndRef anim_ind) =>
+      let prod_kn      := inductive_mind prod_ind in
+      let anim_res_kn  := inductive_mind anim_ind in
+      let anim_res_ind := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
+      let nat_ind      := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+      let anon_b       := {| binder_name := nAnon; binder_relevance := Relevant |} in
+      let in_types     := List.map (fun p => nth p all_types (tVar "?")) in_pos in
+      let out_types    := List.map (fun p => nth p all_types (tVar "?")) out_pos in
+      let in_type      := match in_types with [t] => t | _ => make_prod_type prod_kn in_types end in
+      let anim_in_type := tApp (tInd anim_res_ind []) [in_type] in
+      let inputLift_fn  := tConst (cur_mp, rel_nm ++ "inputLift") [] in
+      let outputPush_fn := tConst (cur_mp, rel_nm ++ "outputPush") [] in
+      let animFn        := tConst (cur_mp, rel_nm ++ "'" ++ top_fn_suffix) [] in
+      (* All outputPush functions take a leading nat depth argument.
+         We use the same value for both fuel and depth. *)
+      let composite :=
+        (* fun n inp => outputPush n (animFn n (inputLift inp)) *)
+        tLambda anon_b (tInd nat_ind [])   (* n   = tRel 1 inside next lambda *)
+        (tLambda anon_b anim_in_type       (* inp = tRel 0 *)
+        (tApp outputPush_fn
+          [tRel 1;                          (* n = depth *)
+           tApp animFn [tRel 1; tApp inputLift_fn [tRel 0]]]))  (* n = fuel *)
+      in
+      tmMkDefinition (rel_nm ++ top_fn_suffix) composite
+    | _, _ =>
+      tmFail "animate_coinductive_with_lift: cannot locate prod or animation_result"
     end
-  | None, _ => tmFail ("animate_coinductive_with_lift: cannot locate '" ++ rel_nm ++ "'")
-  | _, None  => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
-  | Some _, _ => tmFail ("animate_coinductive_with_lift: unexpected ref for '" ++ rel_nm ++ "'")
+  | None, _ => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
+  | _, None  => tmFail ("animate_coinductive_with_lift: cannot find body " ++ rel_nm)
   end.
 (*
 (* ================================================================== *)
@@ -2807,7 +2801,7 @@ Unset Universe Checking.
 
                 
 
-MetaRocq Run (animate_coinductive_with_lift "Integrate"
+MetaRocq Run (animate_coinductive_with_lift <?Integrate?>
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
                 ("addNat",    ([0;1], [2]))
@@ -2851,7 +2845,7 @@ end.
 
 
 (*
-MetaRocq Run (animate_coinductive_with_lift "Integrate"
+MetaRocq Run (animate_coinductive_with_lift <?Integrate?>
                [("Integrate", ([0],   [1]));
                 ("addStm",    ([0;1], [2]));
                 ("addNat",    ([0;1], [2]))
