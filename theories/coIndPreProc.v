@@ -2186,7 +2186,9 @@ Definition make_push_def
     (n_old_ctors : nat)
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list kername * inductive))
+    (coind_kns   : list kername)
     (cur_mp      : modpath)
+    (is_coind    : bool)
     : def term :=
   (* Detect parametric specialisation: is new_ind in app_kn_map? *)
   let orig_form :=
@@ -2213,10 +2215,20 @@ Definition make_push_def
     | [] => tInd head_ind []
     | _  => tApp (tInd head_ind []) par_terms
     end in
-  let new_type := tInd new_ind [] in
-  let type_nm  := snd old_kn in
-  let new_kn   := inductive_mind new_ind in
-  let body_idx := inductive_ind new_ind in
+  let new_type     := tInd new_ind [] in
+  let type_nm      := snd old_kn in
+  let new_kn       := inductive_mind new_ind in
+  let body_idx     := inductive_ind new_ind in
+  let undefinedConst := tConst (cur_mp, "undefined" ++ type_nm) [] in
+  let anon_b       := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  (* For coinductive push:
+       - self-recursive call (same type):  tApp fix [m; arg]
+           where m = tRel (n_args)  and fix = tRel (n_args+3)
+       - external coinductive push:        tApp pushConst [m; arg]
+       - external inductive push:          tApp pushConst [arg]      (unchanged)
+     For inductive push (is_coind=false):
+       - self-recursive call:              tApp fix [arg]  (fix = tRel (n_args+1))
+       - external push:                    tApp pushConst [arg]  *)
   let branches :=
     mapi (fun ctor_idx ctor =>
       let n_args := ctor.(cstr_arity) in
@@ -2227,45 +2239,90 @@ Definition make_push_def
               let arg_t := match nth_error ctor.(cstr_args) snoc_i with
                            | Some d => d.(decl_type) | None => tVar "?" end in
               match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
-              | Some None      => tApp (tRel (n_args + 1)) [tRel snoc_i]
-              | Some (Some kn) => tApp (tConst (cur_mp, snd kn ++ "Push") []) [tRel snoc_i]
-              | None           => tRel snoc_i
+              | Some None =>
+                  if is_coind
+                  then tApp (tRel (n_args + 3)) [tRel n_args; tRel snoc_i]
+                  else tApp (tRel (n_args + 1)) [tRel snoc_i]
+              | Some (Some kn) =>
+                  let push_const := tConst (cur_mp, snd kn ++ "Push") [] in
+                  if andb is_coind (existsb (eq_kername kn) coind_kns)
+                  then tApp push_const [tRel n_args; tRel snoc_i]
+                  else tApp push_const [tRel snoc_i]
+              | None => tRel snoc_i
               end)
             (seq 0 n_args) in
           let pushed_args := List.rev pushed_snoc in
-          (* For parametric types, type params precede value args in tApp *)
           let all_args := List.app par_terms pushed_args in
           match all_args with
           | [] => tConstruct head_ind ctor_idx []
           | _  => tApp (tConstruct head_ind ctor_idx []) all_args
           end
         else
-          tConst (cur_mp, "undefined" ++ type_nm) []
+          undefinedConst
       in
       {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
          bbody    := bbody |})
     new_oib.(ind_ctors) in
   let pred  := {| puinst := []; pparams := [];
-                  pcontext := [{| binder_name := nAnon; binder_relevance := Relevant |}];
+                  pcontext := [anon_b];
                   preturn  := old_type |} in
   let ci    := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
-  let dbody :=
-    tLambda {| binder_name := nAnon; binder_relevance := Relevant |} new_type
-      (tCase ci pred (tRel 0) branches) in
-  {| dname := {| binder_name := nNamed (type_nm ++ "Push");
-                 binder_relevance := Relevant |};
-     dtype  := tProd {| binder_name := nAnon; binder_relevance := Relevant |}
-                     new_type old_type;
-     dbody  := dbody;
-     rarg   := 0 |}.
+  if is_coind then
+    (* Coinductive push: fix f (d : nat) (s' : new_type) : old_type :=
+         match d with
+         | O   => undefinedT
+         | S m => match s' with original_ctors -> ...; anim_ctors -> undefinedT end
+         end
+       De Bruijn inside inner case branches (n_args args):
+         tRel 0..n_args-1 = branch binders (snoc)
+         tRel n_args       = m  (S-branch binder)
+         tRel (n_args+1)   = s' (second lambda)
+         tRel (n_args+2)   = d  (first lambda)
+         tRel (n_args+3)   = the fix itself *)
+    let nat_ind_ref := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+    let nat_ci  := {| ci_ind := nat_ind_ref; ci_npar := 0; ci_relevance := Relevant |} in
+    let nat_pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := old_type |} in
+    let inner_case := tCase ci pred (tRel 1) branches in
+    let o_branch   := {| bcontext := [];       bbody := undefinedConst |} in
+    let s_branch   := {| bcontext := [anon_b]; bbody := inner_case     |} in
+    let dbody :=
+      tLambda anon_b (tInd nat_ind_ref [])
+        (tLambda anon_b new_type
+          (tCase nat_ci nat_pred (tRel 1) [o_branch; s_branch])) in
+    {| dname := {| binder_name := nNamed (type_nm ++ "Push"); binder_relevance := Relevant |};
+       dtype  := tProd anon_b (tInd nat_ind_ref []) (tProd anon_b new_type old_type);
+       dbody  := dbody;
+       rarg   := 0 |}
+  else
+    let dbody :=
+      tLambda anon_b new_type
+        (tCase ci pred (tRel 0) branches) in
+    {| dname := {| binder_name := nNamed (type_nm ++ "Push"); binder_relevance := Relevant |};
+       dtype  := tProd anon_b new_type old_type;
+       dbody  := dbody;
+       rarg   := 0 |}.
 
-(** Declare a push function for every type in [todo].  Inductive types get
-    [tFix]; coinductive types get [tCoFix].  Each function maps the lifted
-    constructor back to the original, and extra constructors to [undefined<T>]. *)
+(** Collect knames of the coinductive types in [type_map] by checking [ind_finite]. *)
+Polymorphic Definition collect_coind_kns
+    (type_map : list (kername * inductive))
+    : TemplateMonad (list kername) :=
+  flags <- monad_map (fun (p : kername * inductive) =>
+    mind <- tmQuoteInductive (fst p) ;;
+    tmReturn match mind.(ind_finite) with CoFinite => Some (fst p) | _ => None end)
+    type_map ;;
+  tmReturn (List.concat (List.map (fun o => match o with Some kn => [kn] | None => [] end) flags)).
+
+(** Declare a push function for every type in [todo].  For inductive types this
+    is [tFix] on the scrutinee.  For coinductive types this is also a [tFix]
+    but with an extra leading [nat] depth parameter: at depth 0 it returns
+    [undefined<T>], and at depth [S m] it matches on the lifted constructor,
+    recursing with [m] for sub-values of the same coinductive type, and
+    returning [undefined<T>] for animation constructors. *)
 Polymorphic Fixpoint generate_push_fns
     (todo        : list (kername * inductive))
     (all_map     : list (kername * inductive))
     (app_kn_map  : list (kername * list kername * inductive))
+    (coind_kns   : list kername)
     (cur_mp      : modpath)
     : TemplateMonad unit :=
   match todo with
@@ -2288,11 +2345,10 @@ Polymorphic Fixpoint generate_push_fns
                 end in
               let n_block := List.length new_mind.(ind_bodies) in
               let d := make_push_def old_kn new_ind n_block new_oib n_old_ctors
-                                     all_map app_kn_map cur_mp in
-              let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
-              tmMkDefinition (snd old_kn ++ "Push") fn_term
+                                     all_map app_kn_map coind_kns cur_mp is_coind in
+              tmMkDefinition (snd old_kn ++ "Push") (tFix [d] 0)
             end) (fun _ =>
-    generate_push_fns rest all_map app_kn_map cur_mp)))
+    generate_push_fns rest all_map app_kn_map coind_kns cur_mp)))
   end.
 
 (* ------------------------------------------------------------------ *)
@@ -2428,21 +2484,24 @@ Polymorphic Fixpoint generate_inputLift_fns
 (** ** OutputPush function generation                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** Given an original output type term, return [(lifted_type, Some push_fn)] if
-    the type is tracked in [type_map]/[app_kn_map], or [(t, None)] if not. *)
+(** Given an original output type term, return [(lifted_type, Some push_fn, is_coind_push)]
+    if the type is tracked in [type_map]/[app_kn_map], or [(t, None, false)] if not.
+    [is_coind_push] is true when the push function takes an extra [nat] depth argument. *)
 Definition classify_out_type
     (type_map   : list (kername * inductive))
     (app_kn_map : list (kername * list kername * inductive))
+    (coind_kns  : list kername)
     (cur_mp     : modpath)
     (t          : term)
-    : term * option term :=
+    : term * option term * bool :=
   match t with
   | tInd ind _ =>
     let kn := inductive_mind ind in
     match find (fun e => eq_kername (fst e) kn) type_map with
     | Some (old_kn, new_ind) =>
-      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
-    | None => (t, None)
+      let is_c := existsb (eq_kername old_kn) coind_kns in
+      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []), is_c)
+    | None => (t, None, false)
     end
   | tApp (tInd ind _) args =>
     let kn      := inductive_mind ind in
@@ -2462,44 +2521,60 @@ Definition classify_out_type
                          (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
                  type_map with
       | Some (old_kn, _) =>
-        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
-      | None => (t, None)
+        let is_c := existsb (eq_kername old_kn) coind_kns in
+        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []), is_c)
+      | None => (t, None, false)
       end
-    | None => (t, None)
+    | None => (t, None, false)
     end
-  | _ => (t, None)
+  | _ => (t, None, false)
   end.
 
 (** Build the raw term for [<rel_name>outputPush]:
-      fun out => match out with
-                 | Success v => Success orig_out_type (apply pushes to v)
-                 | _         => NoMatch orig_out_type
-                 end
-    [orig_types]   : original types at output positions (from original relation's ind_type)
-    [lifted_types] : corresponding lifted types (input to this function)
-    [push_fns]     : [Some fn] to apply, or [None] for identity, per output *)
+    When no output type is coinductive:
+      fun out => match out with Success v => Success orig (apply pushes to v) | _ => NoMatch orig end
+    When any output type is coinductive (is_coind_out has a [true] entry):
+      fun (d : nat) out => match out with Success v => Success orig (apply pushes, passing d to coind ones) | _ => NoMatch orig end
+    [orig_types]    : original types at output positions
+    [lifted_types]  : corresponding lifted types (input to this function)
+    [push_fns]      : [Some fn] or [None] per output
+    [is_coind_out]  : [true] when that output's push takes a depth [nat] first *)
 Definition make_outputPush_term
     (prod_kn      : kername)
     (anim_res_kn  : kername)
     (orig_types   : list term)
     (lifted_types : list term)
     (push_fns     : list (option term))
+    (is_coind_out : list bool)
     : term :=
   let anim_res_ind  := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
+  let nat_ind_ref   := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
   let anon_b        := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let has_coind     := existsb id is_coind_out in
   let lifted_type   := match lifted_types with [t] => t | _ => make_prod_type prod_kn lifted_types end in
   let orig_type     := match orig_types   with [t] => t | _ => make_prod_type prod_kn orig_types   end in
   let anim_in_type  := tApp (tInd anim_res_ind []) [lifted_type] in
   let anim_out_type := tApp (tInd anim_res_ind []) [orig_type] in
   let n_in          := List.length lifted_types in
+  (* Depth variable inside the success branch body.
+     For n_in outputs: 2*n_in binders are between the depth lambda and the body
+     (1 success branch binder + 2*(n_in-1) pair-match binders when n_in>=2,
+      plus 1 for the anim_res lambda = total 2*n_in).
+     For n_in=1: 1 (branch binder v) + 1 (out lambda) = 2 = 2*1. *)
+  let depth_var     := tRel (2 * n_in) in
   let no_match_body := tApp (tConstruct anim_res_ind 2 []) [orig_type] in
   let pushed_vals :=
-    mapi (fun i pf =>
+    mapi (fun i pfcomb =>
+      let pf   := fst pfcomb in
+      let is_c := snd pfcomb in
       match pf with
-      | Some fn => tApp fn [input_var i n_in]
-      | None    => input_var i n_in
+      | Some fn =>
+          if andb has_coind is_c
+          then tApp fn [depth_var; input_var i n_in]
+          else tApp fn [input_var i n_in]
+      | None => input_var i n_in
       end)
-    push_fns in
+    (combine push_fns is_coind_out) in
   let pushed_val    := build_pair_term prod_kn orig_types pushed_vals in
   let success_inner := tApp (tConstruct anim_res_ind 1 []) [orig_type; pushed_val] in
   let success_body  :=
@@ -2516,13 +2591,19 @@ Definition make_outputPush_term
       ; {| bcontext := [anon_b]; bbody := success_body |}
       ; {| bcontext := []; bbody := no_match_body |} ]
   in
-  tLambda anon_b anim_in_type case_expr.
+  let fn_body := tLambda anon_b anim_in_type case_expr in
+  if has_coind
+  then tLambda anon_b (tInd nat_ind_ref []) fn_body
+  else fn_body.
 
-(** Declare [<rel_name>outputPush] for every entry in [kn_mode_list]. *)
+(** Declare [<rel_name>outputPush] for every entry in [kn_mode_list].
+    For relations whose output includes a coinductive type, the generated function
+    takes an extra leading [nat] depth argument and passes it to the coinductive push. *)
 Polymorphic Fixpoint generate_outputPush_fns
     (todo        : list (kername * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list kername * inductive))
+    (coind_kns   : list kername)
     (prod_kn     : kername)
     (anim_res_kn : kername)
     (cur_mp      : modpath)
@@ -2542,12 +2623,14 @@ Polymorphic Fixpoint generate_outputPush_fns
       let n_total    := List.length in_pos + List.length out_pos in
       let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
       let orig_types := List.map (fun p => nth p all_types (tVar "?")) out_pos in
-      let classified   := List.map (classify_out_type type_map app_kn_map cur_mp) orig_types in
-      let lifted_types := List.map fst classified in
-      let push_fns     := List.map snd classified in
-      let fn_term := make_outputPush_term prod_kn anim_res_kn orig_types lifted_types push_fns in
+      let classified    := List.map (classify_out_type type_map app_kn_map coind_kns cur_mp) orig_types in
+      let lifted_types  := List.map (fun t => fst (fst t)) classified in
+      let push_fns      := List.map (fun t => snd (fst t)) classified in
+      let is_coind_out  := List.map snd classified in
+      let fn_term := make_outputPush_term prod_kn anim_res_kn orig_types lifted_types
+                                          push_fns is_coind_out in
       tmBind (tmMkDefinition (rel_name ++ "outputPush") fn_term) (fun _ =>
-      generate_outputPush_fns rest type_map app_kn_map prod_kn anim_res_kn cur_mp)
+      generate_outputPush_fns rest type_map app_kn_map coind_kns prod_kn anim_res_kn cur_mp)
     end)
   end.
 
@@ -2587,6 +2670,7 @@ Polymorphic Definition lift_relation_names
     and then lift the relation itself, in a single [MetaRocq Run].
     [rel_nm] : short name of the top-level relation (e.g. "Integrate").
     [modes]  : input/output positions for every body of the mutual block. *)
+Unset Universe Checking.
 Polymorphic Definition lift_coinductive_relation
     (rel_nm : string)
     (modes  : mode_map)
@@ -2636,13 +2720,14 @@ Polymorphic Definition lift_coinductive_relation
                                      prod_kn anim_res_kn cur_mp) (fun _ =>
       tmBind (generate_rest_fns kn_mode_list cur_mp prod_kn) (fun _ =>
       tmBind (generate_push_params type_mapping type_mapping app_kn_mapping) (fun _ =>
-      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping cur_mp) (fun _ =>
-      generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping
-                              prod_kn anim_res_kn cur_mp))))
+      tmBind (collect_coind_kns type_mapping) (fun coind_kns =>
+      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping coind_kns cur_mp) (fun _ =>
+      generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping coind_kns
+                              prod_kn anim_res_kn cur_mp)))))
     | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
-  
+Set Universe Checking.
 
 
 
@@ -2652,30 +2737,24 @@ Polymorphic Definition lift_coinductive_relation
 
 (** Combined entry point that:
     1. Lifts all relations (and their types) via [lift_coinductive_relation].
-    2. Runs the original [animate_coinductive] on the lifted top relation,
-       using mode names primed to match the lifted body names.
-    3. Builds a composite function named [rel_nm ++ "AnimatedTopFn"] that:
-         fun fuel inp => <rel_nm>outputPush (<rel_nm>'AnimatedTopFn fuel (<rel_nm>inputLift inp))
-       where [inp : animation_result <orig_in_type>]. *)
+    2. Runs [animate_coinductive] on the lifted top relation.
+    3. Builds a composite function named [rel_nm ++ "AnimatedTopFn"]:
+         - If the top relation's output type is coinductive:
+             fun fuel depth inp => <rel>outputPush depth (<rel>'AnimatedTopFn fuel (<rel>inputLift inp))
+         - Otherwise:
+             fun fuel inp => <rel>outputPush (<rel>'AnimatedTopFn fuel (<rel>inputLift inp)) *)
 Definition animate_coinductive_with_lift
     (rel_nm : string)
     (modes  : mode_map)
     (fuel   : nat)
     : TemplateMonad unit :=
-  (* Step 1: lift all relations and generate all helper functions *)
   lift_coinductive_relation rel_nm modes ;;
   cur_mp <- tmCurrentModPath tt ;;
-  (* Step 2: animate the lifted top relation; use primed names for bodies.
-     We unquote Integrate' (the lifted relation) as the `ind` argument so that
-     tmQuoteRecTransp inside animate_one_pattern sees stream' in termFull.
-     Using the original `ind` (e.g. Integrate) would omit stream' from termFull,
-     causing Array.map2 when the kernel checks a tCase with the wrong branch count. *)
-  let lifted_kn    := (cur_mp, rel_nm ++ "'") in
-  let lifted_modes := List.map (fun me => (fst me ++ "'", snd me)) modes in
+  let lifted_kn      := (cur_mp, rel_nm ++ "'") in
+  let lifted_modes   := List.map (fun me => (fst me ++ "'", snd me)) modes in
   let lifted_ind_ref := {| inductive_mind := lifted_kn; inductive_ind := 0 |} in
   lifted_pack <- tmUnquote (tInd lifted_ind_ref []) ;;
   _ <- animate_coinductive (my_projT2 lifted_pack) lifted_kn lifted_modes fuel ;;
-  (* Step 3: build the composite wrapper using the original top relation's in-type *)
   refs <- tmLocate rel_nm ;;
   match find (fun g => match g with IndRef _ => true | _ => false end) refs,
         find (fun me => String.eqb (fst me) rel_nm) modes with
@@ -2695,23 +2774,40 @@ Definition animate_coinductive_with_lift
         let prod_kn      := inductive_mind prod_ind in
         let anim_res_kn  := inductive_mind anim_ind in
         let anim_res_ind := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
-        let nat_ind := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
-        let anon_b  := {| binder_name := nAnon; binder_relevance := Relevant |} in
-        let in_types  := List.map (fun p => nth p all_types (tVar "?")) in_pos in
-        let in_type   := match in_types with [t] => t | _ => make_prod_type prod_kn in_types end in
-        let anim_in_type  := tApp (tInd anim_res_ind []) [in_type] in
+        let nat_ind      := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+        let anon_b       := {| binder_name := nAnon; binder_relevance := Relevant |} in
+        let in_types     := List.map (fun p => nth p all_types (tVar "?")) in_pos in
+        let out_types    := List.map (fun p => nth p all_types (tVar "?")) out_pos in
+        let in_type      := match in_types with [t] => t | _ => make_prod_type prod_kn in_types end in
+        let anim_in_type := tApp (tInd anim_res_ind []) [in_type] in
         let inputLift_fn  := tConst (cur_mp, rel_nm ++ "inputLift") [] in
         let outputPush_fn := tConst (cur_mp, rel_nm ++ "outputPush") [] in
-        let animFn := tConst (cur_mp, rel_nm ++ "'" ++ top_fn_suffix) [] in
-        (* fun (fuel : nat) (inp : animation_result in_type) =>
-               <rel>outputPush (<rel>'AnimatedTopFn fuel (<rel>inputLift inp)) *)
+        let animFn        := tConst (cur_mp, rel_nm ++ "'" ++ top_fn_suffix) [] in
+        (* Check if any output type is coinductive — if so, outputPush takes depth *)
+        out_coind_flags <- monad_fold_left (fun (acc : list bool) ot =>
+          match ot with
+          | tInd ind _ =>
+            mind <- tmQuoteInductive (inductive_mind ind) ;;
+            tmReturn (acc ++ [match mind.(ind_finite) with CoFinite => true | _ => false end])%list
+          | _ => tmReturn (acc ++ [false])%list
+          end) out_types (@nil bool) ;;
+        let has_coind_out := existsb id out_coind_flags in
         let composite :=
-          tLambda anon_b (tInd nat_ind [])
-          (tLambda anon_b anim_in_type
-          (tApp outputPush_fn
-            [tApp animFn
-              [tRel 1;
-               tApp inputLift_fn [tRel 0]]])) in
+          if has_coind_out then
+            (* fun fuel depth inp => outputPush depth (animFn fuel (inputLift inp)) *)
+            tLambda anon_b (tInd nat_ind [])    (* fuel *)
+            (tLambda anon_b (tInd nat_ind [])   (* depth *)
+            (tLambda anon_b anim_in_type        (* inp *)
+            (tApp outputPush_fn
+              [tRel 1;                           (* depth *)
+               tApp animFn [tRel 2; tApp inputLift_fn [tRel 0]]])))
+          else
+            (* fun fuel inp => outputPush (animFn fuel (inputLift inp)) *)
+            tLambda anon_b (tInd nat_ind [])
+            (tLambda anon_b anim_in_type
+            (tApp outputPush_fn
+              [tApp animFn [tRel 1; tApp inputLift_fn [tRel 0]]]))
+        in
         tmMkDefinition (rel_nm ++ top_fn_suffix) composite
       | _, _ =>
         tmFail "animate_coinductive_with_lift: cannot locate prod or animation_result"
@@ -2793,18 +2889,18 @@ MetaRocq Run (animate_coinductive_with_lift "Integrate"
 
 
 Set Universe Checking.
-(*
-Fixpoint streamPush (d : nat) (s' : stream')  : stream :=
+
+Fixpoint streamPush1 (d : nat) (s' : stream')  : stream :=
 match d with 
 | 0 => undefinedstream
 | S m => match s' with
          | nil' => nil
-         | Seq' n s => Seq (natPush n) (streamPush m s)
+         | Seq' n s => Seq (natPush n) (streamPush1 m s)
          | IntegrateAn1 s => undefinedstream
          | addStmAn2 n s => undefinedstream
          end 
 end. 
-*)
+
 Print listnatPush.
 Print streamPush.
 Print nat'.
@@ -2820,6 +2916,14 @@ Print tripleInoutputPush.
 Print LenoutputPush.
 Print Integrate'AnimatedTopFn.
 Print IntegrateAnimatedTopFn.
+
+CoFixpoint from (n : nat) : stream :=
+Seq n (from (S n)).
+
+Compute IntegrateAnimatedTopFn 30 9 (Success stream (from 0)). 
+
+
+
 
 
 
