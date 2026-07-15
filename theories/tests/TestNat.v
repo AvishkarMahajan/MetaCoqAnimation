@@ -21,7 +21,7 @@ Open Scope bs.
 (* Clause with no premise and universally quantified vars *)
 Inductive tripleIn : nat -> nat -> bool -> nat -> nat -> bool-> Prop :=
 | tInC : forall a b c, tripleIn a b c a b c.  
-MetaRocq Run (animate_inductive tripleIn <?tripleIn?> [("tripleIn", ([0;1;2], [3;4;5]))] 200).
+MetaRocq Run (animate_inductive <?tripleIn?> [("tripleIn", ([0;1;2], [3;4;5]))] 200).
 Example testtripleIn :
   tripleInAnimatedTopFn 5 (Success (nat * (nat * bool)) (1, (2, true))) = (Success (nat * (nat * bool)) (1, (2, true))).
 Proof. reflexivity. Qed.  
@@ -37,7 +37,7 @@ Inductive isGoodEmptyIn' : list nat -> nat -> Prop :=
 Inductive isGood2 : list nat -> nat -> Prop :=
 | isG2 : forall n l, isGoodEmptyIn' l n /\ isGoodEmptyIn l n -> isGood2 l n.
 
-MetaRocq Run (animate_inductive isGood2 <? isGood2 ?>
+MetaRocq Run (animate_inductive <? isGood2 ?>
   [("isGood2", ([], [0;1]));
    ("isGoodEmptyIn", ([], [0;1]));
    ("isGoodEmptyIn'", ([], [0;1]))] 100).
@@ -58,7 +58,7 @@ Inductive isGoodEmptyIn'3 : list nat -> nat -> Prop :=
 Inductive isGood3 : list nat -> nat -> Prop :=
 | isG3 : forall n l, isGoodEmptyIn'3 l n /\ isGoodEmptyIn3 l n -> isGood3 l n.
 
-MetaRocq Run (animate_inductive isGood3 <? isGood3 ?>
+MetaRocq Run (animate_inductive <? isGood3 ?>
   [("isGood3", ([0;1], []));
    ("isGoodEmptyIn3", ([0;1], []));
    ("isGoodEmptyIn'3", ([0;1], []))] 100).
@@ -80,7 +80,7 @@ Inductive isGood' : list nat -> nat -> Prop :=
 Inductive isGood : list nat -> nat -> Prop :=
 | isG : forall n l, isGood' l n -> isGood l n.
 
-MetaRocq Run (animate_inductive isGood <? isGood ?>
+MetaRocq Run (animate_inductive <? isGood ?>
   [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 100).
 
 Example testIsGood_0 :
@@ -99,7 +99,7 @@ Inductive add : nat -> nat -> nat -> Prop :=
 | add_zero : forall (x : nat), add 0 x x
 | add_succ : forall (v0 x v1 : nat), add v0 x v1 -> add (S v0) x (S v1).
 
-MetaRocq Run (animate_inductive add <?add?> [("add", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive <?add?> [("add", ([0;1], [2]))] 100).
 
 Example test_add_0_0 :
   addAnimatedTopFn 100 (Success (nat * nat) (0, 0)) = Success nat 0.
@@ -136,7 +136,7 @@ Inductive mul : nat -> nat -> nat -> Prop :=
 | mul_zero : forall (n : nat), mul 0 n 0
 | mul_succ : forall (m n k : nat), mul m n k -> mul (S m) n (n + k).
 
-MetaRocq Run (animate_inductive mul <?mul?> [("mul", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive <?mul?> [("mul", ([0;1], [2]))] 100).
 
 Example test_mul_0_5 :
   mulAnimatedTopFn 100 (Success (nat * nat) (0, 5)) = Success nat 0.
@@ -169,7 +169,7 @@ Inductive even : nat -> bool -> Prop :=
 with odd : nat -> bool -> Prop :=
 | oddSucc : forall (w : nat), even w true -> odd (S w) true.
 
-MetaRocq Run (animate_inductive even <?even?> [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive <?even?> [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
 
 Example test_even_0 :
   evenAnimatedTopFn 30 (Success nat 0) = Success bool true.
@@ -212,7 +212,7 @@ Inductive leq : nat -> nat -> bool -> Prop :=
 | leq_succ : forall (m n : nat) (b : bool), leq m n b -> leq (S m) (S n) b
 | leq_fail : forall (m : nat), leq (S m) 0 false.
 
-MetaRocq Run (animate_inductive leq <?leq?> [("leq", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive <?leq?> [("leq", ([0;1], [2]))] 100).
 
 Example test_leq_0_0 :
   leqAnimatedTopFn 100 (Success (nat * nat) (0, 0)) = Success bool true.
@@ -267,7 +267,7 @@ Inductive tripled_parity : nat -> (nat * bool) -> Prop :=
 | tp_rule : forall n t b,
     triple2 n t /\ evn4 t b -> tripled_parity n (t, b).
 
-MetaRocq Run (animate_inductive tripled_parity <?tripled_parity?>
+MetaRocq Run (animate_inductive <?tripled_parity?>
   [("tripled_parity", ([0], [1]));
    ("triple2",        ([0], [1]));
    ("evn4",           ([0], [1]));
@@ -330,7 +330,7 @@ with val_helper : nat -> nat -> Prop :=
 | vh_succ : forall n m, val_check n m -> val_helper (S n) (S m).
     
 
-MetaRocq Run (animate_inductive even_ident <?even_ident?>
+MetaRocq Run (animate_inductive <?even_ident?>
   [("even_ident",  ([0], [1]));
    ("evn5",        ([0], [1]));
    ("od5",         ([0], [1]));
@@ -375,7 +375,7 @@ Inductive patGuard : newTp -> newTp -> Prop :=
 
 
 
-MetaRocq Run (animate_inductive patGuard <?patGuard?>
+MetaRocq Run (animate_inductive <?patGuard?>
   [("patGuard", ([0;1], []))] 100).
 
 Example patGuard0 :
@@ -399,7 +399,7 @@ Inductive patGuard' : newTp -> newTp -> Prop :=
 
 
 
-MetaRocq Run (animate_inductive patGuard' <?patGuard'?>
+MetaRocq Run (animate_inductive <?patGuard'?>
   [("patGuard'", ([0;1], []))] 100).
 
 Example patGuard'0 :
@@ -419,7 +419,7 @@ Definition wrap_nat (n : nat) : newTp :=
 Inductive patGuardFnApp : nat -> nat -> Prop :=
 | pgfa_rule : forall n m, nulCon = wrap_nat n /\ wrap_nat m = nulCon   -> patGuardFnApp n m.
 
-MetaRocq Run (animate_inductive patGuardFnApp <?patGuardFnApp?>
+MetaRocq Run (animate_inductive <?patGuardFnApp?>
   [("patGuardFnApp", ([0;1], []))] 100).
 
 Example patGuardFnApp_zero :
@@ -455,8 +455,8 @@ with fuel : nat -> nat -> Prop :=
 (* Expected error: "relation name 'fuel' starts with an engine-reserved string"
    The relation name 'fuel' is forbidden because the engine uses "fuel" as its
    internal animation fuel-counter binder. *)
-Fail MetaRocq Run (animate_inductive v2 <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
-Fail MetaRocq Run (animate_coinductive v2 <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_inductive <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_coinductive <?v2?> [("remFuel", ([0], [1])); ("fuel", ([0], [1])); ("v2", ([0], [1]))] 200).
 
 Inductive rel : nat -> nat -> Prop :=
 | x : forall v0 v1 , rel2 v0 v1 -> rel v0 v1
@@ -465,7 +465,7 @@ with rel2 : nat -> nat -> Prop :=
 | x_step' : forall (x v1 : nat), rel2 x v1 -> rel2 (S x) (S v1).
 
 
-MetaRocq Run (animate_inductive rel <?rel?> [("rel", ([0], [1])); ("rel2", ([0], [1]))] 200).
+MetaRocq Run (animate_inductive <?rel?> [("rel", ([0], [1])); ("rel2", ([0], [1]))] 200).
 
 Example test_rel_0 :
   relAnimatedTopFn 50 (Success nat 0) = Success nat 0.
@@ -493,7 +493,7 @@ with rel3 : nat -> nat -> Prop :=
 
 (* 
     data-variable/relation-name disjointness check. *)
-Fail MetaRocq Run (animate_inductive v2' <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
-Fail MetaRocq Run (animate_coinductive v2' <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_inductive <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
+Fail MetaRocq Run (animate_coinductive <?v2'?> [("v3", ([0], [1])); ("rel3", ([0], [1])); ("v2'", ([0], [1]))] 200).
 
 End clashFuel.

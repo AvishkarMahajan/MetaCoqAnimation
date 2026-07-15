@@ -72,7 +72,7 @@ Inductive typing : list ty -> tm -> ty -> Prop :=
     typing cxt e2 t1 /\ typing cxt e1 (TArrow t1 t2) ->
     typing cxt (tapp e1 e2) t2.
 
-MetaRocq Run (animate_inductive typing <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
+MetaRocq Run (animate_inductive <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
 
 (* --- Typing tests --- *)
 
@@ -190,7 +190,7 @@ Inductive step : tm -> tm -> Prop :=
     step t1 t1' ->
     step (tif t1 t2 t3) (tif t1' t2 t3).
 
-MetaRocq Run (animate_inductive step <?step?> [("step", ([0], [1]))] 100).
+MetaRocq Run (animate_inductive <?step?> [("step", ([0], [1]))] 100).
 
 (* --- Step tests --- *)
 
@@ -333,7 +333,7 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 Definition stepRest := fun t : tm => (stepAnim t).
 Definition bigStepTrRest := fun t: tm => (bigStepTrAnim t).
 
-MetaRocq Run (animate_coinductive bigStepTr <?bigStepTr?>
+MetaRocq Run (animate_coinductive <?bigStepTr?>
   [("bigStepTr", ([0], [1])); ("step", ([0], [1]))] 100).
 
 Definition omega : tm :=

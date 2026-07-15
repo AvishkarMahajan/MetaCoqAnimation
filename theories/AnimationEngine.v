@@ -1429,16 +1429,17 @@ end.
     Infers any auxiliary relations referenced in [kn]'s constructors (filtering
     by [modes]) and compiles all blocks together via a two-phase approach.
     Works for single-block, mutual-inductive ([with]), and separate-block relations. *)
-Definition animate_inductive {A : Type}
-  (ind : A) (kn : kername)
+Definition animate_inductive
+  (kn : kername)
   (modes : mode_map) (fuel : nat)
   : TemplateMonad term :=
 match check_mode_names modes with
 | Some msg => tmFail msg
 | None     => tmReturn tt
 end ;;
+ind_pack   <- tmUnquote (tInd {| inductive_mind := kn; inductive_ind := 0 |} []) ;;
 knLst      <- infer_aux_knames kn modes ;;
-ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
+ind_data'' <- animate_multi_def (my_projT2 ind_pack) (kn :: knLst) modes fuel ;;
 ind_data   <- tmEval all ind_data'' ;;
 match mk_all_ind ind_data kn modes with
 | Some defs =>
@@ -1461,16 +1462,17 @@ end.
     Generates both the top-level fixpoint ([kn ++ AnimatedTopFn]) and a lazy
     [Stream] ([kn ++ AnimatedStream]).
     Works for single-block, mutual-coinductive ([with]), and separate-block relations. *)
-Definition animate_coinductive {A : Type}
-  (ind : A) (kn : kername)
+Definition animate_coinductive
+  (kn : kername)
   (modes : mode_map) (fuel : nat)
   : TemplateMonad term :=
 match check_mode_names modes with
 | Some msg => tmFail msg
 | None     => tmReturn tt
 end ;;
+ind_pack   <- tmUnquote (tInd {| inductive_mind := kn; inductive_ind := 0 |} []) ;;
 knLst      <- infer_aux_knames kn modes ;;
-ind_data'' <- animate_multi_def ind (kn :: knLst) modes fuel ;;
+ind_data'' <- animate_multi_def (my_projT2 ind_pack) (kn :: knLst) modes fuel ;;
 ind_data   <- tmEval all ind_data'' ;;
 match mk_all_coind ind_data kn modes with
 | Some defs =>

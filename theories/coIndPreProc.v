@@ -31,7 +31,7 @@ Open Scope bs.
 
 
 (*
-MetaRocq Run (animate_coinductive Integrate <? Integrate ?>
+MetaRocq Run (animate_coinductive <? Integrate ?>
   [("Integrate", ([0], [1])); ("addStm", ([0;1], [2])); ("addNat", ([0;1], [2])) ] 100).
 
 *)
@@ -2698,11 +2698,9 @@ Definition animate_coinductive_with_lift
   let rel_nm := snd rel_kn in
   lift_coinductive_relation modes ;;
   cur_mp <- tmCurrentModPath tt ;;
-  let lifted_kn      := (cur_mp, rel_nm ++ "'") in
-  let lifted_modes   := List.map (fun me => (fst me ++ "'", snd me)) modes in
-  let lifted_ind_ref := {| inductive_mind := lifted_kn; inductive_ind := 0 |} in
-  lifted_pack <- tmUnquote (tInd lifted_ind_ref []) ;;
-  _ <- animate_coinductive (my_projT2 lifted_pack) lifted_kn lifted_modes fuel ;;
+  let lifted_kn    := (cur_mp, rel_nm ++ "'") in
+  let lifted_modes := List.map (fun me => (fst me ++ "'", snd me)) modes in
+  _ <- animate_coinductive lifted_kn lifted_modes fuel ;;
   top_mind <- tmQuoteInductive rel_kn ;;
   match find (fun me => String.eqb (fst me) rel_nm) modes,
         find (fun ob => String.eqb ob.(ind_name) rel_nm) top_mind.(ind_bodies) with
