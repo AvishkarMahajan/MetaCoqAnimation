@@ -2361,14 +2361,16 @@ Definition push_arg_class
       tRel n_args     = outer lambda variable (the scrutinee, unused)
       tRel (n_args+1) = the fix/cofix function itself (self-push) *)
 Definition make_push_def
-    (old_kn      : kername)
-    (new_ind     : inductive)
-    (n_block     : nat)
-    (new_oib     : one_inductive_body)
-    (n_old_ctors : nat)
-    (type_map    : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
-    (cur_mp      : modpath)
+    (old_kn        : kername)
+    (new_ind       : inductive)
+    (n_block       : nat)
+    (new_oib       : one_inductive_body)
+    (n_old_ctors   : nat)
+    (type_map      : list (kername * inductive))
+    (app_kn_map    : list (kername * list kername * inductive))
+    (pi_set        : list kername)
+    (is_purely_ind : bool)
+    (cur_mp        : modpath)
     : def term :=
   (* Detect parametric specialisation: is new_ind in app_kn_map? *)
   let orig_form :=
@@ -2401,7 +2403,16 @@ Definition make_push_def
   let body_idx     := inductive_ind new_ind in
   let undefinedConst := tConst (cur_mp, "undefined" ++ type_nm) [] in
   let anon_b       := {| binder_name := nAnon; binder_relevance := Relevant |} in
-  (* All push functions use a nat depth parameter d:
+  (* Purely-inductive push (is_purely_ind = true):
+       fix f (s' : new_type) : old_type := match s' with ... end
+     De Bruijn inside branches (n_args branch binders):
+       tRel 0..n_args-1 = branch binders (snoc order)
+       tRel n_args       = s' (lambda)
+       tRel (n_args+1)   = the fix itself
+     Self-recursive call:  tApp fix [sub_arg]
+     External push call:   tApp pushConst [arg]  (pushConst also has no depth)
+
+     Depth-bounded push (is_purely_ind = false):
        fix f (d : nat) (s' : new_type) : old_type :=
          match d with 0 => undefinedT | S m => match s' with ... end end
      De Bruijn inside inner case branches (n_args branch binders):
@@ -2410,8 +2421,9 @@ Definition make_push_def
        tRel (n_args+1)   = s' (second lambda)
        tRel (n_args+2)   = d  (first lambda)
        tRel (n_args+3)   = the fix itself
-     Self-recursive call:      tApp fix [m; sub_arg]
-     External push call:       tApp pushConst [m; arg]  *)
+     Self-recursive call:   tApp fix [m; sub_arg]
+     External purely-ind push call: tApp pushConst [arg]  (no depth)
+     External depth push call:      tApp pushConst [m; arg]  *)
   let branches :=
     mapi (fun ctor_idx ctor =>
       let n_args := ctor.(cstr_arity) in
@@ -2423,10 +2435,16 @@ Definition make_push_def
                            | Some d => d.(decl_type) | None => tVar "?" end in
               match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
               | Some None =>
-                  tApp (tRel (n_args + 3)) [tRel n_args; tRel snoc_i]
+                  if is_purely_ind then
+                    tApp (tRel (n_args + 1)) [tRel snoc_i]
+                  else
+                    tApp (tRel (n_args + 3)) [tRel n_args; tRel snoc_i]
               | Some (Some kn) =>
                   let push_const := tConst (cur_mp, snd kn ++ "Push") [] in
-                  tApp push_const [tRel n_args; tRel snoc_i]
+                  if existsb (eq_kername kn) pi_set then
+                    tApp push_const [tRel snoc_i]
+                  else
+                    tApp push_const [tRel n_args; tRel snoc_i]
               | None => tRel snoc_i
               end)
             (seq 0 n_args) in
@@ -2446,32 +2464,100 @@ Definition make_push_def
                   pcontext := [anon_b];
                   preturn  := old_type |} in
   let ci    := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
-  (* fix f (d : nat) (s' : new_type) : old_type :=
-       match d with 0 => undefinedT | S m => match s' with ... end end *)
-  let nat_ind_ref := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
-  let nat_ci   := {| ci_ind := nat_ind_ref; ci_npar := 0; ci_relevance := Relevant |} in
-  let nat_pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := old_type |} in
-  let inner_case := tCase ci pred (tRel 1) branches in
-  let o_branch   := {| bcontext := [];       bbody := undefinedConst |} in
-  let s_branch   := {| bcontext := [anon_b]; bbody := inner_case     |} in
-  let dbody :=
-    tLambda anon_b (tInd nat_ind_ref [])
-      (tLambda anon_b new_type
-        (tCase nat_ci nat_pred (tRel 1) [o_branch; s_branch])) in
-  {| dname := {| binder_name := nNamed (type_nm ++ "Push"); binder_relevance := Relevant |};
-     dtype  := tProd anon_b (tInd nat_ind_ref []) (tProd anon_b new_type old_type);
-     dbody  := dbody;
-     rarg   := 0 |}.
+  let dname := {| binder_name := nNamed (type_nm ++ "Push"); binder_relevance := Relevant |} in
+  if is_purely_ind then
+    (* fix f (s' : new_type) : old_type := match s' with ... end *)
+    {| dname := dname;
+       dtype  := tProd anon_b new_type old_type;
+       dbody  := tLambda anon_b new_type (tCase ci pred (tRel 0) branches);
+       rarg   := 0 |}
+  else
+    (* fix f (d : nat) (s' : new_type) : old_type :=
+         match d with 0 => undefinedT | S m => match s' with ... end end *)
+    let nat_ind_ref := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+    let nat_ci   := {| ci_ind := nat_ind_ref; ci_npar := 0; ci_relevance := Relevant |} in
+    let nat_pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := old_type |} in
+    let inner_case := tCase ci pred (tRel 1) branches in
+    let o_branch   := {| bcontext := [];       bbody := undefinedConst |} in
+    let s_branch   := {| bcontext := [anon_b]; bbody := inner_case     |} in
+    let dbody :=
+      tLambda anon_b (tInd nat_ind_ref [])
+        (tLambda anon_b new_type
+          (tCase nat_ci nat_pred (tRel 1) [o_branch; s_branch])) in
+    {| dname := dname;
+       dtype  := tProd anon_b (tInd nat_ind_ref []) (tProd anon_b new_type old_type);
+       dbody  := dbody;
+       rarg   := 0 |}.
+
+(** One fixed-point step for computing the not-purely-inductive set.
+    A type is not purely inductive if it is coinductive, or if any of its
+    constructor-arg types that are in [all_map] are themselves not purely
+    inductive.  Returns [(updated_npi_set, changed)]. *)
+Polymorphic Fixpoint compute_npi_step
+    (todo    : list (kername * inductive))
+    (all_map : list (kername * inductive))
+    (npi_set : list kername)
+    (changed : bool)
+    : TemplateMonad (list kername * bool) :=
+  match todo with
+  | [] => tmReturn (npi_set, changed)
+  | (old_kn, _) :: rest =>
+    if existsb (eq_kername old_kn) npi_set
+    then compute_npi_step rest all_map npi_set changed
+    else
+      tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+      let is_coind :=
+        match old_mind.(ind_finite) with CoFinite => true | _ => false end in
+      if is_coind
+      then compute_npi_step rest all_map (npi_set ++ [old_kn]) true
+      else
+        let ctor_kns :=
+          dedup_kns (flat_map (fun oib =>
+            flat_map (fun c => collect_tind_kns c.(cstr_type))
+                     oib.(ind_ctors))
+            old_mind.(ind_bodies)) in
+        let in_map_npi :=
+          existsb (fun kn =>
+            andb (existsb (fun e => eq_kername (fst e) kn) all_map)
+                 (existsb (eq_kername kn) npi_set))
+            ctor_kns in
+        if in_map_npi
+        then compute_npi_step rest all_map (npi_set ++ [old_kn]) true
+        else compute_npi_step rest all_map npi_set changed)
+  end.
+
+(** Iterate [compute_npi_step] until the not-purely-inductive set stabilises.
+    Fuel = |type_mapping| + 1 is a tight upper bound: npi_set can grow by at
+    most one element per changed-pass, so at most |type_mapping| changed-passes
+    occur before convergence, plus one final unchanged-pass.  The 0 branch is
+    therefore dead code; tmFail there is a defensive guard. *)
+Polymorphic Fixpoint compute_npi_fix
+    (all_map : list (kername * inductive))
+    (npi_set : list kername)
+    (fuel    : nat)
+    : TemplateMonad (list kername) :=
+  match fuel with
+  | 0 =>
+    tmFail ("compute_npi_fix: did not converge after " ++
+            string_of_nat (List.length all_map + 1) ++
+            " passes; not-purely-inductive set so far: " ++
+            String.concat ", " (List.map snd npi_set))
+  | S f =>
+    tmBind (compute_npi_step all_map all_map npi_set false) (fun res =>
+    if snd res
+    then compute_npi_fix all_map (fst res) f
+    else tmReturn (fst res))
+  end.
 
 (** Declare a push function for every type in [todo].
-    All push functions use [tFix] on a leading [nat] depth parameter:
-    at depth 0 they return [undefined<T>]; at depth [S m] they match on
-    the lifted constructor, recursing with [m] for sub-values of the same
-    type, and returning [undefined<T>] for animation constructors. *)
+    Purely-inductive types (no transitive coinductive dependency) get a simple
+    structural fix with no depth parameter.  Types with coinductive deps keep
+    the depth-bounded form used previously. *)
 Polymorphic Fixpoint generate_push_fns
     (todo        : list (kername * inductive))
     (all_map     : list (kername * inductive))
     (app_kn_map  : list (kername * list kername * inductive))
+    (pi_set      : list kername)
     (cur_mp      : modpath)
     : TemplateMonad unit :=
   match todo with
@@ -2491,11 +2577,12 @@ Polymorphic Fixpoint generate_push_fns
                 | None    => 0
                 end in
               let n_block := List.length new_mind.(ind_bodies) in
+              let is_purely_ind := existsb (eq_kername old_kn) pi_set in
               let d := make_push_def old_kn new_ind n_block new_oib n_old_ctors
-                                     all_map app_kn_map cur_mp in
+                                     all_map app_kn_map pi_set is_purely_ind cur_mp in
               tmMkDefinition (snd old_kn ++ "Push") (tFix [d] 0)
             end) (fun _ =>
-    generate_push_fns rest all_map app_kn_map cur_mp)))
+    generate_push_fns rest all_map app_kn_map pi_set cur_mp)))
   end.
 
 (* ------------------------------------------------------------------ *)
@@ -2631,21 +2718,23 @@ Polymorphic Fixpoint generate_inputLift_fns
 (** ** OutputPush function generation                                  *)
 (* ------------------------------------------------------------------ *)
 
-(** Given an original output type term, return [(lifted_type, Some push_fn, is_coind_push)]
-    if the type is tracked in [type_map]/[app_kn_map], or [(t, None, false)] if not.
-    [is_coind_push] is true when the push function takes an extra [nat] depth argument. *)
+(** Given an original output type term, return [(lifted_type, Some (push_fn, is_pi))]
+    if the type is tracked in [type_map]/[app_kn_map], or [(t, None)] if not.
+    [is_pi] is true when the push function takes no [nat] depth argument (purely inductive). *)
 Definition classify_out_type
     (type_map   : list (kername * inductive))
     (app_kn_map : list (kername * list kername * inductive))
+    (pi_set     : list kername)
     (cur_mp     : modpath)
     (t          : term)
-    : term * option term :=
+    : term * option (term * bool) :=
   match t with
   | tInd ind _ =>
     let kn := inductive_mind ind in
     match find (fun e => eq_kername (fst e) kn) type_map with
     | Some (old_kn, new_ind) =>
-      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
+      let is_pi := existsb (eq_kername old_kn) pi_set in
+      (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") [], is_pi))
     | None => (t, None)
     end
   | tApp (tInd ind _) args =>
@@ -2666,7 +2755,8 @@ Definition classify_out_type
                          (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
                  type_map with
       | Some (old_kn, _) =>
-        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") []))
+        let is_pi := existsb (eq_kername old_kn) pi_set in
+        (tInd new_ind [], Some (tConst (cur_mp, snd old_kn ++ "Push") [], is_pi))
       | None => (t, None)
       end
     | None => (t, None)
@@ -2676,20 +2766,20 @@ Definition classify_out_type
 
 (** Build the raw term for [<rel_name>outputPush]:
       fun (d : nat) out => match out with
-                           | Success v => Success orig (apply pushes d to v)
+                           | Success v => Success orig (apply pushes to v)
                            | _         => NoMatch orig
                            end
-    All push functions take a leading [nat] depth argument, so [d] is always
-    threaded through to every push application.
+    [d] is threaded only to push functions that take a depth argument.
+    Purely-inductive push functions (is_pi = true) are applied without [d].
     [orig_types]   : original types at output positions
     [lifted_types] : corresponding lifted types (input to this function)
-    [push_fns]     : [Some fn] or [None] per output *)
+    [push_fns]     : [Some (fn, is_pi)] or [None] per output *)
 Definition make_outputPush_term
     (prod_kn      : kername)
     (anim_res_kn  : kername)
     (orig_types   : list term)
     (lifted_types : list term)
-    (push_fns     : list (option term))
+    (push_fns     : list (option (term * bool)))
     : term :=
   let anim_res_ind  := {| inductive_mind := anim_res_kn; inductive_ind := 0 |} in
   let nat_ind_ref   := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
@@ -2706,10 +2796,11 @@ Definition make_outputPush_term
   let depth_var     := tRel (2 * n_in) in
   let no_match_body := tApp (tConstruct anim_res_ind 2 []) [orig_type] in
   let pushed_vals :=
-    mapi (fun i pf =>
-      match pf with
-      | Some fn => tApp fn [depth_var; input_var i n_in]
-      | None    => input_var i n_in
+    mapi (fun i pfb =>
+      match pfb with
+      | Some (fn, true)  => tApp fn [input_var i n_in]
+      | Some (fn, false) => tApp fn [depth_var; input_var i n_in]
+      | None             => input_var i n_in
       end)
     push_fns in
   let pushed_val    := build_pair_term prod_kn orig_types pushed_vals in
@@ -2738,6 +2829,7 @@ Polymorphic Fixpoint generate_outputPush_fns
     (todo        : list (kername * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list kername * inductive))
+    (pi_set      : list kername)
     (prod_kn     : kername)
     (anim_res_kn : kername)
     (cur_mp      : modpath)
@@ -2757,12 +2849,12 @@ Polymorphic Fixpoint generate_outputPush_fns
       let n_total    := List.length in_pos + List.length out_pos in
       let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
       let orig_types := List.map (fun p => nth p all_types (tVar "?")) out_pos in
-      let classified   := List.map (classify_out_type type_map app_kn_map cur_mp) orig_types in
+      let classified   := List.map (classify_out_type type_map app_kn_map pi_set cur_mp) orig_types in
       let lifted_types := List.map fst classified in
       let push_fns     := List.map snd classified in
       let fn_term := make_outputPush_term prod_kn anim_res_kn orig_types lifted_types push_fns in
       tmBind (tmMkDefinition (rel_name ++ "outputPush") fn_term) (fun _ =>
-      generate_outputPush_fns rest type_map app_kn_map prod_kn anim_res_kn cur_mp)
+      generate_outputPush_fns rest type_map app_kn_map pi_set prod_kn anim_res_kn cur_mp)
     end)
   end.
 
@@ -2852,9 +2944,12 @@ Polymorphic Definition lift_coinductive_relation
                                      prod_kn anim_res_kn cur_mp) (fun _ =>
       tmBind (generate_rest_fns kn_mode_list cur_mp prod_kn) (fun _ =>
       tmBind (generate_push_params type_mapping type_mapping app_kn_mapping) (fun _ =>
-      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping cur_mp) (fun _ =>
-      generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping
-                              prod_kn anim_res_kn cur_mp))))
+      tmBind (compute_npi_fix type_mapping [] (List.length type_mapping + 1)) (fun npi_set =>
+      let pi_set :=
+        List.map fst (filter (fun e => negb (existsb (eq_kername (fst e)) npi_set)) type_mapping) in
+      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp) (fun _ =>
+      generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set
+                              prod_kn anim_res_kn cur_mp)))))
     | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
@@ -2972,7 +3067,44 @@ CoFixpoint from (n : nat) : stream :=
 Seq n (from (S n)).               
 
 Compute IntegrateAnimatedTopFn 25 (Success stream (from 0)).
+
+CoInductive streamInf : Type :=
+| SeqInf : nat -> streamInf -> streamInf.
+
+
+CoInductive zipSt : streamInf -> streamInf -> streamInf -> Prop :=
+| zip : forall n m s1 s2 s3 s4 s5 s6,
+    s1 = SeqInf n s2 /\ s3 = SeqInf m s4 /\ zipSt s2 s4 s5 /\ s6 = SeqInf n (SeqInf m s5)
+    -> zipSt s1 s3 s6.
+    
+MetaRocq Run (animate_coinductive_with_lift <?zipSt?>
+               [("zipSt", ([0;1],   [2]))
+                
+                ]
+               100).    
+CoFixpoint fromInf (n : nat) : streamInf :=
+SeqInf n (fromInf (S n)). 
+
+Compute zipStAnimatedTopFn 18 (Success (streamInf * streamInf) ((fromInf 0), (fromInf 0))).
+              
+
 Print natPush.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(* 
 
 (*
 (* ================================================================== *)
@@ -3167,3 +3299,6 @@ Print res.
                 
                 
                               
+
+
+                *)
