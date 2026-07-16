@@ -108,6 +108,62 @@ Fixpoint collect_ind_apps (t : term) : list (kername * list kername) :=
   | _                    => []
   end.
 
+(** Collect the kname of the TYPE argument [T] of every [@eq T t1 t2]
+    application anywhere in [t]. Used to find types that appear in equality
+    premises of relation constructors — these also need lifting. *)
+Fixpoint collect_eq_arg_kns (t : term) : list kername :=
+  match t with
+  | tApp f args =>
+    let eq_hits :=
+      match f with
+      | tInd {| inductive_mind := kn |} _ =>
+        if String.eqb (snd kn) "eq" then
+          match args with T :: _ => collect_tind_kns T | [] => [] end
+        else []
+      | _ => []
+      end in
+    eq_hits ++ collect_eq_arg_kns f ++ flat_map collect_eq_arg_kns args
+  | tProd   _ ty body
+  | tLambda _ ty body    => collect_eq_arg_kns ty ++ collect_eq_arg_kns body
+  | tLetIn  _ v ty body  =>
+    collect_eq_arg_kns v ++ collect_eq_arg_kns ty ++ collect_eq_arg_kns body
+  | tCase _ pred disc brs =>
+    flat_map collect_eq_arg_kns pred.(pparams) ++
+    collect_eq_arg_kns pred.(preturn) ++
+    collect_eq_arg_kns disc ++
+    flat_map (fun br => collect_eq_arg_kns br.(bbody)) brs
+  | _ => []
+  end.
+
+(** Like [collect_eq_arg_kns] but returns [(head_kn, [arg_kns])] pairs for
+    parametric-type applications inside each equality TYPE argument.
+    Needed so that e.g. [@eq (list nat) ...] triggers monomorphisation of
+    [list nat] → [listnat] via the Step 4b pipeline. *)
+Fixpoint collect_eq_arg_ind_apps (t : term) : list (kername * list kername) :=
+  match t with
+  | tApp f args =>
+    let eq_hits :=
+      match f with
+      | tInd {| inductive_mind := kn |} _ =>
+        if String.eqb (snd kn) "eq" then
+          match args with T :: _ => collect_ind_apps T | [] => [] end
+        else []
+      | _ => []
+      end in
+    eq_hits ++ collect_eq_arg_ind_apps f ++ flat_map collect_eq_arg_ind_apps args
+  | tProd   _ ty body
+  | tLambda _ ty body    => collect_eq_arg_ind_apps ty ++ collect_eq_arg_ind_apps body
+  | tLetIn  _ v ty body  =>
+    collect_eq_arg_ind_apps v ++ collect_eq_arg_ind_apps ty ++
+    collect_eq_arg_ind_apps body
+  | tCase _ pred disc brs =>
+    flat_map collect_eq_arg_ind_apps pred.(pparams) ++
+    collect_eq_arg_ind_apps pred.(preturn) ++
+    collect_eq_arg_ind_apps disc ++
+    flat_map (fun br => collect_eq_arg_ind_apps br.(bbody)) brs
+  | _ => []
+  end.
+
 (** Deduplicate [(kername * list kername)] pairs by structural equality on the
     kername lists. Preserves first-occurrence order. *)
 Definition dedup_ind_apps (l : list (kername * list kername))
@@ -836,6 +892,59 @@ Definition remap_mind_kns
             ind_relevance := oib.(ind_relevance) |})
        m.(ind_bodies) |}.
 
+(** BFS from [lifting], exploring constructor-argument types of each visited
+    type.  A newly-discovered type B is added to [lifting] iff at least one
+    of B's constructor argument types is already in [lifting] (B "depends on"
+    a lifted type).  [explored] prevents revisiting.  [rel_kns] are never
+    added to [lifting].  Handles multi-hop chains: if B → C → T ∈ lifting,
+    then C is added first (when T's constructors are explored) and B is added
+    later (when C's constructors are explored and C ∈ lifting). *)
+Polymorphic Fixpoint expand_dep_closure
+    (worklist : list kername)
+    (lifting  : list kername)
+    (explored : list kername)
+    (rel_kns  : list kername)
+    (fuel     : nat)
+    : TemplateMonad (list kername) :=
+  match fuel with
+  | 0 => tmReturn lifting
+  | S f =>
+    match worklist with
+    | [] => tmReturn lifting
+    | kn :: rest =>
+      if orb (existsb (eq_kername kn) explored)
+             (existsb (eq_kername kn) rel_kns)
+      then expand_dep_closure rest lifting explored rel_kns f
+      else
+        mind <- tmQuoteInductive kn ;;
+        if orb (is_prop_mind mind) (negb (Nat.eqb mind.(ind_npars) 0))
+        then expand_dep_closure rest lifting
+               (dedup_kns (explored ++ [kn])) rel_kns f
+        else
+          let ctor_arg_kns :=
+            dedup_kns (flat_map (fun oib =>
+              flat_map (fun c => collect_tind_kns c.(cstr_type))
+                       oib.(ind_ctors))
+            mind.(ind_bodies)) in
+          let new_in_wl :=
+            filter (fun kn' =>
+              andb (negb (existsb (eq_kername kn') explored))
+                   (negb (existsb (eq_kername kn') rest)))
+              ctor_arg_kns in
+          let new_lifting :=
+            if andb (negb (existsb (eq_kername kn) lifting))
+                    (existsb (fun kn' =>
+                       existsb (eq_kername kn') lifting) ctor_arg_kns)
+            then dedup_kns (lifting ++ [kn])
+            else lifting in
+          expand_dep_closure
+            (rest ++ new_in_wl)
+            new_lifting
+            (dedup_kns (explored ++ [kn]))
+            rel_kns f
+    end
+  end.
+
 (** Given a [mode_map], find all non-Prop types occurring as argument types
     of the listed relations, declare lifted copies, and return:
     - [type_mapping]   : old kname → new kname for each lifted data type
@@ -845,6 +954,7 @@ Definition remap_mind_kns
 
     Parametric-type applications found in index types are specialised first
     (Step 4b) and then lifted by the same pipeline as monomorphic types. *)
+Unset Universe Checking.
 Polymorphic Definition preprocess_coind_types
     (modes : mode_map)
     : TemplateMonad (list (kername * inductive) * list (kername * list kername * inductive)) :=
@@ -887,7 +997,25 @@ Polymorphic Definition preprocess_coind_types
       ((nm, in_out), idx_ctx))
     (combine modes rel_inds) in
   let rel_kns := dedup_kns (List.map inductive_mind rel_inds) in
-  (* Step 4: collect all tInd knames from every index-type decl *)
+  (* Step 3.5: collect types from equality premises in relation constructors.
+     Types appearing as [T] in [@eq T t1 t2] premises need lifting even when
+     they don't appear in the relation's index signature. *)
+  let ctor_eq_kns_raw :=
+    flat_map (fun km =>
+      flat_map (fun oib =>
+        flat_map (fun c => collect_eq_arg_kns c.(cstr_type))
+                 oib.(ind_ctors))
+      (snd km).(ind_bodies))
+    rel_block_minds in
+  let ctor_eq_ind_apps_raw :=
+    flat_map (fun km =>
+      flat_map (fun oib =>
+        flat_map (fun c => collect_eq_arg_ind_apps c.(cstr_type))
+                 oib.(ind_ctors))
+      (snd km).(ind_bodies))
+    rel_block_minds in
+  (* Step 4: collect all tInd knames from every index-type decl,
+     merged with equality-premise types from Step 3.5. *)
   let arg_kns_raw :=
     flat_map (fun mwi =>
       let in_pos  := fst (snd (fst mwi)) in
@@ -901,18 +1029,20 @@ Polymorphic Definition preprocess_coind_types
       (List.app in_pos out_pos))
     modes_with_idx in
   let arg_kns :=
-    dedup_kns (filter (fun kn => negb (existsb (eq_kername kn) rel_kns)) arg_kns_raw) in
+    dedup_kns (filter (fun kn => negb (existsb (eq_kername kn) rel_kns))
+              (List.app arg_kns_raw ctor_eq_kns_raw)) in
   cur_mp <- tmCurrentModPath tt ;;
   (* Step 4b: detect parametric-type applications in every index-type decl
-     and create a fresh monomorphic specialisation for each unique one.
+     and from equality premise types, creating fresh monomorphic specialisations.
      E.g. [list nat] → fresh inductive [listnat] (npars = 0).
      The specialised types are then lifted to [listnat'] by the normal pipeline.
      [spec_kn_pairs] : list ((head_kn, [arg_kns]), spec_kn). *)
   let raw_ind_apps :=
     dedup_ind_apps
-      (flat_map (fun mwi =>
-        flat_map (fun d => collect_ind_apps d.(decl_type)) (snd mwi))
-      modes_with_idx) in
+      ((flat_map (fun mwi =>
+          flat_map (fun d => collect_ind_apps d.(decl_type)) (snd mwi))
+        modes_with_idx)
+       ++ ctor_eq_ind_apps_raw) in
   spec_kn_pairs <- monad_fold_left (fun acc entry =>
     let head_kn   := fst entry in
     let arg_kns_e := snd entry in
@@ -936,14 +1066,34 @@ Polymorphic Definition preprocess_coind_types
       tmReturn (List.app acc [(entry, spec_kn)]))
     raw_ind_apps [] ;;
   let spec_kns := List.map snd spec_kn_pairs in
-  (* Step 5: keep only non-Prop, non-parametric types.
-     Now includes the freshly declared specialised types (npars = 0). *)
+  (* Step 5: initial lifting set = signature types + specialised parametric
+     types (spec_kns), filtered to non-Prop / non-parametric.
+     Equality-premise types are NOT in the initial lifting set; they act
+     only as BFS seeds in Step 5b. *)
+  let sig_kns :=
+    dedup_kns (filter (fun kn => negb (existsb (eq_kername kn) rel_kns))
+              arg_kns_raw) in
   type_kns <- monad_fold_left (fun acc kn =>
     mind <- tmQuoteInductive kn ;;
     if andb (negb (is_prop_mind mind)) (Nat.eqb mind.(ind_npars) 0)
     then tmReturn (List.app acc [kn])
     else tmReturn acc)
-    (List.app arg_kns spec_kns) [] ;;
+    (List.app sig_kns spec_kns) [] ;;
+  (* BFS seeds from equality premises: non-Prop, non-parametric types not
+     already in the initial lifting set. *)
+  eq_seed_kns <- monad_fold_left (fun acc kn =>
+    if existsb (eq_kername kn) type_kns then tmReturn acc
+    else
+      mind <- tmQuoteInductive kn ;;
+      if andb (negb (is_prop_mind mind)) (Nat.eqb mind.(ind_npars) 0)
+      then tmReturn (List.app acc [kn])
+      else tmReturn acc)
+    (dedup_kns (filter (fun kn => negb (existsb (eq_kername kn) rel_kns))
+               ctor_eq_kns_raw)) [] ;;
+  (* Step 5b: dependency closure — BFS from signature types AND equality
+     seeds, but only add a type to the lifting set if it has at least one
+     constructor argument type already in the lifting set. *)
+  type_kns <- expand_dep_closure (type_kns ++ eq_seed_kns) type_kns [] rel_kns 200 ;;
   let pre_mapping := List.map (fun kn => (kn, (cur_mp, snd kn ++ "'"))) type_kns in
   (* Helper: given a term [t], return the lifted knames it mentions —
      either as a plain [tInd kn] in [pre_mapping], or as a recognised
@@ -1212,6 +1362,7 @@ Polymorphic Definition preprocess_coind_types
       end)
     spec_kn_pairs in
   tmReturn (actual_mapping, final_app_kn_mapping).
+Set Universe Checking.
 
 
 (* ================================================================== *)
@@ -2742,6 +2893,27 @@ Definition animate_coinductive_with_lift
   | None, _ => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
   | _, None  => tmFail ("animate_coinductive_with_lift: cannot find body " ++ rel_nm)
   end.
+  
+  
+  
+Set Universe Checking.  
+Inductive myLst : Type :=
+| nilmyLst : myLst
+| SeqmyLst : nat -> myLst -> myLst.
+  
+Inductive listRel : nat -> nat -> Prop :=
+| lRc : forall a b,  [a] = [b] -> listRel a b.  
+
+
+  
+MetaRocq Run (animate_coinductive_with_lift <?listRel?>
+               [("listRel", ([0],   [1]))
+                ]
+               100). 
+               
+Print listRel'.
+
+
 (*
 (* ================================================================== *)
 (** ** Example: all relations (single mutual block + separate blocks)  *)
