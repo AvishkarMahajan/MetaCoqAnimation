@@ -907,7 +907,11 @@ Polymorphic Fixpoint expand_dep_closure
     (fuel     : nat)
     : TemplateMonad (list kername) :=
   match fuel with
-  | 0 => tmReturn lifting
+  | 0 =>
+    tmFail ("expand_dep_closure: BFS ran out of fuel with " ++
+            string_of_nat (List.length worklist) ++
+            " types still in the worklist: " ++
+            String.concat ", " (List.map snd worklist))
   | S f =>
     match worklist with
     | [] => tmReturn lifting
@@ -945,6 +949,32 @@ Polymorphic Fixpoint expand_dep_closure
     end
   end.
 
+(** Fixpoint wrapper around [expand_dep_closure]: re-runs BFS with a fresh
+    [explored] set each iteration, using the previous iteration's [lifting] as
+    the new seed, until the lifting set stabilises (no new types added).
+    [outer_fuel] bounds the number of iterations; fails with [tmFail] if
+    lifting has not stabilised by then.  Each inner BFS is given [inner_fuel]
+    steps; if it exhausts that, the inner [tmFail] propagates immediately. *)
+Polymorphic Fixpoint expand_dep_closure_fix
+    (initial_worklist : list kername)
+    (lifting          : list kername)
+    (rel_kns          : list kername)
+    (inner_fuel       : nat)
+    (outer_fuel       : nat)
+    : TemplateMonad (list kername) :=
+  match outer_fuel with
+  | 0 =>
+    tmFail ("expand_dep_closure_fix: lifting set did not stabilise after " ++
+            string_of_nat inner_fuel ++
+            " BFS passes; current lifting set: " ++
+            String.concat ", " (List.map snd lifting))
+  | S f =>
+    lifting' <- expand_dep_closure initial_worklist lifting [] rel_kns inner_fuel ;;
+    if Nat.eqb (List.length lifting') (List.length lifting)
+    then tmReturn lifting'
+    else expand_dep_closure_fix initial_worklist lifting' rel_kns inner_fuel f
+  end.
+
 (** Given a [mode_map], find all non-Prop types occurring as argument types
     of the listed relations, declare lifted copies, and return:
     - [type_mapping]   : old kname → new kname for each lifted data type
@@ -957,6 +987,7 @@ Polymorphic Fixpoint expand_dep_closure
 Unset Universe Checking.
 Polymorphic Definition preprocess_coind_types
     (modes : mode_map)
+    (fuel  : nat)
     : TemplateMonad (list (kername * inductive) * list (kername * list kername * inductive)) :=
   (* Step 1: resolve each mode entry to a specific body (kn + body index) *)
   rel_inds <- monad_map (fun p =>
@@ -1093,7 +1124,7 @@ Polymorphic Definition preprocess_coind_types
   (* Step 5b: dependency closure — BFS from signature types AND equality
      seeds, but only add a type to the lifting set if it has at least one
      constructor argument type already in the lifting set. *)
-  type_kns <- expand_dep_closure (type_kns ++ eq_seed_kns) type_kns [] rel_kns 200 ;;
+  type_kns <- expand_dep_closure_fix (type_kns ++ eq_seed_kns) type_kns rel_kns fuel fuel ;;
   let pre_mapping := List.map (fun kn => (kn, (cur_mp, snd kn ++ "'"))) type_kns in
   (* Helper: given a term [t], return the lifted knames it mentions —
      either as a plain [tInd kn] in [pre_mapping], or as a recognised
@@ -2774,6 +2805,7 @@ Polymorphic Definition lift_relation_names
 Unset Universe Checking.
 Polymorphic Definition lift_coinductive_relation
     (modes  : mode_map)
+    (fuel   : nat)
     : TemplateMonad unit :=
   (* Resolve every mode entry to its mutual-block kname, in order. *)
   kn_mode_list <- monad_fold_left (fun acc me =>
@@ -2786,7 +2818,7 @@ Polymorphic Definition lift_coinductive_relation
   match kn_mode_list return TemplateMonad unit with
   | [] => @tmFail unit "lift_coinductive_relation: no modes provided"
   | _  =>
-    preproc_result <- preprocess_coind_types modes ;;
+    preproc_result <- preprocess_coind_types modes fuel ;;
     let type_mapping   := fst preproc_result in
     let app_kn_mapping := snd preproc_result in
     cur_mp <- tmCurrentModPath tt ;;
@@ -2847,7 +2879,7 @@ Definition animate_coinductive_with_lift
     (fuel   : nat)
     : TemplateMonad unit :=
   let rel_nm := snd rel_kn in
-  lift_coinductive_relation modes ;;
+  lift_coinductive_relation modes fuel ;;
   cur_mp <- tmCurrentModPath tt ;;
   let lifted_kn    := (cur_mp, rel_nm ++ "'") in
   let lifted_modes := List.map (fun me => (fst me ++ "'", snd me)) modes in
