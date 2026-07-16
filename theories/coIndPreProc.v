@@ -2929,12 +2929,16 @@ Definition animate_coinductive_with_lift
   
   
 Set Universe Checking.  
-Inductive myLst : Type :=
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+CoInductive myLst : Type :=
 | nilmyLst : myLst
-| SeqmyLst : nat -> myLst -> myLst.
+| SeqmyLst : stream -> myLst -> myLst.
   
-Inductive listRel : nat -> nat -> Prop :=
-| lRc : forall a b,  [a] = [b] -> listRel a b.  
+CoInductive listRel : myLst -> bool -> Prop :=
+| lRc : forall a, listRel a true.  
 
 
   
@@ -2943,8 +2947,32 @@ MetaRocq Run (animate_coinductive_with_lift <?listRel?>
                 ]
                100). 
                
-Print listRel'.
+Print myLstLift.
+Print myLstPush.
 
+CoInductive Integrate : stream -> stream -> Prop :=
+| integNil : Integrate nil nil
+| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
+with addStm : nat -> stream -> stream -> Prop :=
+| addStmNil : forall m, addStm m nil nil
+| plusm : forall m s1 n n' s2, addStm m s1 s2 /\ addNat m n n' -> addStm m (Seq n s1) (Seq (n') s2)
+with
+addNat : nat -> nat -> nat -> Prop :=
+| addZero : forall n, addNat 0 n n
+| addSucc : forall n m p, addNat n m p -> addNat (S n) m (S p).
+
+MetaRocq Run (animate_coinductive_with_lift <?Integrate?>
+               [("Integrate", ([0],   [1]));
+                ("addStm",    ([0;1], [2]));
+                ("addNat",    ([0;1], [2]))
+                ]
+               100).
+
+CoFixpoint from (n : nat) : stream :=
+Seq n (from (S n)).               
+
+Compute IntegrateAnimatedTopFn 25 (Success stream (from 0)).
+Print natPush.
 
 (*
 (* ================================================================== *)
