@@ -753,7 +753,19 @@ Polymorphic Definition make_lifted_mind
                    cstr_indices := List.map (s3t 0) c.(cstr_indices);
                    cstr_type    := s3t 0 c.(cstr_type);
                    cstr_arity   := c.(cstr_arity) |})
-              extra;
+              extra
+              (* Nullary UndefinedCstr: a canonical undefined element of the
+                 lifted type; Push maps it to undefinedConst like all extra
+                 constructors. *)
+              ++ let undef_rel := n_par + block_n_bodies - 1 - block_body_idx in
+                 let undef_ret :=
+                   if Nat.eqb n_par 0 then tRel undef_rel
+                   else tApp (tRel undef_rel) (List.map tRel (rev (seq 0 n_par))) in
+                 [{| cstr_name    := oib.(ind_name) ++ "UndefinedCstr";
+                     cstr_args    := [];
+                     cstr_indices := [];
+                     cstr_type    := it_mkProd_or_LetIn params' undef_ret;
+                     cstr_arity   := 0 |}];
             ind_projs     := oib.(ind_projs);
             ind_relevance := oib.(ind_relevance) |})
        old_mind.(ind_bodies) |}.
@@ -2586,6 +2598,270 @@ Polymorphic Fixpoint generate_push_fns
   end.
 
 (* ------------------------------------------------------------------ *)
+(** ** ChkNoExtraCstrs function generation                            *)
+(* ------------------------------------------------------------------ *)
+
+(** Build the [def term] for the [ChkNoExtraCstrs] fixpoint of [old_kn].
+    The function maps every term of the lifted type [new_ind] to [bool]:
+    - Original (primed) constructors recurse on args that belong to the
+      lifting set and AND the results; all other args are ignored.
+    - Any extra constructor (animation or UndefinedCstr) returns [false].
+    De Bruijn inside a branch with [n_args] binders:
+      tRel 0..n_args-1  = constructor args (snoc order)
+      tRel n_args       = outer lambda variable (scrutinee, unused)
+      tRel (n_args+1)   = the fix itself *)
+Definition make_chk_def
+    (old_kn      : kername)
+    (new_ind     : inductive)
+    (n_block     : nat)
+    (new_oib     : one_inductive_body)
+    (n_old_ctors : nat)
+    (type_map    : list (kername * inductive))
+    (cur_mp      : modpath)
+    : def term :=
+  let type_nm  := snd old_kn in
+  let new_type := tInd new_ind [] in
+  let new_kn   := inductive_mind new_ind in
+  let body_idx := inductive_ind new_ind in
+  let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let bool_ind := {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool");
+                     inductive_ind  := 0 |} in
+  let bool_t  := tInd bool_ind [] in
+  let true_t  := tConstruct bool_ind 0 [] in
+  let false_t := tConstruct bool_ind 1 [] in
+  let andb_kn := (MPfile ["Datatypes"; "Init"; "Corelib"], "andb") in
+  let fold_andb chks :=
+    match chks with
+    | []  => true_t
+    | [c] => c
+    | _   => List.fold_right (fun c acc => tApp (tConst andb_kn []) [c; acc]) true_t chks
+    end in
+  let branches :=
+    mapi (fun ctor_idx ctor =>
+      let n_args := ctor.(cstr_arity) in
+      let bbody :=
+        if Nat.ltb ctor_idx n_old_ctors then
+          let chk_terms :=
+            List.concat (List.map (fun snoc_i =>
+              let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                           | Some d => d.(decl_type) | None => tVar "?" end in
+              match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+              | Some None         => [tApp (tRel (n_args + 1)) [tRel snoc_i]]
+              | Some (Some kn)    => [tApp (tConst (cur_mp, snd kn ++ "ChkNoExtraCstrs") [])
+                                           [tRel snoc_i]]
+              | None              => []
+              end)
+              (seq 0 n_args)) in
+          fold_andb chk_terms
+        else
+          false_t
+      in
+      {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
+         bbody    := bbody |})
+    new_oib.(ind_ctors) in
+  let pred  := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := bool_t |} in
+  let ci    := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
+  let dname := {| binder_name    := nNamed (type_nm ++ "ChkNoExtraCstrs");
+                  binder_relevance := Relevant |} in
+  {| dname := dname;
+     dtype  := tProd anon_b new_type bool_t;
+     dbody  := tLambda anon_b new_type (tCase ci pred (tRel 0) branches);
+     rarg   := 0 |}.
+
+(** Declare a [ChkNoExtraCstrs] function for every purely-inductive type in
+    [todo].  Non-purely-inductive entries are silently skipped. *)
+Polymorphic Fixpoint generate_chk_fns
+    (todo    : list (kername * inductive))
+    (all_map : list (kername * inductive))
+    (pi_set  : list kername)
+    (cur_mp  : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let old_kn  := fst entry in
+    let new_ind := snd entry in
+    if negb (existsb (eq_kername old_kn) pi_set)
+    then generate_chk_fns rest all_map pi_set cur_mp
+    else
+      tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+      tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+      tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+              | None =>
+                tmFail ("generate_chk_fns: no body for " ++ snd old_kn)
+              | Some new_oib =>
+                let n_old_ctors :=
+                  match nth_error old_mind.(ind_bodies) 0 with
+                  | Some ob => List.length ob.(ind_ctors)
+                  | None    => 0
+                  end in
+                let n_block := List.length new_mind.(ind_bodies) in
+                let d := make_chk_def old_kn new_ind n_block new_oib n_old_ctors all_map cur_mp in
+                tmMkDefinition (snd old_kn ++ "ChkNoExtraCstrs") (tFix [d] 0)
+              end) (fun _ =>
+      generate_chk_fns rest all_map pi_set cur_mp)))
+  end.
+
+(* ------------------------------------------------------------------ *)
+(** ** Equality function generation (eqFn<T>') for lifted types       *)
+(* ------------------------------------------------------------------ *)
+
+(** Build the [def term] for the structural equality fixpoint of
+    lifted type [new_ind].  The function has type [T' -> T' -> bool]:
+    - Matching original (primed) constructors: AND together per-arg
+      comparisons (recursive call for self-refs, cross-type eqFn for
+      other tracked types, ignored for untracked args).
+    - Mismatched original constructors → [false].
+    - Any extra or UndefinedCstr constructor → [false].
+    De Bruijn inside outer match branch with [n_args] binders:
+      tRel 0..n_args-1    = a's ctor args (snoc)
+      tRel n_args         = b (outer λ, shifted)
+      tRel n_args+1       = a (outer λ, shifted)
+      tRel n_args+2       = fix
+    Inside inner match (same ctor, [n_args] more binders):
+      tRel 0..n_args-1    = b's ctor args (snoc)
+      tRel n_args+snoc_i  = a's ctor arg [snoc_i]
+      tRel 2*n_args+2     = fix *)
+Definition make_eqfn_def
+    (old_kn      : kername)
+    (new_ind     : inductive)
+    (n_block     : nat)
+    (new_oib     : one_inductive_body)
+    (n_old_ctors : nat)
+    (type_map    : list (kername * inductive))
+    (cur_mp      : modpath)
+    : def term :=
+  let type_nm  := snd old_kn in
+  let new_type := tInd new_ind [] in
+  let new_kn   := inductive_mind new_ind in
+  let body_idx := inductive_ind new_ind in
+  let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let bool_ind := {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool");
+                     inductive_ind  := 0 |} in
+  let bool_t  := tInd bool_ind [] in
+  let true_t  := tConstruct bool_ind 0 [] in
+  let false_t := tConstruct bool_ind 1 [] in
+  let andb_kn := (MPfile ["Datatypes"; "Init"; "Corelib"], "andb") in
+  let fold_andb chks :=
+    match chks with
+    | []  => true_t
+    | [c] => c
+    | _   => List.fold_right (fun c acc => tApp (tConst andb_kn []) [c; acc]) true_t chks
+    end in
+  let ci   := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
+  let pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := bool_t |} in
+  (* Outer match branches on [a]. *)
+  let outer_branches :=
+    mapi (fun ctor_idx ctor =>
+      let n_args := ctor.(cstr_arity) in
+      let bbody :=
+        if Nat.ltb ctor_idx n_old_ctors then
+          (* Inner match on [b = tRel n_args]. *)
+          let inner_branches :=
+            mapi (fun inner_idx inner_ctor =>
+              let inner_body :=
+                if Nat.eqb inner_idx ctor_idx then
+                  (* Same constructor: compare args pairwise. *)
+                  let cmp_terms :=
+                    List.concat (List.map (fun snoc_i =>
+                      let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                                   | Some d => d.(decl_type) | None => tVar "?" end in
+                      match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+                      | Some None      =>
+                          (* Self-ref: recursive eqFn call. *)
+                          [tApp (tRel (n_args + n_args + 2))
+                                [tRel (n_args + snoc_i); tRel snoc_i]]
+                      | Some (Some kn) =>
+                          (* Cross-type: call eqFn with block-kname + body-idx naming. *)
+                          let cross_fn_nm :=
+                            match find (fun e => eq_kername (fst e) kn) type_map with
+                            | Some (_, ci) =>
+                              let blk := snd (inductive_mind ci) in
+                              let cj  := inductive_ind ci in
+                              if Nat.eqb cj 0 then "eqFn" ++ blk
+                              else "eqFn" ++ blk ++ "_" ++ string_of_nat cj
+                            | None => "eqFn" ++ snd kn ++ "'"
+                            end in
+                          [tApp (tConst (cur_mp, cross_fn_nm) [])
+                                [tRel (n_args + snoc_i); tRel snoc_i]]
+                      | None           => []
+                      end)
+                      (seq 0 n_args)) in
+                  fold_andb cmp_terms
+                else
+                  false_t
+              in
+              {| bcontext := List.rev (List.map (fun d => d.(decl_name)) inner_ctor.(cstr_args));
+                 bbody    := inner_body |})
+            new_oib.(ind_ctors) in
+          tCase ci pred (tRel n_args) inner_branches
+        else
+          false_t
+      in
+      {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
+         bbody    := bbody |})
+    new_oib.(ind_ctors) in
+  (* Name the fix binder to match [type_to_eq_fn]'s naming scheme:
+     "eqFn" ++ block_kname for ind=0, "eqFn" ++ block_kname ++ "_" ++ j for ind>0. *)
+  let fix_nm :=
+    let blk := snd new_kn in
+    if Nat.eqb body_idx 0 then "eqFn" ++ blk
+    else "eqFn" ++ blk ++ "_" ++ string_of_nat body_idx in
+  let dname := {| binder_name    := nNamed fix_nm;
+                  binder_relevance := Relevant |} in
+  (* Outer fix has rarg=0 (decreases on first arg [a]). *)
+  {| dname := dname;
+     dtype  := tProd anon_b new_type (tProd anon_b new_type bool_t);
+     dbody  := tLambda anon_b new_type
+                 (tLambda anon_b new_type
+                   (tCase ci pred (tRel 1) outer_branches));
+     rarg   := 0 |}.
+
+(** Declare an [eqFn<T>'] function for every purely-inductive type in
+    [todo].  Non-purely-inductive entries are silently skipped.
+    For types at body index 0 the name is ["eqFn" ++ block_kname]; for
+    bodies at index [j > 0] the name is ["eqFn" ++ block_kname ++ "_" ++ j].
+    This matches what [EqualityResolution.type_to_eq_fn] generates. *)
+Polymorphic Fixpoint generate_eqfn_defs
+    (todo    : list (kername * inductive))
+    (all_map : list (kername * inductive))
+    (pi_set  : list kername)
+    (cur_mp  : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | entry :: rest =>
+    let old_kn  := fst entry in
+    let new_ind := snd entry in
+    if negb (existsb (eq_kername old_kn) pi_set)
+    then generate_eqfn_defs rest all_map pi_set cur_mp
+    else
+      tmBind (tmQuoteInductive old_kn) (fun old_mind =>
+      tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+      tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+              | None =>
+                tmFail ("generate_eqfn_defs: no body for " ++ snd old_kn)
+              | Some new_oib =>
+                let n_old_ctors :=
+                  match nth_error old_mind.(ind_bodies) 0 with
+                  | Some ob => List.length ob.(ind_ctors)
+                  | None    => 0
+                  end in
+                let n_block := List.length new_mind.(ind_bodies) in
+                let d := make_eqfn_def old_kn new_ind n_block new_oib n_old_ctors all_map cur_mp in
+                (* Name matches type_to_eq_fn's naming: "eqFn"++block_nm (for ind=0)
+                   or "eqFn"++block_nm++"_"++j (for ind>0). *)
+                let blk_nm := snd (inductive_mind new_ind) in
+                let body_j := inductive_ind new_ind in
+                let fn_nm :=
+                  if Nat.eqb body_j 0 then "eqFn" ++ blk_nm
+                  else "eqFn" ++ blk_nm ++ "_" ++ string_of_nat body_j in
+                tmMkDefinition fn_nm (tFix [d] 0)
+              end) (fun _ =>
+      generate_eqfn_defs rest all_map pi_set cur_mp)))
+  end.
+
+(* ------------------------------------------------------------------ *)
 (** ** InputLift function generation                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -2928,11 +3204,24 @@ Polymorphic Definition lift_coinductive_relation
         unique_block_kns in
     _ <- generate_lift_fns type_mapping type_mapping app_kn_mapping cur_mp ;;
     _ <- generate_fnSymb_params type_mapping type_mapping app_kn_mapping ;;
+    (* Sort relation blocks so each block is declared only after the blocks
+       whose relations appear in its constructor types.  This is necessary when
+       blocks are declared with separate [Inductive] commands (e.g. [isZero]
+       and [Len]): if [Len'] references [isZero'], [isZero'] must be in the
+       environment first. *)
+    rel_block_minds_assoc <- monad_map (fun kn =>
+      mind <- tmQuoteInductive kn ;;
+      tmReturn (kn, mind))
+      unique_block_kns ;;
+    let block_id_map := List.map (fun kn => (kn, kn)) unique_block_kns in
+    let sorted_block_kns :=
+      topo_sort_kns unique_block_kns rel_block_minds_assoc block_id_map
+                    [] [] (S #|unique_block_kns|) in
     _ <- monad_fold_left (fun _ block_kn =>
       let block_modes :=
         List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
       lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
-      unique_block_kns tt ;;
+      sorted_block_kns tt ;;
     prod_refs <- tmLocate "prod" ;;
     anim_refs <- tmLocate "animation_result" ;;
     match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
@@ -2948,8 +3237,10 @@ Polymorphic Definition lift_coinductive_relation
       let pi_set :=
         List.map fst (filter (fun e => negb (existsb (eq_kername (fst e)) npi_set)) type_mapping) in
       tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp) (fun _ =>
+      tmBind (generate_chk_fns type_mapping type_mapping pi_set cur_mp) (fun _ =>
+      tmBind (generate_eqfn_defs type_mapping type_mapping pi_set cur_mp) (fun _ =>
       generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set
-                              prod_kn anim_res_kn cur_mp)))))
+                              prod_kn anim_res_kn cur_mp)))))))
     | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
@@ -3035,16 +3326,16 @@ CoInductive myLst : Type :=
 CoInductive listRel : myLst -> bool -> Prop :=
 | lRc : forall a, listRel a true.  
 
-
+(*
   
 MetaRocq Run (animate_coinductive_with_lift <?listRel?>
                [("listRel", ([0],   [1]))
                 ]
                100). 
                
-Print myLstLift.
-Print myLstPush.
+*)
 
+(*
 CoInductive Integrate : stream -> stream -> Prop :=
 | integNil : Integrate nil nil
 | integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
@@ -3062,6 +3353,10 @@ MetaRocq Run (animate_coinductive_with_lift <?Integrate?>
                 ("addNat",    ([0;1], [2]))
                 ]
                100).
+Print natPush.
+Print natChkNoExtraCstrs.
+
+
 
 CoFixpoint from (n : nat) : stream :=
 Seq n (from (S n)).               
@@ -3090,12 +3385,27 @@ Compute zipStAnimatedTopFn 18 (Success (streamInf * streamInf) ((fromInf 0), (fr
 
 Print natPush.
 
+*)
+
+Inductive isZero : bool -> nat -> Prop :=
+| isT : isZero true 0
+| isF : isZero false 1.
+
+  
+Inductive Len : list nat -> list nat -> nat -> Prop :=
+| nilLen : forall l l' m, isZero true m /\ l = [] /\ l' = l -> Len l l' m
+| ConsLen : forall l m x l', l' = l /\  Len l l' m -> Len (x::l) (x::l') (S m).
+  
 
 
 
 
-
-
+MetaRocq Run (animate_coinductive_with_lift <?Len?>
+               [("Len", ([0],   [1;2]));
+                ("isZero",    ([0], [1]))
+                
+                ]
+               100).
 
 
 

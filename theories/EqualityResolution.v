@@ -53,8 +53,9 @@ Fixpoint type_to_eq_fn (t : global_term) : global_term :=
            inductive_ind := 0
          |} [] => <%String.eqb%>
   | tInd {| inductive_mind := (defLoc, str);
-            inductive_ind := _j |} [] =>
-    tConst (defLoc, ((eq_fn_prefix ++ str))) []
+            inductive_ind := j |} [] =>
+    tConst (defLoc, eq_fn_prefix ++ str ++
+            (if Nat.eqb j 0 then "" else "_" ++ string_of_nat j)) []
 
   | tApp <%list%> [tp] => tApp <%@eqb_list%> [tp; (type_to_eq_fn tp)]
   | tApp <%prod%> [tp1 ; tp2] =>
