@@ -2784,7 +2784,15 @@ Definition make_eqfn_def
                             end in
                           [tApp (tConst (cur_mp, cross_fn_nm) [])
                                 [tRel (n_args + snoc_i); tRel snoc_i]]
-                      | None           => []
+                      | None           =>
+                          (* Not a self-ref or cross-lifted-type.  Ask type_to_eq_fn;
+                             it returns the tConstruct for [false] when the type is
+                             unsupported, and a usable function otherwise. *)
+                          let eq_fn := type_to_eq_fn arg_t in
+                          match eq_fn with
+                          | tConstruct _ _ _ => [false_t]
+                          | _ => [tApp eq_fn [tRel (n_args + snoc_i); tRel snoc_i]]
+                          end
                       end)
                       (seq 0 n_args)) in
                   fold_andb cmp_terms
