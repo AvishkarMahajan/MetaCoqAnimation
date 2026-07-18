@@ -795,6 +795,168 @@ Definition direct_deps_in_mapping
             (existsb (fun p => eq_kername kn (fst p)) mapping))
     arg_kns).
 
+(** Collect function-application dependency edges [(output_kn, input_kn)] from
+    constructor type [t] traversed under de Bruijn context [ctx] (innermost
+    first, index 0 = most recently bound variable).
+
+    For each equality premise [@eq T lhs (tApp fn_head fn_args)] found anywhere
+    in [t]:
+    - output knames come from the type argument [T]
+    - input knames come from the declared types of any [tRel i] among [fn_args]
+      (looked up in [ctx])
+    Parametric-type applications in [T] or argument types are resolved through
+    [spec_kn_pairs] to their monomorphised specialisations when possible. *)
+Fixpoint collect_fn_dep_edges_from_ctx
+    (spec_kn_pairs : list ((kername * list kername) * kername))
+    (ctx  : list term)
+    (t    : term)
+    : list (kername * kername) :=
+  let resolve_kns tp :=
+    let plain := collect_tind_kns tp in
+    let spec_hits :=
+      flat_map (fun app =>
+        let hkn  := fst app in
+        let akns := snd app in
+        match find (fun e =>
+          andb (eq_kername (fst (fst e)) hkn)
+               (andb (Nat.eqb #|snd (fst e)| #|akns|)
+                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                              (combine (snd (fst e)) akns))))
+          spec_kn_pairs with
+        | Some e => [snd e]
+        | None   => []
+        end)
+      (collect_ind_apps tp) in
+    dedup_kns (List.app plain spec_hits) in
+  match t with
+  | tProd _ ty body =>
+    List.app
+      (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx ty)
+      (collect_fn_dep_edges_from_ctx spec_kn_pairs (ty :: ctx) body)
+  | tLambda _ ty body =>
+    List.app
+      (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx ty)
+      (collect_fn_dep_edges_from_ctx spec_kn_pairs (ty :: ctx) body)
+  | tLetIn _ val ty body =>
+    List.app
+      (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx val)
+      (List.app
+         (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx ty)
+         (collect_fn_dep_edges_from_ctx spec_kn_pairs (ty :: ctx) body))
+  | tApp f args =>
+    let rec_hits :=
+      List.app
+        (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx f)
+        (flat_map (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx) args) in
+    match f with
+    | tInd {| inductive_mind := eq_kn |} _ =>
+      if String.eqb (snd eq_kn) "eq" then
+        match args with
+        | T :: _ :: rhs :: _ =>
+          let out_kns := resolve_kns T in
+          let arg_types :=
+            flat_map (fun a =>
+              match a with
+              | tRel i =>
+                match nth_error ctx i with
+                | Some tp => [tp]
+                | None    => []
+                end
+              | _ => []
+              end)
+            (match rhs with tApp _ fn_args => fn_args | _ => [] end) in
+          let in_kns := dedup_kns (flat_map resolve_kns arg_types) in
+          let edges :=
+            flat_map (fun ok =>
+              flat_map (fun ik =>
+                if eq_kername ok ik then [] else [(ok, ik)])
+              in_kns)
+            out_kns in
+          List.app edges rec_hits
+        | _ => rec_hits
+        end
+      else rec_hits
+    | _ => rec_hits
+    end
+  | tCase _ pred disc brs =>
+    List.app
+      (flat_map (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx) pred.(pparams))
+      (List.app
+         (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx pred.(preturn))
+         (List.app
+            (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx disc)
+            (flat_map (fun br =>
+               collect_fn_dep_edges_from_ctx spec_kn_pairs ctx br.(bbody)) brs)))
+  | _ => []
+  end.
+
+(** Collect [(fn_kn, [arg_type_terms], ret_type_term)] for each named function
+    applied in an equality premise inside constructor type [t], using de Bruijn
+    context [ctx] (innermost first).
+
+    For each premise [@eq T lhs (tApp (tConst fn_kn _) fn_args)]:
+    - [ret_type] = T
+    - [arg_types] = types of each [tRel i] argument, looked up in [ctx]
+    Only emits an entry when ALL arguments are [tRel] nodes (so that every
+    arg type is resolvable from the context). *)
+Fixpoint collect_fn_app_info_from_ctx
+    (ctx : list term)
+    (t   : term)
+    : list (kername * list term * term) :=
+  match t with
+  | tProd _ ty body =>
+    List.app
+      (collect_fn_app_info_from_ctx ctx ty)
+      (collect_fn_app_info_from_ctx (ty :: ctx) body)
+  | tLambda _ ty body =>
+    List.app
+      (collect_fn_app_info_from_ctx ctx ty)
+      (collect_fn_app_info_from_ctx (ty :: ctx) body)
+  | tLetIn _ val ty body =>
+    List.app (collect_fn_app_info_from_ctx ctx val)
+    (List.app (collect_fn_app_info_from_ctx ctx ty)
+              (collect_fn_app_info_from_ctx (ty :: ctx) body))
+  | tApp f args =>
+    let rec_hits :=
+      List.app
+        (collect_fn_app_info_from_ctx ctx f)
+        (flat_map (collect_fn_app_info_from_ctx ctx) args) in
+    match f with
+    | tInd {| inductive_mind := eq_kn |} _ =>
+      if String.eqb (snd eq_kn) "eq" then
+        match args with
+        | ret_tp :: _ :: rhs :: _ =>
+          match rhs with
+          | tApp (tConst fn_kn _) fn_args =>
+            let maybe_types :=
+              List.map (fun a =>
+                match a with
+                | tRel i => nth_error ctx i
+                | _      => None
+                end) fn_args in
+            if forallb (fun o => match o with Some _ => true | None => false end) maybe_types
+            then
+              let arg_types :=
+                flat_map (fun o => match o with Some tp => [tp] | None => [] end) maybe_types in
+              List.app [(fn_kn, arg_types, ret_tp)] rec_hits
+            else rec_hits
+          | _ => rec_hits
+          end
+        | _ => rec_hits
+        end
+      else rec_hits
+    | _ => rec_hits
+    end
+  | tCase _ pred disc brs =>
+    List.app
+      (flat_map (collect_fn_app_info_from_ctx ctx) pred.(pparams))
+      (List.app (collect_fn_app_info_from_ctx ctx pred.(preturn))
+      (List.app (collect_fn_app_info_from_ctx ctx disc)
+                (flat_map (fun br =>
+                   collect_fn_app_info_from_ctx ctx br.(bbody)) brs)))
+  | _ => []
+  end.
+
 (** Kahn's topological sort: returns [type_kns] reordered so that every
     type comes after all the other types in [mapping] that it depends on.
     [minds_assoc] is [(kn, mutual_inductive_body)] for each kn in [type_kns].
@@ -912,11 +1074,12 @@ Definition remap_mind_kns
     then C is added first (when T's constructors are explored) and B is added
     later (when C's constructors are explored and C ∈ lifting). *)
 Polymorphic Fixpoint expand_dep_closure
-    (worklist : list kername)
-    (lifting  : list kername)
-    (explored : list kername)
-    (rel_kns  : list kername)
-    (fuel     : nat)
+    (worklist      : list kername)
+    (lifting       : list kername)
+    (explored      : list kername)
+    (rel_kns       : list kername)
+    (fn_dep_edges  : list (kername * kername))
+    (fuel          : nat)
     : TemplateMonad (list kername) :=
   match fuel with
   | 0 =>
@@ -930,34 +1093,42 @@ Polymorphic Fixpoint expand_dep_closure
     | kn :: rest =>
       if orb (existsb (eq_kername kn) explored)
              (existsb (eq_kername kn) rel_kns)
-      then expand_dep_closure rest lifting explored rel_kns f
+      then expand_dep_closure rest lifting explored rel_kns fn_dep_edges f
       else
         mind <- tmQuoteInductive kn ;;
         if orb (is_prop_mind mind) (negb (Nat.eqb mind.(ind_npars) 0))
         then expand_dep_closure rest lifting
-               (dedup_kns (explored ++ [kn])) rel_kns f
+               (dedup_kns (explored ++ [kn])) rel_kns fn_dep_edges f
         else
           let ctor_arg_kns :=
             dedup_kns (flat_map (fun oib =>
               flat_map (fun c => collect_tind_kns c.(cstr_type))
                        oib.(ind_ctors))
             mind.(ind_bodies)) in
+          (* Function-application dep edges: types that [kn] depends on as the
+             output type of some premise function (e.g. if [f : T → kn] was
+             found in an equality premise, [T] is a fn_dep of [kn]). *)
+          let fn_dep_kns :=
+            dedup_kns (flat_map
+              (fun e => if eq_kername (fst e) kn then [snd e] else [])
+              fn_dep_edges) in
+          let all_dep_kns := dedup_kns (ctor_arg_kns ++ fn_dep_kns) in
           let new_in_wl :=
             filter (fun kn' =>
               andb (negb (existsb (eq_kername kn') explored))
                    (negb (existsb (eq_kername kn') rest)))
-              ctor_arg_kns in
+              all_dep_kns in
           let new_lifting :=
             if andb (negb (existsb (eq_kername kn) lifting))
                     (existsb (fun kn' =>
-                       existsb (eq_kername kn') lifting) ctor_arg_kns)
+                       existsb (eq_kername kn') lifting) all_dep_kns)
             then dedup_kns (lifting ++ [kn])
             else lifting in
           expand_dep_closure
             (rest ++ new_in_wl)
             new_lifting
             (dedup_kns (explored ++ [kn]))
-            rel_kns f
+            rel_kns fn_dep_edges f
     end
   end.
 
@@ -971,6 +1142,7 @@ Polymorphic Fixpoint expand_dep_closure_fix
     (initial_worklist : list kername)
     (lifting          : list kername)
     (rel_kns          : list kername)
+    (fn_dep_edges     : list (kername * kername))
     (inner_fuel       : nat)
     (outer_fuel       : nat)
     : TemplateMonad (list kername) :=
@@ -981,10 +1153,10 @@ Polymorphic Fixpoint expand_dep_closure_fix
             " BFS passes; current lifting set: " ++
             String.concat ", " (List.map snd lifting))
   | S f =>
-    lifting' <- expand_dep_closure initial_worklist lifting [] rel_kns inner_fuel ;;
+    lifting' <- expand_dep_closure initial_worklist lifting [] rel_kns fn_dep_edges inner_fuel ;;
     if Nat.eqb (List.length lifting') (List.length lifting)
     then tmReturn lifting'
-    else expand_dep_closure_fix initial_worklist lifting' rel_kns inner_fuel f
+    else expand_dep_closure_fix initial_worklist lifting' rel_kns fn_dep_edges inner_fuel f
   end.
 
 (** Given a [mode_map], find all non-Prop types occurring as argument types
@@ -1109,6 +1281,21 @@ Polymorphic Definition preprocess_coind_types
       tmReturn (List.app acc [(entry, spec_kn)]))
     raw_ind_apps [] ;;
   let spec_kns := List.map snd spec_kn_pairs in
+  (* Step 4c: compute function-application dependency edges (pure).
+     For each relation constructor type, traverse with a de Bruijn context to
+     find equality premises [@eq T lhs (f arg1 … argN)].  The output type [T]
+     and the declared types of any [tRel] arguments (from the context) give
+     edges [(out_kn, in_kn)], resolved through [spec_kn_pairs] for parametric
+     types.  These edges are passed to [expand_dep_closure] so that if out_kn
+     is in the lifting set, in_kn is also explored and potentially lifted. *)
+  let fn_dep_edges :=
+    flat_map (fun km =>
+      flat_map (fun oib =>
+        flat_map (fun c =>
+          collect_fn_dep_edges_from_ctx spec_kn_pairs [] c.(cstr_type))
+                 oib.(ind_ctors))
+      (snd km).(ind_bodies))
+    rel_block_minds in
   (* Step 5: initial lifting set = signature types + specialised parametric
      types (spec_kns), filtered to non-Prop / non-parametric.
      Equality-premise types are NOT in the initial lifting set; they act
@@ -1135,8 +1322,9 @@ Polymorphic Definition preprocess_coind_types
                ctor_eq_kns_raw)) [] ;;
   (* Step 5b: dependency closure — BFS from signature types AND equality
      seeds, but only add a type to the lifting set if it has at least one
-     constructor argument type already in the lifting set. *)
-  type_kns <- expand_dep_closure_fix (type_kns ++ eq_seed_kns) type_kns rel_kns fuel fuel ;;
+     constructor argument type (or function-application dep) already in the
+     lifting set. *)
+  type_kns <- expand_dep_closure_fix (type_kns ++ eq_seed_kns) type_kns rel_kns fn_dep_edges fuel fuel ;;
   let pre_mapping := List.map (fun kn => (kn, (cur_mp, snd kn ++ "'"))) type_kns in
   (* Helper: given a term [t], return the lifted knames it mentions —
      either as a plain [tInd kn] in [pre_mapping], or as a recognised
@@ -2870,6 +3058,157 @@ Polymorphic Fixpoint generate_eqfn_defs
   end.
 
 (* ------------------------------------------------------------------ *)
+(** ** Lifted premise-function generation                             *)
+(* ------------------------------------------------------------------ *)
+
+(** For each premise function [fn_kn] (collected from ctor equality premises),
+    declare [fn_kn_liftedFunc] that:
+    - If any input is lifted: checks [ChkNoExtraCstrs] on every lifted input;
+      if any has extra ctors returns [undefinedCstr] of the lifted output type,
+      otherwise pushes every lifted input, applies the original function, and
+      lifts the output.
+    - If only the output is lifted: applies the original function and lifts the
+      output.
+    - If neither input nor output is lifted: defines an alias for the original
+      function.
+    Assumption: all input and output types of [fn_kn] are pure inductives. *)
+Polymorphic Fixpoint generate_lifted_fns
+    (fn_infos   : list (kername * list term * term))
+    (type_map   : list (kername * inductive))
+    (app_kn_map : list (kername * list kername * inductive))
+    (cur_mp     : modpath)
+    : TemplateMonad unit :=
+  match fn_infos with
+  | [] => tmReturn tt
+  | fn_info :: rest =>
+    let fn_kn     := fst (fst fn_info) in
+    let arg_types := snd (fst fn_info) in
+    let ret_type  := snd fn_info in
+    let n         := List.length arg_types in
+    let anon_b    := {| binder_name := nAnon; binder_relevance := Relevant |} in
+    let bool_ind  := {| inductive_mind :=
+                          (MPfile ["Datatypes"; "Init"; "Corelib"], "bool");
+                        inductive_ind := 0 |} in
+    let true_t    := tConstruct bool_ind 0 [] in
+    let andb_kn   := (MPfile ["Datatypes"; "Init"; "Corelib"], "andb") in
+    let fold_andb chks :=
+      match chks with
+      | []  => true_t
+      | [c] => c
+      | _   => List.fold_right
+                 (fun c acc => tApp (tConst andb_kn []) [c; acc]) true_t chks
+      end in
+    (* resolve_tp: given a type term, return Some (old_kn, new_ind) if lifted *)
+    let resolve_tp (tp : term) : option (kername * inductive) :=
+      match tp with
+      | tInd ind _ =>
+        let kn := inductive_mind ind in
+        match find (fun e => eq_kername (fst e) kn) type_map with
+        | Some entry => Some entry
+        | None      => None
+        end
+      | tApp (tInd head_ind _) arg_terms =>
+        let kn      := inductive_mind head_ind in
+        let arg_kns := flat_map (fun a =>
+          match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_terms in
+        if negb (Nat.eqb #|arg_kns| #|arg_terms|) then None
+        else
+          match find (fun e =>
+            andb (eq_kername (fst (fst e)) kn)
+                 (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
+                       (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                                (combine arg_kns (snd (fst e))))))
+            app_kn_map with
+          | Some (_, new_ind) =>
+            match find (fun e =>
+              andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                   (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+              type_map with
+            | Some entry => Some entry
+            | None      => None
+            end
+          | None => None
+          end
+      | _ => None
+      end in
+    let arg_infos := List.map resolve_tp arg_types in
+    let ret_info  := resolve_tp ret_type in
+    let any_input_lifted :=
+      existsb (fun o => match o with Some _ => true | None => false end)
+              arg_infos in
+    (* lambda binder types: use lifted type if arg is lifted, original otherwise *)
+    let lifted_arg_types :=
+      List.map (fun pair =>
+        match fst pair with
+        | Some (_, new_ind) => tInd new_ind []
+        | None              => snd pair
+        end) (combine arg_infos arg_types) in
+    (* inside n lambdas, arg i (0-indexed from outermost) = tRel (n-1-i) *)
+    let pushed_args :=
+      mapi (fun i info =>
+        let rel_i := tRel (n - 1 - i) in
+        match info with
+        | Some (old_kn, _) =>
+          tApp (tConst (cur_mp, snd old_kn ++ "Push") []) [rel_i]
+        | None => rel_i
+        end) arg_infos in
+    let f_applied :=
+      match pushed_args with
+      | [] => tConst fn_kn []
+      | _  => tApp (tConst fn_kn []) pushed_args
+      end in
+    let chk_terms :=
+      flat_map (fun p =>
+        match snd p with
+        | Some (old_kn, _) =>
+          let rel_i := tRel (n - 1 - fst p) in
+          [tApp (tConst (cur_mp, snd old_kn ++ "ChkNoExtraCstrs") []) [rel_i]]
+        | None => []
+        end) (mapi (fun i info => (i, info)) arg_infos) in
+    let all_good := fold_andb chk_terms in
+    tmBind
+      (match any_input_lifted, ret_info with
+       | true, Some (ret_old_kn, new_ret_ind) =>
+         tmBind (tmQuoteInductive ret_old_kn) (fun orig_ret_mind =>
+           let n_orig_ret_ctors :=
+             match nth_error orig_ret_mind.(ind_bodies) 0 with
+             | Some ob => List.length ob.(ind_ctors)
+             | None    => 0
+             end in
+           let undefined_out := tConstruct new_ret_ind n_orig_ret_ctors [] in
+           let lifted_out    :=
+             tApp (tConst (cur_mp, snd ret_old_kn ++ "Lift") []) [f_applied] in
+           let bool_ci   :=
+             {| ci_ind := bool_ind; ci_npar := 0; ci_relevance := Relevant |} in
+           let bool_pred :=
+             {| puinst := []; pparams := []; pcontext := [anon_b];
+                preturn := tInd new_ret_ind [] |} in
+           let body := tCase bool_ci bool_pred all_good
+             [{| bcontext := []; bbody := lifted_out  |};
+              {| bcontext := []; bbody := undefined_out |}] in
+           let fn_term :=
+             List.fold_right
+               (fun tp acc => tLambda anon_b tp acc) body lifted_arg_types in
+           tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term)
+       | true, None =>
+         let fn_term :=
+           List.fold_right
+             (fun tp acc => tLambda anon_b tp acc) f_applied lifted_arg_types in
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term
+       | false, Some (ret_old_kn, _) =>
+         let lift_fn := tConst (cur_mp, snd ret_old_kn ++ "Lift") [] in
+         let body    := tApp lift_fn [f_applied] in
+         let fn_term :=
+           List.fold_right
+             (fun tp acc => tLambda anon_b tp acc) body lifted_arg_types in
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term
+       | false, None =>
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") (tConst fn_kn [])
+       end) (fun _ =>
+    generate_lifted_fns rest type_map app_kn_map cur_mp)
+  end.
+
+(* ------------------------------------------------------------------ *)
 (** ** InputLift function generation                                  *)
 (* ------------------------------------------------------------------ *)
 
@@ -3247,8 +3586,24 @@ Polymorphic Definition lift_coinductive_relation
       tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp) (fun _ =>
       tmBind (generate_chk_fns type_mapping type_mapping pi_set cur_mp) (fun _ =>
       tmBind (generate_eqfn_defs type_mapping type_mapping pi_set cur_mp) (fun _ =>
+      let all_fn_infos :=
+        flat_map (fun km =>
+          flat_map (fun oib =>
+            flat_map (fun c =>
+              collect_fn_app_info_from_ctx [] c.(cstr_type))
+                     oib.(ind_ctors))
+          (snd km).(ind_bodies))
+        rel_block_minds_assoc in
+      let unique_fn_infos :=
+        fold_left (fun acc entry =>
+          let fkn := fst (fst entry) in
+          if existsb (fun e => eq_kername (fst (fst e)) fkn) acc
+          then acc
+          else List.app acc [entry])
+        all_fn_infos [] in
+      tmBind (generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp) (fun _ =>
       generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set
-                              prod_kn anim_res_kn cur_mp)))))))
+                              prod_kn anim_res_kn cur_mp))))))))
     | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
@@ -3394,6 +3749,18 @@ Compute zipStAnimatedTopFn 18 (Success (streamInf * streamInf) ((fromInf 0), (fr
 Print natPush.
 
 *)
+Definition add := fun x y => x + y.
+Inductive liftFnEx : list nat -> list nat -> Prop :=
+| c1 : forall a b c, c = add a b -> liftFnEx [a;b] [c].
+
+Definition hdDef (l : list nat) : nat :=
+match l with
+| [] => 0
+| h :: t => h
+end.
+
+Inductive liftFnEx2 : list nat -> list nat -> Prop :=
+| c2 : forall a b,  b = hdDef a  -> liftFnEx2 a [b].
 
 Inductive isZero : bool -> nat -> Prop :=
 | isT : isZero true 0
