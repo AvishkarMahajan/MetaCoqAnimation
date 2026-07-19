@@ -1037,23 +1037,51 @@ Fixpoint collect_fn_app_info_from_ctx
   | _ => []
   end.
 
-(** Scan [cstr_indices] for direct function applications [tApp (tConst fn_kn) fn_args]
-    where all fn_args are [tRel] nodes resolvable in [full_ctx] (the types of [cstr_args],
-    innermost at index 0).  [idx_types] are the declared index types of the relation
-    extracted from [oib.ind_type]; they provide the [ret_type] for each index position. *)
-Definition collect_fn_app_info_from_indices
-    (full_ctx  : list term)
-    (idx_types : list term)
-    (cstr_idx  : list term)
+(** Skip [n] leading [tProd] binders and return the remainder of the type.
+    Used to extract return types from constant types: [skip_prods (arity fn) cst_type]. *)
+Fixpoint skip_prods (n : nat) (t : term) : term :=
+  match n with
+  | 0   => t
+  | S k => match t with
+            | tProd _ _ body => skip_prods k body
+            | _              => t
+            end
+  end.
+
+(** Extract the first [n] argument types from a [tProd]-chain,
+    skipping [skip] leading binders (parameters).
+    Forward-declared here so it is available to the constructor-scanning helpers below. *)
+Fixpoint extract_arg_types_early (skip n : nat) (t : term) : list term :=
+  match skip with
+  | S k => match t with
+            | tProd _ _ body => extract_arg_types_early k n body
+            | _ => []
+            end
+  | 0 =>
+    match n, t with
+    | 0, _            => []
+    | _, tSort _      => []
+    | S k, tProd _ ty body => ty :: extract_arg_types_early 0 k body
+    | _, _ => []
+    end
+  end.
+
+(** Given a list of (arg_term, ret_type) pairs from a relation application or
+    conclusion index, emit [(fn_kn, arg_types, ret_tp)] for each pair where
+    arg_term = [tApp (tConst fn_kn) fn_args] and all fn_args are [tRel] nodes
+    resolvable in [ctx] (innermost at index 0). *)
+Definition collect_fn_apps_from_arg_pairs
+    (ctx   : list term)
+    (pairs : list (term * term))
     : list (kername * list term * term) :=
   flat_map (fun pair =>
-    let idx_tm := fst pair in
+    let arg_tm := fst pair in
     let ret_tp := snd pair in
-    match idx_tm with
+    match arg_tm with
     | tApp (tConst fn_kn _) fn_args =>
       let maybe_types := List.map (fun a =>
         match a with
-        | tRel i => nth_error full_ctx i
+        | tRel i => nth_error ctx i
         | _ => None
         end) fn_args in
       if forallb (fun o => match o with Some _ => true | None => false end) maybe_types
@@ -1064,36 +1092,174 @@ Definition collect_fn_app_info_from_indices
       else []
     | _ => []
     end)
-  (combine cstr_idx idx_types).
+  pairs.
+
+(** Scan [cstr_indices] for direct function applications [tApp (tConst fn_kn) fn_args]
+    where all fn_args are [tRel] nodes resolvable in [full_ctx] (the types of [cstr_args],
+    innermost at index 0).  [idx_types] are the declared index types of the relation
+    extracted from [oib.ind_type]; they provide the [ret_type] for each index position. *)
+Definition collect_fn_app_info_from_indices
+    (full_ctx  : list term)
+    (idx_types : list term)
+    (cstr_idx  : list term)
+    : list (kername * list term * term) :=
+  collect_fn_apps_from_arg_pairs full_ctx (combine cstr_idx idx_types).
+
+(** Recursively scan a premise term [t] under de Bruijn context [ctx] for
+    relation applications [tApp (tInd rel_ind) rel_args] where [rel_ind] is
+    tracked in [rel_minds_assoc].  For each such application, any argument
+    position that is [tApp (tConst fn_kn) fn_args] (all args being [tRel]
+    nodes) emits [(fn_kn, arg_types, ret_type)] using the relation's declared
+    index types to supply [ret_type].  Also recurses into sub-terms so that
+    nested applications (e.g. inside conjunctions) are found. *)
+Fixpoint collect_fn_app_info_from_prem
+    (rel_minds_assoc : list (kername * mutual_inductive_body))
+    (ctx : list term)
+    (t   : term)
+    : list (kername * list term * term) :=
+  match t with
+  | tProd _ ty body =>
+    List.app
+      (collect_fn_app_info_from_prem rel_minds_assoc ctx ty)
+      (collect_fn_app_info_from_prem rel_minds_assoc (ty :: ctx) body)
+  | tLambda _ ty body =>
+    List.app
+      (collect_fn_app_info_from_prem rel_minds_assoc ctx ty)
+      (collect_fn_app_info_from_prem rel_minds_assoc (ty :: ctx) body)
+  | tLetIn _ val ty body =>
+    List.app
+      (collect_fn_app_info_from_prem rel_minds_assoc ctx val)
+    (List.app
+      (collect_fn_app_info_from_prem rel_minds_assoc ctx ty)
+      (collect_fn_app_info_from_prem rel_minds_assoc (ty :: ctx) body))
+  | tApp f args =>
+    let rec_hits :=
+      List.app
+        (collect_fn_app_info_from_prem rel_minds_assoc ctx f)
+        (flat_map (collect_fn_app_info_from_prem rel_minds_assoc ctx) args) in
+    match f with
+    | tInd rel_ind _ =>
+      let kn   := inductive_mind rel_ind in
+      let bidx := inductive_ind  rel_ind in
+      if String.eqb (snd kn) "eq" then rec_hits  (* @eq handled by collect_fn_app_info_from_ctx *)
+      else
+        match find (fun p => eq_kername (fst p) kn) rel_minds_assoc with
+        | None => rec_hits
+        | Some (_, mind) =>
+          match nth_error mind.(ind_bodies) bidx with
+          | None => rec_hits
+          | Some oib =>
+            let idx_types := extract_arg_types_early mind.(ind_npars) 100 oib.(ind_type) in
+            List.app
+              (collect_fn_apps_from_arg_pairs ctx (combine args idx_types))
+              rec_hits
+          end
+        end
+    | _ => rec_hits
+    end
+  | _ => []
+  end.
 
 (** Scan a constructor's premises ([cstr_args]), conclusion ([cstr_type]),
     and index terms ([cstr_indices]) and return all [(fn_kn, arg_types, ret_type)]
-    entries.  Premises and [cstr_type] are scanned for [@eq T lhs (f args)] patterns;
-    [cstr_indices] are scanned for direct [tApp (tConst fn_kn) fn_args] applications.
-    [idx_types] are the relation's declared index types (from [extract_arg_types] on
-    [oib.ind_type]) and supply the [ret_type] for each index position. *)
+    entries.
+
+    - Premises are scanned for equality sub-terms [@eq T lhs (f args)] and for
+      relation applications [tApp (tInd rel_ind) rel_args] where a rel_arg is
+      a function application (new: requires [rel_minds_assoc]).
+    - [cstr_type] is scanned for further equality sub-terms.
+    - [cstr_indices] are scanned for direct [tApp (tConst fn_kn) fn_args]
+      applications using [idx_types] for [ret_type]. *)
 Definition collect_fn_app_info_from_ctor
-    (idx_types : list term)
+    (idx_types       : list term)
+    (rel_minds_assoc : list (kername * mutual_inductive_body))
     (c : constructor_body)
     : list (kername * list term * term) :=
-  let prem_infos :=
-    snd (fold_left (fun p d =>
-           let ctx := fst p in
-           let acc := snd p in
-           (d.(decl_type) :: ctx,
-            List.app acc (collect_fn_app_info_from_ctx ctx d.(decl_type))))
-         (List.rev c.(cstr_args))
-         ([], [])) in
+  let (_, prem_infos) :=
+    fold_left (fun p d =>
+      let ctx := fst p in
+      let acc := snd p in
+      let eq_hits  := collect_fn_app_info_from_ctx  ctx d.(decl_type) in
+      let rel_hits := collect_fn_app_info_from_prem rel_minds_assoc ctx d.(decl_type) in
+      (d.(decl_type) :: ctx, List.app acc (List.app eq_hits rel_hits)))
+    (List.rev c.(cstr_args))
+    ([], []) in
   let full_ctx  := List.map decl_type c.(cstr_args) in
   let idx_infos := collect_fn_app_info_from_indices full_ctx idx_types c.(cstr_indices) in
   List.app prem_infos (List.app (collect_fn_app_info_from_ctx [] c.(cstr_type)) idx_infos).
 
+(** Scan a term for ALL [tApp (tConst fn_kn) fn_args] sub-terms where every
+    argument is a [tRel] resolvable in [ctx].  Returns [(fn_kn, arg_types)]
+    without a [ret_type]; callers look that up via [tmQuoteConstant].
+    This catches function applications nested inside constructor applications
+    that the equality-pattern scanner misses. *)
+Fixpoint collect_const_fn_kns_from_ctx
+    (ctx : list term)
+    (t   : term)
+    : list (kername * list term) :=
+  match t with
+  | tProd _ ty body =>
+    List.app
+      (collect_const_fn_kns_from_ctx ctx ty)
+      (collect_const_fn_kns_from_ctx (ty :: ctx) body)
+  | tLambda _ ty body =>
+    List.app
+      (collect_const_fn_kns_from_ctx ctx ty)
+      (collect_const_fn_kns_from_ctx (ty :: ctx) body)
+  | tLetIn _ val ty body =>
+    List.app (collect_const_fn_kns_from_ctx ctx val)
+    (List.app (collect_const_fn_kns_from_ctx ctx ty)
+              (collect_const_fn_kns_from_ctx (ty :: ctx) body))
+  | tApp f args =>
+    let rec_hits :=
+      List.app
+        (collect_const_fn_kns_from_ctx ctx f)
+        (flat_map (collect_const_fn_kns_from_ctx ctx) args) in
+    match f with
+    | tConst fn_kn _ =>
+      let maybe_types := List.map (fun a =>
+        match a with
+        | tRel i => nth_error ctx i
+        | _      => None
+        end) args in
+      if forallb (fun o => match o with Some _ => true | None => false end) maybe_types
+      then
+        let arg_types :=
+          flat_map (fun o => match o with Some tp => [tp] | None => [] end) maybe_types in
+        List.app [(fn_kn, arg_types)] rec_hits
+      else rec_hits
+    | _ => rec_hits
+    end
+  | _ => []
+  end.
+
+(** Collect all [(fn_kn, arg_types)] pairs from a constructor by scanning
+    [cstr_args], [cstr_type], and [cstr_indices] with [collect_const_fn_kns_from_ctx].
+    This finds function applications nested inside constructor applications in
+    index terms (e.g. [Nat.add] inside [Seq (m+n) s2]), which the
+    equality-pattern and top-level-index scanners miss. *)
+Definition collect_const_fn_kns_from_ctor (c : constructor_body)
+    : list (kername * list term) :=
+  let prem_pairs :=
+    snd (fold_left (fun p d =>
+           let ctx := fst p in
+           let acc := snd p in
+           (d.(decl_type) :: ctx,
+            List.app acc (collect_const_fn_kns_from_ctx ctx d.(decl_type))))
+         (List.rev c.(cstr_args))
+         ([], [])) in
+  let full_ctx := List.map decl_type c.(cstr_args) in
+  let idx_pairs  := flat_map (collect_const_fn_kns_from_ctx full_ctx) c.(cstr_indices) in
+  let type_pairs := collect_const_fn_kns_from_ctx [] c.(cstr_type) in
+  List.app prem_pairs (List.app type_pairs idx_pairs).
+
 (** Same as [collect_fn_app_info_from_ctor] but returns dependency edges
     [(out_kn, in_kn)] for [collect_fn_dep_edges_from_ctx].
-    Also scans [cstr_indices] for direct function applications. *)
+    Also scans [cstr_indices] and relation-application premises. *)
 Definition collect_fn_dep_edges_from_ctor
-    (spec_kn_pairs : list ((kername * list kername) * kername))
-    (idx_types     : list term)
+    (spec_kn_pairs   : list ((kername * list kername) * kername))
+    (idx_types       : list term)
+    (rel_minds_assoc : list (kername * mutual_inductive_body))
     (c : constructor_body)
     : list (kername * kername) :=
   let resolve_kns (tp : term) :=
@@ -1113,25 +1279,16 @@ Definition collect_fn_dep_edges_from_ctor
         end)
       (collect_ind_apps tp) in
     dedup_kns (List.app plain spec_hits) in
-  let prem_edges :=
-    snd (fold_left (fun p d =>
-           let ctx := fst p in
-           let acc := snd p in
-           (d.(decl_type) :: ctx,
-            List.app acc (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx d.(decl_type))))
-         (List.rev c.(cstr_args))
-         ([], [])) in
-  let full_ctx := List.map decl_type c.(cstr_args) in
-  let idx_edges :=
+  let edges_from_pairs (ctx : list term) (pairs : list (term * term)) :=
     flat_map (fun pair =>
-      let idx_tm := fst pair in
+      let arg_tm := fst pair in
       let ret_tp := snd pair in
-      match idx_tm with
+      match arg_tm with
       | tApp (tConst _ _) fn_args =>
         let arg_types :=
           flat_map (fun a =>
             match a with
-            | tRel i => match nth_error full_ctx i with Some tp => [tp] | None => [] end
+            | tRel i => match nth_error ctx i with Some tp => [tp] | None => [] end
             | _ => []
             end) fn_args in
         let out_kns := resolve_kns ret_tp in
@@ -1139,8 +1296,28 @@ Definition collect_fn_dep_edges_from_ctor
         flat_map (fun ok => flat_map (fun ik =>
           if eq_kername ok ik then [] else [(ok, ik)]) in_kns) out_kns
       | _ => []
-      end)
-    (combine c.(cstr_indices) idx_types) in
+      end) pairs in
+  let (_, prem_edges) :=
+    fold_left (fun p d =>
+      let ctx := fst p in
+      let acc := snd p in
+      let eq_edges  := collect_fn_dep_edges_from_ctx spec_kn_pairs ctx d.(decl_type) in
+      let rel_fn_infos :=
+        collect_fn_app_info_from_prem rel_minds_assoc ctx d.(decl_type) in
+      let rel_edges :=
+        flat_map (fun fi =>
+          let ret_tp    := snd fi in
+          let arg_types := snd (fst fi) in
+          let out_kns   := resolve_kns ret_tp in
+          let in_kns    := dedup_kns (flat_map resolve_kns arg_types) in
+          flat_map (fun ok => flat_map (fun ik =>
+            if eq_kername ok ik then [] else [(ok, ik)]) in_kns) out_kns)
+        rel_fn_infos in
+      (d.(decl_type) :: ctx, List.app acc (List.app eq_edges rel_edges)))
+    (List.rev c.(cstr_args))
+    ([], []) in
+  let full_ctx := List.map decl_type c.(cstr_args) in
+  let idx_edges := edges_from_pairs full_ctx (combine c.(cstr_indices) idx_types) in
   List.app prem_edges
     (List.app (collect_fn_dep_edges_from_ctx spec_kn_pairs [] c.(cstr_type)) idx_edges).
 
@@ -1500,12 +1677,13 @@ Polymorphic Definition preprocess_coind_types
       flat_map (fun oib =>
         let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
         flat_map (fun c =>
-          collect_fn_dep_edges_from_ctor spec_kn_pairs idx_types c)
+          collect_fn_dep_edges_from_ctor spec_kn_pairs idx_types rel_block_minds c)
                  oib.(ind_ctors))
       (snd km).(ind_bodies))
     rel_block_minds in
-  (* Collect function application info (premises + direct indices). *)
-  let fn_app_infos :=
+  (* Collect function application info (equality premises, relation-application
+     premises, and direct indices in the conclusion). *)
+  let fn_app_infos_base :=
     fold_left (fun acc fi =>
       if existsb (fun e => eq_kername (fst (fst e)) (fst (fst fi))) acc
       then acc else List.app acc [fi])
@@ -1514,11 +1692,36 @@ Polymorphic Definition preprocess_coind_types
       flat_map (fun oib =>
         let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
         flat_map (fun c =>
-          collect_fn_app_info_from_ctor idx_types c)
+          collect_fn_app_info_from_ctor idx_types rel_block_minds c)
                  oib.(ind_ctors))
       (snd km).(ind_bodies))
     rel_block_minds)
     [] in
+  (* Also scan for function applications nested inside constructor applications
+     in index terms (e.g. [Nat.add m n] inside [Seq (m+n) s2]).  For each
+     new fn_kn not already in fn_app_infos_base, look up the return type from
+     the global environment. *)
+  let extra_fn_pairs :=
+    flat_map (fun km =>
+      flat_map (fun oib =>
+        flat_map collect_const_fn_kns_from_ctor oib.(ind_ctors))
+      (snd km).(ind_bodies))
+    rel_block_minds in
+  let new_fn_pairs :=
+    fold_left (fun acc p =>
+      let fn_kn := fst p in
+      if orb (existsb (fun e => eq_kername (fst (fst e)) fn_kn) fn_app_infos_base)
+             (existsb (fun q => eq_kername (fst q) fn_kn) acc)
+      then acc
+      else List.app acc [p])
+    extra_fn_pairs [] in
+  extra_fn_infos <- monad_map (fun p =>
+    let fn_kn   := fst p in
+    let arg_tps := snd p in
+    cb <- tmQuoteConstant fn_kn false ;;
+    let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
+    tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs ;;
+  let fn_app_infos := List.app fn_app_infos_base extra_fn_infos in
   (* Step 5: initial lifting set = signature types + specialised parametric
      types (spec_kns), filtered to non-Prop / non-parametric.
      Equality-premise types are NOT in the initial lifting set; they act
@@ -3841,23 +4044,47 @@ Polymorphic Definition lift_coinductive_relation
       _ <- generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp ;;
       _ <- generate_chk_fns type_mapping type_mapping pi_set cur_mp ;;
       _ <- generate_eqfn_defs type_mapping type_mapping pi_set cur_mp ;;
-      let all_fn_infos :=
+      let all_fn_infos_base :=
         flat_map (fun km =>
           let n_params := (snd km).(ind_npars) in
           flat_map (fun oib =>
             let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
             flat_map (fun c =>
-              collect_fn_app_info_from_ctor idx_types c)
+              collect_fn_app_info_from_ctor idx_types rel_block_minds_assoc c)
                      oib.(ind_ctors))
           (snd km).(ind_bodies))
         rel_block_minds_assoc in
-      let unique_fn_infos :=
+      let unique_fn_infos_base :=
         fold_left (fun acc entry =>
           let fkn := fst (fst entry) in
           if existsb (fun e => eq_kername (fst (fst e)) fkn) acc
           then acc
           else List.app acc [entry])
-        all_fn_infos [] in
+        all_fn_infos_base [] in
+      (* Also pick up function applications nested inside constructor applications
+         in index terms (e.g. [Nat.add m n] inside [Seq (m+n) s2]).  Look up
+         the return type for any new fn_kn via tmQuoteConstant. *)
+      let extra_fn_pairs_r :=
+        flat_map (fun km =>
+          flat_map (fun oib =>
+            flat_map collect_const_fn_kns_from_ctor oib.(ind_ctors))
+          (snd km).(ind_bodies))
+        rel_block_minds_assoc in
+      let new_fn_pairs_r :=
+        fold_left (fun acc p =>
+          let fn_kn := fst p in
+          if orb (existsb (fun e => eq_kername (fst (fst e)) fn_kn) unique_fn_infos_base)
+                 (existsb (fun q => eq_kername (fst q) fn_kn) acc)
+          then acc
+          else List.app acc [p])
+        extra_fn_pairs_r [] in
+      extra_fn_infos_r <- monad_map (fun p =>
+        let fn_kn   := fst p in
+        let arg_tps := snd p in
+        cb <- tmQuoteConstant fn_kn false ;;
+        let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
+        tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs_r ;;
+      let unique_fn_infos := List.app unique_fn_infos_base extra_fn_infos_r in
       _ <- generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp ;;
       (* Build fn_kn_map from unique_fn_infos: every function that has a liftedFunc
          definition maps old_kn → (cur_mp, name ++ "liftedFunc"). *)
