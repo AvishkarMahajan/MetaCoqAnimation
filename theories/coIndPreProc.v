@@ -689,6 +689,7 @@ Polymorphic Definition make_lifted_mind
     (app_kn_mapping       : list (kername * list kername * inductive))
     (spec_unlifted_kn_map : list ((kername * list kername) * kername))
     (modes_with_idx       : list ((string * (list nat * list nat)) * list context_decl))
+    (fn_app_infos         : list (kername * list term * term))
     (block_n_bodies       : nat)
     (block_body_offset    : nat)
     : mutual_inductive_body :=
@@ -709,6 +710,51 @@ Polymorphic Definition make_lifted_mind
   let s3args args  :=
     let n_a := #|args| in
     mapi (fun snoc_i d => s3d (n_a - 1 - snoc_i) d) args in
+  let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  (* Resolve an original type term to its lifted version using [full]/[app_kn_mapping]. *)
+  let resolve_lifted_tp (tp : term) : term :=
+    match tp with
+    | tInd ind _ =>
+      match find (fun e => eq_kername (fst e) (inductive_mind ind)) full with
+      | Some (_, new_i) => tInd new_i []
+      | None            => tp
+      end
+    | tApp (tInd head_ind _) arg_ts =>
+      let head_kn := inductive_mind head_ind in
+      let arg_kns := flat_map (fun a =>
+        match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_ts in
+      if negb (Nat.eqb #|arg_kns| #|arg_ts|) then tp
+      else
+        match find (fun e =>
+          andb (eq_kername (fst (fst e)) head_kn)
+               (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
+                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                              (combine arg_kns (snd (fst e))))))
+          app_kn_mapping with
+        | Some (_, new_i) => tInd new_i []
+        | None            => tp
+        end
+    | _ => tp
+    end in
+  (* Check whether a type term is in the lifting set. *)
+  let is_lifted (tp : term) : bool :=
+    match tp with
+    | tInd ind _ =>
+      existsb (fun e => eq_kername (fst e) (inductive_mind ind)) full
+    | tApp (tInd head_ind _) arg_ts =>
+      let head_kn := inductive_mind head_ind in
+      let arg_kns := flat_map (fun a =>
+        match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_ts in
+      if negb (Nat.eqb #|arg_kns| #|arg_ts|) then false
+      else
+        existsb (fun e =>
+          andb (eq_kername (fst (fst e)) head_kn)
+               (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
+                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                              (combine arg_kns (snd (fst e))))))
+          app_kn_mapping
+    | _ => false
+    end in
   {| ind_finite    := old_mind.(ind_finite);
      ind_npars     := old_mind.(ind_npars);
      ind_universes := old_mind.(ind_universes);
@@ -724,6 +770,44 @@ Polymorphic Definition make_lifted_mind
          let n_par  := #|params'| in
          let extra := compute_extra_cstrs old_kn block_body_idx block_n_bodies params' full
                         app_kn_mapping spec_unlifted_kn_map modes_with_idx in
+         (* LiftedCstr constructors: one per premise function whose output type
+            is this body and that has at least one lifted input argument.
+            Each has the same argument signature as the lifted function. *)
+         let lifted_ctors :=
+           flat_map (fun fi =>
+             let fn_kn   := fst (fst fi) in
+             let arg_tps := snd (fst fi) in
+             let ret_tp  := snd fi in
+             match ret_tp with
+             | tInd ret_ind _ =>
+               if andb (andb (eq_kername (inductive_mind ret_ind) old_kn)
+                             (Nat.eqb (inductive_ind ret_ind) i))
+                       (existsb is_lifted arg_tps)
+               then
+                 let n_fn_args := #|arg_tps| in
+                 let rel_idx   :=
+                   n_par + n_fn_args + block_n_bodies - 1 - block_body_idx in
+                 let return_t  :=
+                   if Nat.eqb n_par 0 then tRel rel_idx
+                   else tApp (tRel rel_idx)
+                             (List.map tRel (rev (seq n_fn_args n_par))) in
+                 (* cstr_args in snoc order (innermost first) *)
+                 let cstr_args :=
+                   List.rev (List.map (fun tp =>
+                     {| decl_name := anon_b;
+                        decl_body := None;
+                        decl_type := resolve_lifted_tp tp |})
+                     arg_tps) in
+                 [{| cstr_name    := snd fn_kn ++ "LiftedCstr";
+                     cstr_args    := cstr_args;
+                     cstr_indices := [];
+                     cstr_type    :=
+                       it_mkProd_or_LetIn (List.app params' cstr_args) return_t;
+                     cstr_arity   := n_fn_args |}]
+               else []
+             | _ => []
+             end)
+           fn_app_infos in
          {| ind_name      := oib.(ind_name) ++ "'";
             ind_indices   := List.map (subst_ind_kns_decl full) oib.(ind_indices);
             ind_sort      := oib.(ind_sort);
@@ -754,18 +838,14 @@ Polymorphic Definition make_lifted_mind
                    cstr_type    := s3t 0 c.(cstr_type);
                    cstr_arity   := c.(cstr_arity) |})
               extra
-              (* Nullary UndefinedCstr: a canonical undefined element of the
-                 lifted type; Push maps it to undefinedConst like all extra
-                 constructors. *)
-              ++ let undef_rel := n_par + block_n_bodies - 1 - block_body_idx in
-                 let undef_ret :=
-                   if Nat.eqb n_par 0 then tRel undef_rel
-                   else tApp (tRel undef_rel) (List.map tRel (rev (seq 0 n_par))) in
-                 [{| cstr_name    := oib.(ind_name) ++ "UndefinedCstr";
-                     cstr_args    := [];
-                     cstr_indices := [];
-                     cstr_type    := it_mkProd_or_LetIn params' undef_ret;
-                     cstr_arity   := 0 |}];
+              (* LiftedCstr constructors for premise functions — apply step3. *)
+              ++ List.map (fun c =>
+                {| cstr_name    := c.(cstr_name);
+                   cstr_args    := s3args c.(cstr_args);
+                   cstr_indices := List.map (s3t 0) c.(cstr_indices);
+                   cstr_type    := s3t 0 c.(cstr_type);
+                   cstr_arity   := c.(cstr_arity) |})
+              lifted_ctors;
             ind_projs     := oib.(ind_projs);
             ind_relevance := oib.(ind_relevance) |})
        old_mind.(ind_bodies) |}.
@@ -1296,6 +1376,20 @@ Polymorphic Definition preprocess_coind_types
                  oib.(ind_ctors))
       (snd km).(ind_bodies))
     rel_block_minds in
+  (* Collect premise function application info for LiftedCstr generation.
+     Dedup by function kername so each function produces at most one LiftedCstr. *)
+  let fn_app_infos :=
+    fold_left (fun acc fi =>
+      if existsb (fun e => eq_kername (fst (fst e)) (fst (fst fi))) acc
+      then acc else List.app acc [fi])
+    (flat_map (fun km =>
+      flat_map (fun oib =>
+        flat_map (fun c =>
+          collect_fn_app_info_from_ctx [] c.(cstr_type))
+                 oib.(ind_ctors))
+      (snd km).(ind_bodies))
+    rel_block_minds)
+    [] in
   (* Step 5: initial lifting set = signature types + specialised parametric
      types (spec_kns), filtered to non-Prop / non-parametric.
      Equality-premise types are NOT in the initial lifting set; they act
@@ -1412,7 +1506,7 @@ Polymorphic Definition preprocess_coind_types
       let ext := filter (fun q => negb (eq_kername (fst q) kn)) pre_ind_mapping in
       let body :=
         make_lifted_mind old_mind kn pre_new_ind ext
-          pre_app_kn_mapping spec_kn_pairs modes_with_idx 1 0 in
+          pre_app_kn_mapping spec_kn_pairs modes_with_idx fn_app_infos 1 0 in
       tmReturn (List.app acc [(kn, body)])
     end)
   sorted_kns [] ;;
@@ -1546,7 +1640,7 @@ Polymorphic Definition preprocess_coind_types
                 (filter (fun q => negb (eq_kername (fst q) kn_i)) group_ind_mapping)
                 (filter (fun q => negb (existsb (eq_kername (fst q)) grp)) acc) in
             let m := make_lifted_mind old_mind_i kn_i pre_new_ind_i ext_i
-                       grp_app_kn_mapping spec_kn_pairs modes_with_idx
+                       grp_app_kn_mapping spec_kn_pairs modes_with_idx fn_app_infos
                        block_n_bodies block_body_offset in
             (S block_body_offset, List.app bodies_so_far m.(ind_bodies))
           end)
@@ -3169,14 +3263,20 @@ Polymorphic Fixpoint generate_lifted_fns
     tmBind
       (match any_input_lifted, ret_info with
        | true, Some (ret_old_kn, new_ret_ind) =>
-         tmBind (tmQuoteInductive ret_old_kn) (fun orig_ret_mind =>
-           let n_orig_ret_ctors :=
-             match nth_error orig_ret_mind.(ind_bodies) 0 with
-             | Some ob => List.length ob.(ind_ctors)
-             | None    => 0
+         tmBind (tmQuoteInductive (inductive_mind new_ret_ind)) (fun lifted_ret_mind =>
+           let lifted_ret_ctors :=
+             match nth_error lifted_ret_mind.(ind_bodies) (inductive_ind new_ret_ind) with
+             | Some ob => ob.(ind_ctors)
+             | None    => []
              end in
-           let undefined_out := tConstruct new_ret_ind n_orig_ret_ctors [] in
-           let lifted_out    :=
+           let ctor_nm := snd fn_kn ++ "LiftedCstr" in
+           let all_inputs := List.map (fun i => tRel (n - 1 - i)) (seq 0 n) in
+           let lifted_cstr_out :=
+             match find_ctor_idx ctor_nm lifted_ret_ctors 0 with
+             | Some idx => tApp (tConstruct new_ret_ind idx []) all_inputs
+             | None     => tConstruct new_ret_ind 0 []
+             end in
+           let lifted_out :=
              tApp (tConst (cur_mp, snd ret_old_kn ++ "Lift") []) [f_applied] in
            let bool_ci   :=
              {| ci_ind := bool_ind; ci_npar := 0; ci_relevance := Relevant |} in
@@ -3184,8 +3284,8 @@ Polymorphic Fixpoint generate_lifted_fns
              {| puinst := []; pparams := []; pcontext := [anon_b];
                 preturn := tInd new_ret_ind [] |} in
            let body := tCase bool_ci bool_pred all_good
-             [{| bcontext := []; bbody := lifted_out  |};
-              {| bcontext := []; bbody := undefined_out |}] in
+             [{| bcontext := []; bbody := lifted_out      |};
+              {| bcontext := []; bbody := lifted_cstr_out |}] in
            let fn_term :=
              List.fold_right
                (fun tp acc => tLambda anon_b tp acc) body lifted_arg_types in
