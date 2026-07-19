@@ -126,22 +126,13 @@ match ls with
 | h :: t => plus1Stm h :: (plus1StmLst t)
 end.
 End IndCoInd.
+Module zip.
 
 (** A stream of naturals, with explicit undefined and nil sentinels. *)
 CoInductive stream : Type :=
 | nil : stream
-| Seq : nat -> stream -> stream
-| undefinedStm : stream.
-CoInductive counter : Type :=
-| incr : counter -> counter.
+| Seq : nat -> stream -> stream.
 
-Definition eqFncounter : counter -> counter -> bool := fun _ _ => true.
-
-Definition eqFnstream (s1 s2 : stream) : bool :=
-  match s1 with
-  | nil => match s2 with nil => true | _ => false end
-  | _   => false
-  end.
 
 CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
 
@@ -154,36 +145,35 @@ CoInductive zipSt : stream -> stream -> stream -> Prop :=
     s1 = Seq n s2 /\ s3 = Seq m s4 /\ zipSt s2 s4 s5 /\ s6 = Seq n (Seq m s5)
     -> zipSt s1 s3 s6.
 
-Definition zipStRest := fun _ : (stream * stream) => undefinedStm.
 
-MetaRocq Run (animate_coinductive <? zipSt ?>
+
+MetaRocq Run (animate_coinductive_with_lift <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 100).
 
-Compute (Str_nth 6 (zipStAnimatedTopFnStream (Success (stream * stream) (from 7, from 9)))).
-
+Compute  (zipStAnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
+End zip.
 (* ------------------------------------------------------------------ *)
 (** ** Stream equality *)
 
-Inductive co_bool : Type :=
-| coT : co_bool
-| coF : co_bool
-| undefinedB : co_bool.
+Module eqSt.
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
 
-CoInductive eqSt : stream -> stream -> co_bool -> Prop :=
-| eqU1 : forall s, eqSt s undefinedStm undefinedB
-| eqU2 : forall s, eqSt undefinedStm s undefinedB
-| eqNil : eqSt nil nil coT
+CoInductive eqSt : stream -> stream -> bool -> Prop :=
+| eqNil : eqSt nil nil true
 | eqC : forall n m s2 s4 u, n = m /\ eqSt s2 s4 u -> eqSt (Seq n s2) (Seq m s4) u
-| neqC : forall n m s2 s4, false = Nat.eqb n m -> eqSt (Seq n s2) (Seq m s4) coF.
+| neqC : forall n m s2 s4, false = Nat.eqb n m -> eqSt (Seq n s2) (Seq m s4) false.
 
-Definition eqStRest := fun _ : (stream * stream) => undefinedB.
 
-MetaRocq Run (animate_coinductive <? eqSt ?>
+
+MetaRocq Run (animate_coinductive_with_lift <? eqSt ?>
   [("eqSt", ([0;1], [2]))] 100).
 
-Compute (Str_nth 12 (eqStAnimatedTopFnStream (Success (stream * stream) (from 8, from 9)))).
-Compute (Str_nth 0  (eqStAnimatedTopFnStream (Success (stream * stream) (from 5, from 9)))).
-
+Compute (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 8))).
+Compute (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 9))).
+End eqSt.
 (* ------------------------------------------------------------------ *)
 (** ** Filter even elements *)
 

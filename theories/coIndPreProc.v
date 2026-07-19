@@ -1037,6 +1037,113 @@ Fixpoint collect_fn_app_info_from_ctx
   | _ => []
   end.
 
+(** Scan [cstr_indices] for direct function applications [tApp (tConst fn_kn) fn_args]
+    where all fn_args are [tRel] nodes resolvable in [full_ctx] (the types of [cstr_args],
+    innermost at index 0).  [idx_types] are the declared index types of the relation
+    extracted from [oib.ind_type]; they provide the [ret_type] for each index position. *)
+Definition collect_fn_app_info_from_indices
+    (full_ctx  : list term)
+    (idx_types : list term)
+    (cstr_idx  : list term)
+    : list (kername * list term * term) :=
+  flat_map (fun pair =>
+    let idx_tm := fst pair in
+    let ret_tp := snd pair in
+    match idx_tm with
+    | tApp (tConst fn_kn _) fn_args =>
+      let maybe_types := List.map (fun a =>
+        match a with
+        | tRel i => nth_error full_ctx i
+        | _ => None
+        end) fn_args in
+      if forallb (fun o => match o with Some _ => true | None => false end) maybe_types
+      then
+        let arg_types :=
+          flat_map (fun o => match o with Some tp => [tp] | None => [] end) maybe_types in
+        [(fn_kn, arg_types, ret_tp)]
+      else []
+    | _ => []
+    end)
+  (combine cstr_idx idx_types).
+
+(** Scan a constructor's premises ([cstr_args]), conclusion ([cstr_type]),
+    and index terms ([cstr_indices]) and return all [(fn_kn, arg_types, ret_type)]
+    entries.  Premises and [cstr_type] are scanned for [@eq T lhs (f args)] patterns;
+    [cstr_indices] are scanned for direct [tApp (tConst fn_kn) fn_args] applications.
+    [idx_types] are the relation's declared index types (from [extract_arg_types] on
+    [oib.ind_type]) and supply the [ret_type] for each index position. *)
+Definition collect_fn_app_info_from_ctor
+    (idx_types : list term)
+    (c : constructor_body)
+    : list (kername * list term * term) :=
+  let prem_infos :=
+    snd (fold_left (fun p d =>
+           let ctx := fst p in
+           let acc := snd p in
+           (d.(decl_type) :: ctx,
+            List.app acc (collect_fn_app_info_from_ctx ctx d.(decl_type))))
+         (List.rev c.(cstr_args))
+         ([], [])) in
+  let full_ctx  := List.map decl_type c.(cstr_args) in
+  let idx_infos := collect_fn_app_info_from_indices full_ctx idx_types c.(cstr_indices) in
+  List.app prem_infos (List.app (collect_fn_app_info_from_ctx [] c.(cstr_type)) idx_infos).
+
+(** Same as [collect_fn_app_info_from_ctor] but returns dependency edges
+    [(out_kn, in_kn)] for [collect_fn_dep_edges_from_ctx].
+    Also scans [cstr_indices] for direct function applications. *)
+Definition collect_fn_dep_edges_from_ctor
+    (spec_kn_pairs : list ((kername * list kername) * kername))
+    (idx_types     : list term)
+    (c : constructor_body)
+    : list (kername * kername) :=
+  let resolve_kns (tp : term) :=
+    let plain := collect_tind_kns tp in
+    let spec_hits :=
+      flat_map (fun app =>
+        let hkn  := fst app in
+        let akns := snd app in
+        match find (fun e =>
+          andb (eq_kername (fst (fst e)) hkn)
+               (andb (Nat.eqb #|snd (fst e)| #|akns|)
+                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                              (combine akns (snd (fst e))))))
+          spec_kn_pairs with
+        | Some e => [snd e]
+        | None   => []
+        end)
+      (collect_ind_apps tp) in
+    dedup_kns (List.app plain spec_hits) in
+  let prem_edges :=
+    snd (fold_left (fun p d =>
+           let ctx := fst p in
+           let acc := snd p in
+           (d.(decl_type) :: ctx,
+            List.app acc (collect_fn_dep_edges_from_ctx spec_kn_pairs ctx d.(decl_type))))
+         (List.rev c.(cstr_args))
+         ([], [])) in
+  let full_ctx := List.map decl_type c.(cstr_args) in
+  let idx_edges :=
+    flat_map (fun pair =>
+      let idx_tm := fst pair in
+      let ret_tp := snd pair in
+      match idx_tm with
+      | tApp (tConst _ _) fn_args =>
+        let arg_types :=
+          flat_map (fun a =>
+            match a with
+            | tRel i => match nth_error full_ctx i with Some tp => [tp] | None => [] end
+            | _ => []
+            end) fn_args in
+        let out_kns := resolve_kns ret_tp in
+        let in_kns  := dedup_kns (flat_map resolve_kns arg_types) in
+        flat_map (fun ok => flat_map (fun ik =>
+          if eq_kername ok ik then [] else [(ok, ik)]) in_kns) out_kns
+      | _ => []
+      end)
+    (combine c.(cstr_indices) idx_types) in
+  List.app prem_edges
+    (List.app (collect_fn_dep_edges_from_ctx spec_kn_pairs [] c.(cstr_type)) idx_edges).
+
 (** Kahn's topological sort: returns [type_kns] reordered so that every
     type comes after all the other types in [mapping] that it depends on.
     [minds_assoc] is [(kn, mutual_inductive_body)] for each kn in [type_kns].
@@ -1248,6 +1355,25 @@ Polymorphic Fixpoint expand_dep_closure_fix
 
     Parametric-type applications found in index types are specialised first
     (Step 4b) and then lifted by the same pipeline as monomorphic types. *)
+
+(** Extract the first [n] argument types from a [tProd]-chain,
+    skipping [skip] leading binders (parameters).
+    Used here and in later generation passes. *)
+Fixpoint extract_arg_types (skip n : nat) (t : term) : list term :=
+  match skip with
+  | S k => match t with
+            | tProd _ _ body => extract_arg_types k n body
+            | _ => []
+            end
+  | 0 =>
+    match n, t with
+    | 0, _            => []
+    | _, tSort _      => []
+    | S k, tProd _ ty body => ty :: extract_arg_types 0 k body
+    | _, _ => []
+    end
+  end.
+
 Unset Universe Checking.
 Polymorphic Definition preprocess_coind_types
     (modes : mode_map)
@@ -1370,22 +1496,25 @@ Polymorphic Definition preprocess_coind_types
      is in the lifting set, in_kn is also explored and potentially lifted. *)
   let fn_dep_edges :=
     flat_map (fun km =>
+      let n_params := (snd km).(ind_npars) in
       flat_map (fun oib =>
+        let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
         flat_map (fun c =>
-          collect_fn_dep_edges_from_ctx spec_kn_pairs [] c.(cstr_type))
+          collect_fn_dep_edges_from_ctor spec_kn_pairs idx_types c)
                  oib.(ind_ctors))
       (snd km).(ind_bodies))
     rel_block_minds in
-  (* Collect premise function application info for LiftedCstr generation.
-     Dedup by function kername so each function produces at most one LiftedCstr. *)
+  (* Collect function application info (premises + direct indices). *)
   let fn_app_infos :=
     fold_left (fun acc fi =>
       if existsb (fun e => eq_kername (fst (fst e)) (fst (fst fi))) acc
       then acc else List.app acc [fi])
     (flat_map (fun km =>
+      let n_params := (snd km).(ind_npars) in
       flat_map (fun oib =>
+        let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
         flat_map (fun c =>
-          collect_fn_app_info_from_ctx [] c.(cstr_type))
+          collect_fn_app_info_from_ctor idx_types c)
                  oib.(ind_ctors))
       (snd km).(ind_bodies))
     rel_block_minds)
@@ -2080,6 +2209,7 @@ Polymorphic Definition lift_relation
     (type_mapping   : list (kername * inductive))
     (app_kn_mapping : list (kername * list kername * inductive))
     (modes          : mode_map)
+    (fn_kn_map      : list (kername * kername))
     : TemplateMonad unit :=
   cur_mp   <- tmCurrentModPath tt ;;
   old_mind <- tmQuoteInductive rel_kn ;;
@@ -2103,19 +2233,6 @@ Polymorphic Definition lift_relation
     | None     => @tmFail (inductive * one_inductive_body) "lift_relation: empty lifted type"
     end)
     type_mapping ;;
-  (* Build fn_kn_map: for every function appearing in an equality premise of
-     this relation, map its kername to the corresponding [liftedFunc] kername.
-     This rewrites e.g. [subst] → [substliftedFunc] in lifted ctor types. *)
-  let fn_kn_map :=
-    fold_left (fun acc fi =>
-      let kn := fst (fst fi) in
-      if existsb (fun e => eq_kername (fst e) kn) acc then acc
-      else List.app acc [(kn, (cur_mp, snd kn ++ "liftedFunc"))])
-    (flat_map (fun oib =>
-       flat_map (fun c => collect_fn_app_info_from_ctx [] c.(cstr_type))
-                oib.(ind_ctors))
-     old_mind.(ind_bodies))
-    [] in
   tmMkInductivePreserveFinite
     (make_lifted_relation_mind old_mind rel_kn new_rel_kn rel_mapping type_mapping
        app_kn_mapping modes_with_idx type_body_map fn_kn_map).
@@ -2427,23 +2544,6 @@ Polymorphic Fixpoint generate_fnSymb_params
 (* ================================================================== *)
 (** ** Rest function generation                                        *)
 (* ================================================================== *)
-
-(** Extract the first [n] argument types from a [tProd]-chain,
-    skipping [skip] leading binders (parameters). *)
-Fixpoint extract_arg_types (skip n : nat) (t : term) : list term :=
-  match skip with
-  | S k => match t with
-            | tProd _ _ body => extract_arg_types k n body
-            | _ => []
-            end
-  | 0 =>
-    match n, t with
-    | 0, _            => []
-    | _, tSort _      => []
-    | S k, tProd _ ty body => ty :: extract_arg_types 0 k body
-    | _, _ => []
-    end
-  end.
 
 (** Get the inductive reference from a type term ([tInd] or
     [tApp (tInd _ _) _]). *)
@@ -3666,7 +3766,7 @@ Polymorphic Definition lift_relation_names
     (* Pair up (old_ind, new_ind); map key is old inductive_mind *)
     let type_mapping :=
       List.map (fun p => (inductive_mind (fst p), snd p)) (pair_up inds_rest) in
-    lift_relation (inductive_mind rel_ind) [] type_mapping [] modes
+    lift_relation (inductive_mind rel_ind) [] type_mapping [] modes []
   | _ => @tmFail unit "lift_relation_names: failed to resolve knames"
   end.
 
@@ -3743,9 +3843,11 @@ Polymorphic Definition lift_coinductive_relation
       _ <- generate_eqfn_defs type_mapping type_mapping pi_set cur_mp ;;
       let all_fn_infos :=
         flat_map (fun km =>
+          let n_params := (snd km).(ind_npars) in
           flat_map (fun oib =>
+            let idx_types := extract_arg_types n_params 100 oib.(ind_type) in
             flat_map (fun c =>
-              collect_fn_app_info_from_ctx [] c.(cstr_type))
+              collect_fn_app_info_from_ctor idx_types c)
                      oib.(ind_ctors))
           (snd km).(ind_bodies))
         rel_block_minds_assoc in
@@ -3757,11 +3859,16 @@ Polymorphic Definition lift_coinductive_relation
           else List.app acc [entry])
         all_fn_infos [] in
       _ <- generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp ;;
+      (* Build fn_kn_map from unique_fn_infos: every function that has a liftedFunc
+         definition maps old_kn → (cur_mp, name ++ "liftedFunc"). *)
+      let fn_kn_map :=
+        List.map (fun fi => (fst (fst fi), (cur_mp, snd (fst (fst fi)) ++ "liftedFunc")))
+                 unique_fn_infos in
       (* Now all liftedFunc constants exist; declare the lifted relation blocks. *)
       _ <- monad_fold_left (fun _ block_kn =>
         let block_modes :=
           List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
-        lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
+        lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes fn_kn_map)
         sorted_block_kns tt ;;
       _ <- generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
                                    prod_kn anim_res_kn cur_mp ;;
