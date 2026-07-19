@@ -1983,6 +1983,47 @@ Definition compute_undefined_cstr
         cstr_arity   := n_inputs |}]
   end.
 
+(** Replace [tConst old_kn] with [tConst new_kn] for each [(old_kn, new_kn)]
+    in [fn_kn_map].  Used to rewrite equality-premise function calls to their
+    lifted counterparts when building the lifted relation body. *)
+Fixpoint subst_const_kns (fn_kn_map : list (kername * kername)) (t : term) : term :=
+  let sub := subst_const_kns fn_kn_map in
+  match t with
+  | tConst kn univs =>
+    match find (fun e => eq_kername (fst e) kn) fn_kn_map with
+    | Some (_, new_kn) => tConst new_kn univs
+    | None             => t
+    end
+  | tApp f args         => tApp (sub f) (List.map sub args)
+  | tProd na ty body    => tProd na (sub ty) (sub body)
+  | tLambda na ty body  => tLambda na (sub ty) (sub body)
+  | tLetIn na v ty body => tLetIn na (sub v) (sub ty) (sub body)
+  | tCase ci pred disc brs =>
+    tCase ci
+      {| pparams  := List.map sub pred.(pparams);
+         puinst   := pred.(puinst);
+         pcontext := pred.(pcontext);
+         preturn  := sub pred.(preturn) |}
+      (sub disc)
+      (List.map (fun br =>
+        {| bcontext := br.(bcontext); bbody := sub br.(bbody) |}) brs)
+  | tFix mfix idx =>
+    tFix (List.map (fun d =>
+      {| dname := d.(dname); dtype := sub d.(dtype);
+         dbody := sub d.(dbody); rarg := d.(rarg) |}) mfix) idx
+  | tCoFix mfix idx =>
+    tCoFix (List.map (fun d =>
+      {| dname := d.(dname); dtype := sub d.(dtype);
+         dbody := sub d.(dbody); rarg := d.(rarg) |}) mfix) idx
+  | _ => t
+  end.
+
+Definition subst_const_kns_decl (fn_kn_map : list (kername * kername)) (d : context_decl)
+    : context_decl :=
+  {| decl_name := d.(decl_name);
+     decl_body := option_map (subst_const_kns fn_kn_map) d.(decl_body);
+     decl_type := subst_const_kns fn_kn_map d.(decl_type) |}.
+
 (** Build the lifted [mutual_inductive_body] for a relation block,
     appending a [<rel>'Undefined] constructor to every body. *)
 Definition make_lifted_relation_mind
@@ -1994,10 +2035,13 @@ Definition make_lifted_relation_mind
     (app_kn_mapping : list (kername * list kername * inductive))
     (modes_with_idx : list ((string * (list nat * list nat)) * list context_decl))
     (type_body_map  : list (inductive * one_inductive_body))
+    (fn_kn_map      : list (kername * kername))
     : mutual_inductive_body :=
   let new_rel_ind  := {| inductive_mind := new_rel_kn; inductive_ind := 0 |} in
   let full_mapping := (old_rel_kn, new_rel_ind) :: rel_mapping ++ type_mapping in
-  let params'  := List.map (subst_inds_and_ctors_decl app_kn_mapping full_mapping) old_mind.(ind_params) in
+  let sub_ty   t := subst_const_kns fn_kn_map (subst_inds_and_ctors app_kn_mapping full_mapping t) in
+  let sub_decl d := subst_const_kns_decl fn_kn_map (subst_inds_and_ctors_decl app_kn_mapping full_mapping d) in
+  let params'  := List.map sub_decl old_mind.(ind_params) in
   let n_params := #|params'| in
   let n_bodies := #|old_mind.(ind_bodies)| in
   {| ind_finite    := old_mind.(ind_finite);
@@ -2011,16 +2055,16 @@ Definition make_lifted_relation_mind
            compute_undefined_cstr oib i n_params n_bodies
              type_mapping app_kn_mapping modes_with_idx type_body_map in
          {| ind_name      := oib.(ind_name) ++ "'";
-            ind_indices   := List.map (subst_inds_and_ctors_decl app_kn_mapping full_mapping) oib.(ind_indices);
+            ind_indices   := List.map sub_decl oib.(ind_indices);
             ind_sort      := oib.(ind_sort);
-            ind_type      := subst_inds_and_ctors app_kn_mapping full_mapping oib.(ind_type);
+            ind_type      := sub_ty oib.(ind_type);
             ind_kelim     := oib.(ind_kelim);
             ind_ctors     :=
               List.map (fun c =>
                 {| cstr_name    := c.(cstr_name) ++ "'";
-                   cstr_args    := List.map (subst_inds_and_ctors_decl app_kn_mapping full_mapping) c.(cstr_args);
-                   cstr_indices := List.map (subst_inds_and_ctors app_kn_mapping full_mapping) c.(cstr_indices);
-                   cstr_type    := subst_inds_and_ctors app_kn_mapping full_mapping c.(cstr_type);
+                   cstr_args    := List.map sub_decl c.(cstr_args);
+                   cstr_indices := List.map sub_ty c.(cstr_indices);
+                   cstr_type    := sub_ty c.(cstr_type);
                    cstr_arity   := c.(cstr_arity) |})
               oib.(ind_ctors) ++ undef;
             ind_projs     := oib.(ind_projs);
@@ -2059,9 +2103,22 @@ Polymorphic Definition lift_relation
     | None     => @tmFail (inductive * one_inductive_body) "lift_relation: empty lifted type"
     end)
     type_mapping ;;
+  (* Build fn_kn_map: for every function appearing in an equality premise of
+     this relation, map its kername to the corresponding [liftedFunc] kername.
+     This rewrites e.g. [subst] → [substliftedFunc] in lifted ctor types. *)
+  let fn_kn_map :=
+    fold_left (fun acc fi =>
+      let kn := fst (fst fi) in
+      if existsb (fun e => eq_kername (fst e) kn) acc then acc
+      else List.app acc [(kn, (cur_mp, snd kn ++ "liftedFunc"))])
+    (flat_map (fun oib =>
+       flat_map (fun c => collect_fn_app_info_from_ctx [] c.(cstr_type))
+                oib.(ind_ctors))
+     old_mind.(ind_bodies))
+    [] in
   tmMkInductivePreserveFinite
     (make_lifted_relation_mind old_mind rel_kn new_rel_kn rel_mapping type_mapping
-       app_kn_mapping modes_with_idx type_body_map).
+       app_kn_mapping modes_with_idx type_body_map fn_kn_map).
 
 
 (** Convert [k1; k2; k3; k4; ...] into [(k1,k2); (k3,k4); ...]. *)
@@ -3664,11 +3721,6 @@ Polymorphic Definition lift_coinductive_relation
     let sorted_block_kns :=
       topo_sort_kns unique_block_kns rel_block_minds_assoc block_id_map
                     [] [] (S #|unique_block_kns|) in
-    _ <- monad_fold_left (fun _ block_kn =>
-      let block_modes :=
-        List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
-      lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
-      sorted_block_kns tt ;;
     prod_refs <- tmLocate "prod" ;;
     anim_refs <- tmLocate "animation_result" ;;
     match find (fun g => match g with IndRef _ => true | _ => false end) prod_refs,
@@ -3676,16 +3728,19 @@ Polymorphic Definition lift_coinductive_relation
     | Some (IndRef prod_ind), Some (IndRef anim_ind) =>
       let prod_kn     := inductive_mind prod_ind in
       let anim_res_kn := inductive_mind anim_ind in
-      tmBind (generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
-                                     prod_kn anim_res_kn cur_mp) (fun _ =>
-      tmBind (generate_rest_fns kn_mode_list cur_mp prod_kn) (fun _ =>
-      tmBind (generate_push_params type_mapping type_mapping app_kn_mapping) (fun _ =>
-      tmBind (compute_npi_fix type_mapping [] (List.length type_mapping + 1)) (fun npi_set =>
+      (* generate_push_params, Push, Chk, eqFn, and liftedFunc definitions all
+         depend only on the lifted data types (already declared by
+         preprocess_coind_types) and are independent of the lifted relation.
+         We declare them BEFORE lift_relation so that [substliftedFunc] (and
+         other liftedFuncs) already exist when the lifted relation ctor types
+         that reference them are type-checked by tmMkInductive. *)
+      _ <- generate_push_params type_mapping type_mapping app_kn_mapping ;;
+      npi_set <- compute_npi_fix type_mapping [] (List.length type_mapping + 1) ;;
       let pi_set :=
         List.map fst (filter (fun e => negb (existsb (eq_kername (fst e)) npi_set)) type_mapping) in
-      tmBind (generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp) (fun _ =>
-      tmBind (generate_chk_fns type_mapping type_mapping pi_set cur_mp) (fun _ =>
-      tmBind (generate_eqfn_defs type_mapping type_mapping pi_set cur_mp) (fun _ =>
+      _ <- generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp ;;
+      _ <- generate_chk_fns type_mapping type_mapping pi_set cur_mp ;;
+      _ <- generate_eqfn_defs type_mapping type_mapping pi_set cur_mp ;;
       let all_fn_infos :=
         flat_map (fun km =>
           flat_map (fun oib =>
@@ -3701,9 +3756,18 @@ Polymorphic Definition lift_coinductive_relation
           then acc
           else List.app acc [entry])
         all_fn_infos [] in
-      tmBind (generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp) (fun _ =>
+      _ <- generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp ;;
+      (* Now all liftedFunc constants exist; declare the lifted relation blocks. *)
+      _ <- monad_fold_left (fun _ block_kn =>
+        let block_modes :=
+          List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
+        lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes)
+        sorted_block_kns tt ;;
+      _ <- generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
+                                   prod_kn anim_res_kn cur_mp ;;
+      _ <- generate_rest_fns kn_mode_list cur_mp prod_kn ;;
       generate_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set
-                              prod_kn anim_res_kn cur_mp))))))))
+                              prod_kn anim_res_kn cur_mp
     | _, _ => @tmFail unit "lift_coinductive_relation: cannot locate prod or animation_result"
     end
   end.
