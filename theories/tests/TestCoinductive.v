@@ -21,6 +21,28 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 Print Stream.
+Module prodRel.
+(** prodRel: both mode positions are [list nat * list nat].
+    Only the top-level [prod] is specialised; [list nat] is NOT independently
+    in the lifting set, so [pair' : list nat -> list nat -> prodlistnatlistnat']. *)
+Inductive prodRel : list nat * list nat -> list nat * list nat -> Prop :=
+| pCons : forall l1 l2, prodRel (l1,l2) ((0 :: l1), (0 :: l2)).
+
+
+MetaRocq Run (animate_coinductive_with_lift <? prodRel ?>
+  [("prodRel", ([0], [1]))] 200).
+End prodRel.
+(** mixedRel: index 0 is [list nat] (direct mode position → listnat enters lifting set)
+    and index 1 is [list nat * list nat] (nested → prodlistnatlistnat enters lifting set).
+    Because [listnat] is independently lifted, [prodlistnatlistnat'] should have
+    [pair' : listnat' -> listnat' -> prodlistnatlistnat']. *)
+Module mixedRel.
+Inductive mixedRel : list nat -> list nat * list nat -> Prop :=
+| mCons : forall l, mixedRel l (l, 0 :: l).
+
+MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
+  [("mixedRel", ([0], [1]))] 200).
+End mixedRel.  
 Module StackStep.
 Definition total_map (A : Type) := string -> A.
 Inductive state : Type :=

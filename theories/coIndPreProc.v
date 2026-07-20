@@ -68,22 +68,50 @@ Fixpoint collect_tind_kns (t : term) : list kername :=
   | _                    => []
   end.
 
-(** Collect every [tApp (tInd head_kn _) [tInd arg1_kn _; ...]] in a term
-    where ALL arguments are bare [tInd] nodes (no nested applications).
-    Returns a list of [(head_kn, [arg_kn ...])] pairs (with duplicates).
+(** True iff [t] is a "pure inductive type term":
+    either [tInd ...] or [tApp (tInd ...) args] where every arg is also pure. *)
+Fixpoint is_ind_type (t : term) : bool :=
+  match t with
+  | tInd _ _             => true
+  | tApp (tInd _ _) args => forallb is_ind_type args
+  | _                    => false
+  end.
+
+(** Canonical name for a pure inductive type term.
+    Mirrors [spec_name] generation: head short-name concatenated with arg names. *)
+Fixpoint ind_type_name (t : term) : string :=
+  match t with
+  | tInd ind _             => snd (inductive_mind ind)
+  | tApp (tInd ind _) args =>
+      fold_left (fun s a => s ++ ind_type_name a) args (snd (inductive_mind ind))
+  | _                      => ""
+  end.
+
+(** Boolean equality of pure inductive type terms via canonical names. *)
+Definition eqb_ind_type (t1 t2 : term) : bool :=
+  String.eqb (ind_type_name t1) (ind_type_name t2).
+
+(** Collect just the top-level [tApp (tInd head_kn _) args] from a type term
+    (no recursion into the args).  Used for mode-position index types so that
+    nested type arguments (e.g. [list nat] inside [prod (list nat) (list nat)])
+    do NOT independently enter the specialisation set. *)
+Definition collect_ind_apps_toplevel (t : term) : list (kername * list term) :=
+  match t with
+  | tApp (tInd head _) args =>
+    if forallb is_ind_type args then [(inductive_mind head, args)] else []
+  | _ => []
+  end.
+
+(** Collect every [tApp (tInd head_kn _) args] in a term where ALL arguments
+    are pure inductive type terms (possibly nested applications).
+    Returns [(head_kn, args)] pairs (with duplicates).
     These are the parametric-type applications that can be monomorphised. *)
-Fixpoint collect_ind_apps (t : term) : list (kername * list kername) :=
+Fixpoint collect_ind_apps (t : term) : list (kername * list term) :=
   let self_list ts := flat_map collect_ind_apps ts in
   match t with
   | tApp (tInd head _) args =>
-    let all_tind :=
-      forallb (fun a => match a with tInd _ _ => true | _ => false end) args in
-    let arg_kns :=
-      flat_map (fun a => match a with
-                         | tInd ind _ => [inductive_mind ind]
-                         | _          => []
-                         end) args in
-    let here := if all_tind then [(inductive_mind head, arg_kns)] else [] in
+    let all_ind := forallb is_ind_type args in
+    let here := if all_ind then [(inductive_mind head, args)] else [] in
     here ++ self_list args
   | tApp f args          => collect_ind_apps f ++ self_list args
   | tInd _ _             => []
@@ -135,11 +163,11 @@ Fixpoint collect_eq_arg_kns (t : term) : list kername :=
   | _ => []
   end.
 
-(** Like [collect_eq_arg_kns] but returns [(head_kn, [arg_kns])] pairs for
+(** Like [collect_eq_arg_kns] but returns [(head_kn, args)] pairs for
     parametric-type applications inside each equality TYPE argument.
     Needed so that e.g. [@eq (list nat) ...] triggers monomorphisation of
     [list nat] → [listnat] via the Step 4b pipeline. *)
-Fixpoint collect_eq_arg_ind_apps (t : term) : list (kername * list kername) :=
+Fixpoint collect_eq_arg_ind_apps (t : term) : list (kername * list term) :=
   match t with
   | tApp f args =>
     let eq_hits :=
@@ -164,15 +192,15 @@ Fixpoint collect_eq_arg_ind_apps (t : term) : list (kername * list kername) :=
   | _ => []
   end.
 
-(** Deduplicate [(kername * list kername)] pairs by structural equality on the
-    kername lists. Preserves first-occurrence order. *)
-Definition dedup_ind_apps (l : list (kername * list kername))
-    : list (kername * list kername) :=
+(** Deduplicate [(kername * list term)] pairs by canonical-name equality.
+    Preserves first-occurrence order. *)
+Definition dedup_ind_apps (l : list (kername * list term))
+    : list (kername * list term) :=
   fold_left (fun acc p =>
     let match_entry q :=
       andb (eq_kername (fst q) (fst p))
            (andb (Nat.eqb #|snd q| #|snd p|)
-                 (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                 (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
                           (combine (snd q) (snd p)))) in
     if existsb match_entry acc then acc else List.app acc [p])
   l [].
@@ -374,23 +402,20 @@ Definition subst_ind_kns_decl (mapping : list (kername * inductive))
      decl_body := option_map (subst_ind_kns mapping) d.(decl_body);
      decl_type := subst_ind_kns mapping d.(decl_type) |}.
 
-(** Look up [tApp (tInd head_kn _) [tInd arg_kn1 _; ...]] in a mapping whose
-    values are [kername] (used for [spec_unlifted_kn_map]). *)
+(** Look up [tApp (tInd head_kn _) args] in a mapping whose values are [kername]
+    (used for [spec_unlifted_kn_map]).  Args may be nested parametric applications. *)
 Definition lookup_app_kn
-    (app_kn_mapping : list (kername * list kername * kername))
+    (app_kn_mapping : list (kername * list term * kername))
     (f : term) (args : list term) : option kername :=
   match f with
   | tInd head _ =>
     let head_kn := inductive_mind head in
-    if forallb (fun a => match a with tInd _ _ => true | _ => false end) args then
-      let arg_kns :=
-        flat_map (fun a =>
-          match a with tInd ind _ => [inductive_mind ind] | _ => [] end) args in
+    if forallb is_ind_type args then
       match find (fun e =>
         andb (eq_kername (fst (fst e)) head_kn)
-             (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
-                   (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                            (combine (snd (fst e)) arg_kns))))
+             (andb (Nat.eqb #|snd (fst e)| #|args|)
+                   (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                            (combine (snd (fst e)) args))))
         app_kn_mapping with
       | Some e => Some (snd e)
       | None   => None
@@ -399,25 +424,21 @@ Definition lookup_app_kn
   | _ => None
   end.
 
-(** Look up [tApp (tInd head_kn _) [tInd arg_kn1 _; ...]] in a mapping whose
-    values are [inductive] (used for [app_kn_mapping] after mutual-block lifting).
-    Returns [Some lifted_ind] where [lifted_ind] carries both the block kname and
-    the correct body index within that block. *)
+(** Look up [tApp (tInd head_kn _) args] in a mapping whose values are [inductive]
+    (used for [app_kn_mapping] after mutual-block lifting).  Args may be nested
+    parametric applications.  Returns [Some lifted_ind] with the correct body index. *)
 Definition lookup_app_kn_ind
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (f : term) (args : list term) : option inductive :=
   match f with
   | tInd head _ =>
     let head_kn := inductive_mind head in
-    if forallb (fun a => match a with tInd _ _ => true | _ => false end) args then
-      let arg_kns :=
-        flat_map (fun a =>
-          match a with tInd ind _ => [inductive_mind ind] | _ => [] end) args in
+    if forallb is_ind_type args then
       match find (fun e =>
         andb (eq_kername (fst (fst e)) head_kn)
-             (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
-                   (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                            (combine (snd (fst e)) arg_kns))))
+             (andb (Nat.eqb #|snd (fst e)| #|args|)
+                   (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                            (combine (snd (fst e)) args))))
         app_kn_mapping with
       | Some e => Some (snd e)
       | None   => None
@@ -441,8 +462,8 @@ Fixpoint subst_idx_type
     (self_old_kn          : kername)
     (self_base            : nat)
     (ext_mapping          : list (kername * inductive))
-    (app_kn_mapping       : list (kername * list kername * inductive))
-    (spec_unlifted_kn_map : list ((kername * list kername) * kername))
+    (app_kn_mapping       : list (kername * list term * inductive))
+    (spec_unlifted_kn_map : list ((kername * list term) * kername))
     (depth                : nat)
     (t                    : term) : term :=
   let r d := subst_idx_type self_old_kn self_base ext_mapping
@@ -503,8 +524,8 @@ Definition compute_extra_cstrs
     (n_bodies               : nat)
     (cparams                : context)
     (full_mapping           : list (kername * inductive))
-    (app_kn_mapping         : list (kername * list kername * inductive))
-    (spec_unlifted_kn_map   : list ((kername * list kername) * kername))
+    (app_kn_mapping         : list (kername * list term * inductive))
+    (spec_unlifted_kn_map   : list ((kername * list term) * kername))
     (modes_with_idx         : list ((string * (list nat * list nat)) * list context_decl))
     : list constructor_body :=
   let n_params  := #|cparams| in
@@ -676,6 +697,35 @@ Definition lift_decl (n k : nat) (d : context_decl) : context_decl :=
      decl_body := option_map (lift_term n k) d.(decl_body);
      decl_type := lift_term n k d.(decl_type) |}.
 
+(** Recursively replace [tApp (tInd head) args] patterns in a term using
+    [app_kn_mapping].  Used to substitute lifted parametric types (e.g.
+    [list nat] → [listnat']) inside constructor arg/return types when lifting
+    a specialised monomorphic inductive like [prodlistnatlistnat]. *)
+Fixpoint subst_app_kns_t
+    (app_kn_mapping : list (kername * list term * inductive))
+    (t : term) : term :=
+  let self := subst_app_kns_t app_kn_mapping in
+  match t with
+  | tApp (tInd head_ind _) arg_ts =>
+    let head_kn := inductive_mind head_ind in
+    if forallb is_ind_type arg_ts then
+      match find (fun e =>
+        andb (eq_kername (fst (fst e)) head_kn)
+             (andb (Nat.eqb #|snd (fst e)| #|arg_ts|)
+                   (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                            (combine (snd (fst e)) arg_ts))))
+        app_kn_mapping with
+      | Some (_, new_i) => tInd new_i []
+      | None => tApp (tInd head_ind []) (List.map self arg_ts)
+      end
+    else tApp (tInd head_ind []) (List.map self arg_ts)
+  | tProd na ty body   => tProd na (self ty) (self body)
+  | tLambda na ty body => tLambda na (self ty) (self body)
+  | tLetIn na v ty b   => tLetIn na (self v) (self ty) (self b)
+  | tApp f args        => tApp (self f) (List.map self args)
+  | _                  => t
+  end.
+
 (** Produce the lifted [mutual_inductive_body] for [old_kn] → [new_kn].
     [ext_mapping] maps all OTHER old types to their new counterparts.
     [modes_with_idx] provides the relation mode info and [ind_indices] contexts
@@ -686,8 +736,8 @@ Polymorphic Definition make_lifted_mind
     (old_kn               : kername)
     (new_ind              : inductive)
     (ext_mapping          : list (kername * inductive))
-    (app_kn_mapping       : list (kername * list kername * inductive))
-    (spec_unlifted_kn_map : list ((kername * list kername) * kername))
+    (app_kn_mapping       : list (kername * list term * inductive))
+    (spec_unlifted_kn_map : list ((kername * list term) * kername))
     (modes_with_idx       : list ((string * (list nat * list nat)) * list context_decl))
     (fn_app_infos         : list (kername * list term * term))
     (block_n_bodies       : nat)
@@ -721,15 +771,13 @@ Polymorphic Definition make_lifted_mind
       end
     | tApp (tInd head_ind _) arg_ts =>
       let head_kn := inductive_mind head_ind in
-      let arg_kns := flat_map (fun a =>
-        match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_ts in
-      if negb (Nat.eqb #|arg_kns| #|arg_ts|) then tp
+      if negb (forallb is_ind_type arg_ts) then tp
       else
         match find (fun e =>
           andb (eq_kername (fst (fst e)) head_kn)
-               (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
-                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                              (combine arg_kns (snd (fst e))))))
+               (andb (Nat.eqb #|snd (fst e)| #|arg_ts|)
+                     (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                              (combine (snd (fst e)) arg_ts))))
           app_kn_mapping with
         | Some (_, new_i) => tInd new_i []
         | None            => tp
@@ -743,15 +791,13 @@ Polymorphic Definition make_lifted_mind
       existsb (fun e => eq_kername (fst e) (inductive_mind ind)) full
     | tApp (tInd head_ind _) arg_ts =>
       let head_kn := inductive_mind head_ind in
-      let arg_kns := flat_map (fun a =>
-        match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_ts in
-      if negb (Nat.eqb #|arg_kns| #|arg_ts|) then false
+      if negb (forallb is_ind_type arg_ts) then false
       else
         existsb (fun e =>
           andb (eq_kername (fst (fst e)) head_kn)
-               (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
-                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                              (combine arg_kns (snd (fst e))))))
+               (andb (Nat.eqb #|snd (fst e)| #|arg_ts|)
+                     (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                              (combine (snd (fst e)) arg_ts))))
           app_kn_mapping
     | _ => false
     end in
@@ -814,11 +860,16 @@ Polymorphic Definition make_lifted_mind
             ind_type      := subst_ind_kns full oib.(ind_type);
             ind_kelim     := oib.(ind_kelim);
             ind_ctors     :=
-              (* Original constructors: step1 (subst knames) + step2 (lift tRels)
-                 + step3 (cross-body tInd → tRel). *)
+              (* Original constructors: step1 (subst knames) + step1b (subst
+                 parametric app_kn_mapping, e.g. list nat → listnat') +
+                 step2 (lift tRels) + step3 (cross-body tInd → tRel). *)
               List.map (fun c =>
                 let args1 := List.map (subst_ind_kns_decl full) c.(cstr_args) in
-                let args2 := List.map (lift_decl delta n_par) args1 in
+                let args1' := List.map (fun d =>
+                  {| decl_name := d.(decl_name);
+                     decl_body := d.(decl_body);
+                     decl_type := subst_app_kns_t app_kn_mapping d.(decl_type) |}) args1 in
+                let args2 := List.map (lift_decl delta n_par) args1' in
                 {| cstr_name    := c.(cstr_name) ++ "'";
                    cstr_args    := s3args args2;
                    cstr_indices := List.map (s3t 0)
@@ -826,7 +877,8 @@ Polymorphic Definition make_lifted_mind
                                        (List.map (subst_ind_kns full) c.(cstr_indices)));
                    cstr_type    := s3t 0
                                      (lift_term delta n_par
-                                       (subst_ind_kns full c.(cstr_type)));
+                                       (subst_app_kns_t app_kn_mapping
+                                         (subst_ind_kns full c.(cstr_type))));
                    cstr_arity   := c.(cstr_arity) |})
               oib.(ind_ctors)
               (* Extra constructors already use correct tRel for self and
@@ -887,7 +939,7 @@ Definition direct_deps_in_mapping
     Parametric-type applications in [T] or argument types are resolved through
     [spec_kn_pairs] to their monomorphised specialisations when possible. *)
 Fixpoint collect_fn_dep_edges_from_ctx
-    (spec_kn_pairs : list ((kername * list kername) * kername))
+    (spec_kn_pairs : list ((kername * list term) * kername))
     (ctx  : list term)
     (t    : term)
     : list (kername * kername) :=
@@ -895,13 +947,13 @@ Fixpoint collect_fn_dep_edges_from_ctx
     let plain := collect_tind_kns tp in
     let spec_hits :=
       flat_map (fun app =>
-        let hkn  := fst app in
-        let akns := snd app in
+        let hkn    := fst app in
+        let aterms := snd app in
         match find (fun e =>
           andb (eq_kername (fst (fst e)) hkn)
-               (andb (Nat.eqb #|snd (fst e)| #|akns|)
-                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                              (combine (snd (fst e)) akns))))
+               (andb (Nat.eqb #|snd (fst e)| #|aterms|)
+                     (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                              (combine (snd (fst e)) aterms))))
           spec_kn_pairs with
         | Some e => [snd e]
         | None   => []
@@ -1257,7 +1309,7 @@ Definition collect_const_fn_kns_from_ctor (c : constructor_body)
     [(out_kn, in_kn)] for [collect_fn_dep_edges_from_ctx].
     Also scans [cstr_indices] and relation-application premises. *)
 Definition collect_fn_dep_edges_from_ctor
-    (spec_kn_pairs   : list ((kername * list kername) * kername))
+    (spec_kn_pairs   : list ((kername * list term) * kername))
     (idx_types       : list term)
     (rel_minds_assoc : list (kername * mutual_inductive_body))
     (c : constructor_body)
@@ -1266,13 +1318,13 @@ Definition collect_fn_dep_edges_from_ctor
     let plain := collect_tind_kns tp in
     let spec_hits :=
       flat_map (fun app =>
-        let hkn  := fst app in
-        let akns := snd app in
+        let hkn    := fst app in
+        let aterms := snd app in
         match find (fun e =>
           andb (eq_kername (fst (fst e)) hkn)
-               (andb (Nat.eqb #|snd (fst e)| #|akns|)
-                     (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                              (combine akns (snd (fst e))))))
+               (andb (Nat.eqb #|snd (fst e)| #|aterms|)
+                     (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                              (combine (snd (fst e)) aterms))))
           spec_kn_pairs with
         | Some e => [snd e]
         | None   => []
@@ -1555,7 +1607,7 @@ Unset Universe Checking.
 Polymorphic Definition preprocess_coind_types
     (modes       : mode_map)
     (fuel        : nat)
-    : TemplateMonad (list (kername * inductive) * list (kername * list kername * inductive)) :=
+    : TemplateMonad (list (kername * inductive) * list (kername * list term * inductive)) :=
   (* Step 1: resolve each mode entry to a specific body (kn + body index) *)
   rel_inds <- monad_map (fun p =>
     let nm := fst p in
@@ -1647,20 +1699,18 @@ Polymorphic Definition preprocess_coind_types
   let raw_ind_apps :=
     dedup_ind_apps
       ((flat_map (fun mwi =>
-          flat_map (fun d => collect_ind_apps d.(decl_type)) (snd mwi))
+          flat_map (fun d => collect_ind_apps_toplevel d.(decl_type)) (snd mwi))
         modes_with_idx)
        ++ ctor_eq_ind_apps_raw) in
   spec_kn_pairs <- monad_fold_left (fun acc entry =>
-    let head_kn   := fst entry in
-    let arg_kns_e := snd entry in
+    let head_kn    := fst entry in
+    let arg_terms_e := snd entry in
     head_mind <- tmQuoteInductive head_kn ;;
     if Nat.eqb head_mind.(ind_npars) 0 then tmReturn acc  (* already monomorphic *)
     else
       let spec_name :=
-        fold_left (fun s kn => s ++ snd kn) arg_kns_e (snd head_kn) in
-      let concrete_args :=
-        List.map (fun kn =>
-          tInd {| inductive_mind := kn; inductive_ind := 0 |} []) arg_kns_e in
+        fold_left (fun s t => s ++ ind_type_name t) arg_terms_e (snd head_kn) in
+      let concrete_args := arg_terms_e in
       tmMkInductivePreserveFinite
         (specialize_mind head_mind head_kn concrete_args spec_name) ;;
       refs <- tmLocate spec_name ;;
@@ -1767,14 +1817,14 @@ Polymorphic Definition preprocess_coind_types
   let lookup_lifted_kns t :=
     let spec_hits :=
       flat_map (fun entry =>
-        let head_kn   := fst (fst entry) in
-        let arg_kns_e := snd (fst entry) in
-        let spec_kn   := snd entry in
+        let head_kn    := fst (fst entry) in
+        let arg_terms_e := snd (fst entry) in
+        let spec_kn    := snd entry in
         flat_map (fun app =>
           if andb (eq_kername (fst app) head_kn)
-                  (andb (Nat.eqb #|snd app| #|arg_kns_e|)
-                        (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                                 (combine (snd app) arg_kns_e)))
+                  (andb (Nat.eqb #|snd app| #|arg_terms_e|)
+                        (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                                 (combine (snd app) arg_terms_e)))
           then [spec_kn]
           else [])
         (collect_ind_apps t))
@@ -1815,8 +1865,37 @@ Polymorphic Definition preprocess_coind_types
     mind <- tmQuoteInductive kn ;;
     tmReturn (kn, mind))
     type_kns ;;
+  (* Spec-derived dep edges: if spec_kn [outer] was built by specialising
+     head_kn at args that include another spec_kn [inner] (e.g.
+     prodlistnatlistnat was built from prod applied to [list nat, list nat]
+     and listnat was built from list applied to [nat]), then outer must come
+     AFTER inner in the topo sort so that outerLift can call innerLift. *)
+  let spec_dep_edges :=
+    flat_map (fun outer_entry =>
+      let outer_spec_kn := snd outer_entry in
+      flat_map (fun arg_t =>
+        match arg_t with
+        | tApp (tInd head_ind _) inner_args =>
+          let head_kn2 := inductive_mind head_ind in
+          match find (fun inner_entry =>
+            andb (eq_kername (fst (fst inner_entry)) head_kn2)
+                 (andb (Nat.eqb #|snd (fst inner_entry)| #|inner_args|)
+                       (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                                (combine (snd (fst inner_entry)) inner_args))))
+            spec_kn_pairs with
+          | Some inner_entry =>
+            let inner_spec_kn := snd inner_entry in
+            if eq_kername outer_spec_kn inner_spec_kn then []
+            else [(outer_spec_kn, inner_spec_kn)]
+          | None => []
+          end
+        | _ => []
+        end)
+      (snd (fst outer_entry)))
+    spec_kn_pairs in
   let sorted_kns :=
-    topo_sort_kns type_kns type_minds pre_mapping mode_dep_pairs [] (S #|type_kns|) in
+    topo_sort_kns type_kns type_minds pre_mapping
+      (List.app mode_dep_pairs spec_dep_edges) [] (S #|type_kns|) in
   (* Step 6: declare lifted types, grouping mutually dependent ones into a
      single mutual inductive block so forward-reference anomalies are avoided.
      Phase a: pre-compute full ind_mapping (all new kns, ind=0 placeholder).
@@ -1830,11 +1909,11 @@ Polymorphic Definition preprocess_coind_types
     type_kns in
   let pre_app_kn_mapping :=
     flat_map (fun e =>
-      let head_kn   := fst (fst e) in
-      let arg_kns_e := snd (fst e) in
-      let spec_kn   := snd e in
+      let head_kn    := fst (fst e) in
+      let arg_terms_e := snd (fst e) in
+      let spec_kn    := snd e in
       match find (fun p => eq_kername (fst p) spec_kn) pre_ind_mapping with
-      | Some (_, lifted_ind) => [((head_kn, arg_kns_e), lifted_ind)]
+      | Some (_, lifted_ind) => [((head_kn, arg_terms_e), lifted_ind)]
       | None => []
       end)
     spec_kn_pairs in
@@ -1950,14 +2029,14 @@ Polymorphic Definition preprocess_coind_types
          a previously-declared group was combined under a different block_kn. *)
       let grp_app_kn_mapping :=
         flat_map (fun e =>
-          let head_kn   := fst (fst e) in
-          let arg_kns_e := snd (fst e) in
-          let spec_kn   := snd e in
+          let head_kn    := fst (fst e) in
+          let arg_terms_e := snd (fst e) in
+          let spec_kn    := snd e in
           match find (fun p => eq_kername (fst p) spec_kn) group_ind_mapping with
-          | Some (_, grp_ind) => [((head_kn, arg_kns_e), grp_ind)]
+          | Some (_, grp_ind) => [((head_kn, arg_terms_e), grp_ind)]
           | None =>
             match find (fun p => eq_kername (fst p) spec_kn) acc with
-            | Some (_, acc_ind) => [((head_kn, arg_kns_e), acc_ind)]
+            | Some (_, acc_ind) => [((head_kn, arg_terms_e), acc_ind)]
             | None => []
             end
           end)
@@ -2019,11 +2098,11 @@ Polymorphic Definition preprocess_coind_types
   sorted_groups [] ;;
   let final_app_kn_mapping :=
     flat_map (fun e =>
-      let head_kn   := fst (fst e) in
-      let arg_kns_e := snd (fst e) in
-      let spec_kn   := snd e in
+      let head_kn    := fst (fst e) in
+      let arg_terms_e := snd (fst e) in
+      let spec_kn    := snd e in
       match find (fun p => eq_kername (fst p) spec_kn) actual_mapping with
-      | Some (_, lifted_ind) => [((head_kn, arg_kns_e), lifted_ind)]
+      | Some (_, lifted_ind) => [((head_kn, arg_terms_e), lifted_ind)]
       | None => []
       end)
     spec_kn_pairs in
@@ -2051,25 +2130,22 @@ Definition tmLocateInd (nm : string) : TemplateMonad kername :=
     parametric type that was monomorphised: the caller strips [n_params] leading
     args and routes the value args to the specialised constructor. *)
 Definition lookup_ctor_app_kn
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (f : term) (args : list term)
     : option (inductive * nat) :=
   match f with
   | tConstruct ind _ _ =>
     let head_kn := inductive_mind ind in
     match find (fun e =>
-      let arg_kns  := snd (fst e) in
-      let n_params := #|arg_kns| in
+      let arg_terms := snd (fst e) in
+      let n_params  := #|arg_terms| in
       andb (eq_kername (fst (fst e)) head_kn)
       (if Nat.leb n_params #|args| then
         let type_args := firstn n_params args in
-        if forallb (fun a => match a with tInd _ _ => true | _ => false end) type_args then
-          let type_arg_kns :=
-            flat_map (fun a => match a with tInd i _ => [inductive_mind i] | _ => [] end)
-                     type_args in
-          andb (Nat.eqb #|type_arg_kns| #|arg_kns|)
-               (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                        (combine arg_kns type_arg_kns))
+        if forallb is_ind_type type_args then
+          andb (Nat.eqb #|type_args| #|arg_terms|)
+               (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                        (combine arg_terms type_args))
         else false
       else false)) app_kn_mapping with
     | None   => None
@@ -2084,7 +2160,7 @@ Definition lookup_ctor_app_kn
     when a monomorphic specialisation exists.  The [tApp] check runs BEFORE
     recursive descent so original arg knames are used for the lookup. *)
 Fixpoint subst_inds_and_ctors
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (mapping        : list (kername * inductive))
     (t              : term) : term :=
   let sub := subst_inds_and_ctors app_kn_mapping mapping in
@@ -2154,7 +2230,7 @@ Fixpoint subst_inds_and_ctors
   end.
 
 Definition subst_inds_and_ctors_decl
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (mapping        : list (kername * inductive))
     (d              : context_decl) : context_decl :=
   {| decl_name := d.(decl_name);
@@ -2202,7 +2278,7 @@ Definition compute_undefined_cstr
     (n_params       : nat)
     (n_bodies       : nat)
     (type_mapping   : list (kername * inductive))
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (modes_with_idx : list ((string * (list nat * list nat)) * list context_decl))
     (type_body_map  : list (inductive * one_inductive_body))
     : list constructor_body :=
@@ -2257,7 +2333,7 @@ Definition compute_undefined_cstr
                   match find (fun e =>
                     andb (eq_kername (fst (fst e)) (fst app))
                          (andb (Nat.eqb #|snd (fst e)| #|snd app|)
-                               (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                               (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
                                         (combine (snd (fst e)) (snd app)))))
                     app_kn_mapping with
                   | Some e => Some (snd e)  (* snd e : inductive *)
@@ -2370,7 +2446,7 @@ Definition make_lifted_relation_mind
     (new_rel_kn     : kername)
     (rel_mapping    : list (kername * inductive))
     (type_mapping   : list (kername * inductive))
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (modes_with_idx : list ((string * (list nat * list nat)) * list context_decl))
     (type_body_map  : list (inductive * one_inductive_body))
     (fn_kn_map      : list (kername * kername))
@@ -2416,7 +2492,7 @@ Polymorphic Definition lift_relation
     (rel_kn         : kername)
     (rel_mapping    : list (kername * inductive))
     (type_mapping   : list (kername * inductive))
-    (app_kn_mapping : list (kername * list kername * inductive))
+    (app_kn_mapping : list (kername * list term * inductive))
     (modes          : mode_map)
     (fn_kn_map      : list (kername * kername))
     : TemplateMonad unit :=
@@ -2465,11 +2541,12 @@ Fixpoint pair_up {A : Type} (l : list A) : list (A * A) :=
       Some None      = self-reference, apply recursive call
       Some (Some kn) = other lifted type [kn], call [snd kn ++ "Lift"] *)
 Definition lift_arg_class
-    (old_kn   : kername)
-    (n_args   : nat)
-    (snoc_i   : nat)
-    (type_map : list (kername * inductive))
-    (t        : term) : option (option kername) :=
+    (old_kn      : kername)
+    (n_args      : nat)
+    (snoc_i      : nat)
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
+    (t           : term) : option (option kername) :=
   match t with
   | tRel n =>
     (* In a standalone type's cstr_args telescope (snoc order), the type of the
@@ -2483,6 +2560,31 @@ Definition lift_arg_class
     else if existsb (fun p => eq_kername (fst p) kn) type_map
          then Some (Some kn)
          else None
+  | tApp (tInd head_ind _) arg_ts =>
+    (* Parametric application like [list nat]: find the spec'd type via
+       app_kn_map, then reverse-lookup in type_map for the old spec_kn name
+       (needed to form [spec_knLift]). *)
+    let head_kn := inductive_mind head_ind in
+    if forallb is_ind_type arg_ts then
+      match find (fun e =>
+        andb (eq_kername (fst (fst e)) head_kn)
+             (andb (Nat.eqb #|snd (fst e)| #|arg_ts|)
+                   (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                            (combine (snd (fst e)) arg_ts))))
+        app_kn_map with
+      | Some (_, lifted_ind) =>
+        match find (fun p =>
+          andb (eq_kername (inductive_mind (snd p)) (inductive_mind lifted_ind))
+               (Nat.eqb (inductive_ind (snd p)) (inductive_ind lifted_ind)))
+          type_map with
+        | Some (spec_kn, _) =>
+          if eq_kername spec_kn old_kn then Some None
+          else Some (Some spec_kn)
+        | None => None
+        end
+      | None => None
+      end
+    else None
   | _ => None
   end.
 
@@ -2497,12 +2599,13 @@ Definition lift_arg_class
     in that case the lift function takes [head_kn arg_kns...] as input
     rather than the intermediate specialized type [old_kn]. *)
 Definition make_lift_def
-    (old_kn    : kername)
-    (oib       : one_inductive_body)
-    (new_ind   : inductive)
-    (type_map  : list (kername * inductive))
-    (cur_mp    : modpath)
-    (orig_form : option (kername * list kername))
+    (old_kn      : kername)
+    (oib         : one_inductive_body)
+    (new_ind     : inductive)
+    (type_map    : list (kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
+    (cur_mp      : modpath)
+    (orig_form   : option (kername * list term))
     : def term :=
   let old_ind  := {| inductive_mind := old_kn; inductive_ind := 0 |} in
   (* Determine the case-expression's inductive, npar, params, and input type. *)
@@ -2515,9 +2618,8 @@ Definition make_lift_def
     match orig_form with None => 0 | Some (_, aks) => List.length aks end in
   let par_terms :=
     match orig_form with
-    | None              => []
-    | Some (_, arg_kns) =>
-      List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} []) arg_kns
+    | None                 => []
+    | Some (_, arg_terms)  => arg_terms
     end in
   let old_type :=
     match orig_form with
@@ -2536,7 +2638,7 @@ Definition make_lift_def
         List.map (fun snoc_i =>
           let arg_t := match nth_error ctor.(cstr_args) snoc_i with
                        | Some d => d.(decl_type) | None => tVar "?" end in
-          match lift_arg_class old_kn n_args snoc_i type_map arg_t with
+          match lift_arg_class old_kn n_args snoc_i type_map app_kn_map arg_t with
           | Some None =>
             tApp (tRel (n_args + 1)) [tRel snoc_i]
           | Some (Some kn) =>
@@ -2579,7 +2681,7 @@ Definition make_lift_def
 Polymorphic Fixpoint generate_lift_fns
     (todo        : list (kername * inductive))
     (all_map     : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
     (cur_mp      : modpath)
     : TemplateMonad unit :=
   match todo with
@@ -2603,7 +2705,7 @@ Polymorphic Fixpoint generate_lift_fns
             | Some oib =>
               let is_coind :=
                 match old_mind.(ind_finite) with CoFinite => true | _ => false end in
-              let d := make_lift_def old_kn oib new_ind all_map cur_mp orig_form in
+              let d := make_lift_def old_kn oib new_ind all_map app_kn_map cur_mp orig_form in
               let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
               tmMkDefinition (snd old_kn ++ "Lift") fn_term
             end) (fun _ =>
@@ -2619,7 +2721,7 @@ Polymorphic Fixpoint generate_lift_fns
     [listnat' → list nat]. *)
 Definition subst_ind_to_old
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     (ind : inductive) : term :=
   match find (fun e =>
                 andb (eq_kername (inductive_mind (snd e)) (inductive_mind ind))
@@ -2634,9 +2736,7 @@ Definition subst_ind_to_old
                app_kn_map with
     | Some e =>
       let head_ind  := {| inductive_mind := fst (fst e); inductive_ind := 0 |} in
-      let par_terms :=
-        List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} [])
-                 (snd (fst e)) in
+      let par_terms := snd (fst e) in
       match par_terms with
       | [] => tInd head_ind []
       | _  => tApp (tInd head_ind []) par_terms
@@ -2652,7 +2752,7 @@ Definition subst_ind_to_old
     [tRel (depth + n_bodies - 1 - j)] at that depth. *)
 Fixpoint subst_to_old_at_depth
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     (block_kn   : kername)
     (n_bodies   : nat)
     (depth      : nat)
@@ -2688,7 +2788,7 @@ Definition make_fnSymb_type
     (n_params   : nat)
     (ctor       : constructor_body)
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     : term :=
   let block_kn := inductive_mind new_ind in
   let n_args   := ctor.(cstr_arity) in
@@ -2719,7 +2819,7 @@ Definition tmMkParameter (id : ident) (ty : term) : TemplateMonad unit :=
 Polymorphic Fixpoint generate_fnSymb_params
     (todo        : list (kername * inductive))
     (type_map    : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
@@ -2934,7 +3034,7 @@ Polymorphic Fixpoint generate_rest_fns
 Polymorphic Fixpoint generate_push_params
     (todo       : list (kername * inductive))
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
@@ -3027,7 +3127,7 @@ Definition make_push_def
     (new_oib       : one_inductive_body)
     (n_old_ctors   : nat)
     (type_map      : list (kername * inductive))
-    (app_kn_map    : list (kername * list kername * inductive))
+    (app_kn_map    : list (kername * list term * inductive))
     (pi_set        : list kername)
     (is_purely_ind : bool)
     (cur_mp        : modpath)
@@ -3048,9 +3148,8 @@ Definition make_push_def
     end in
   let par_terms :=
     match orig_form with
-    | None              => []
-    | Some (_, arg_kns) =>
-      List.map (fun kn => tInd {| inductive_mind := kn; inductive_ind := 0 |} []) arg_kns
+    | None                => []
+    | Some (_, arg_terms) => arg_terms
     end in
   let old_type :=
     match par_terms with
@@ -3216,7 +3315,7 @@ Polymorphic Fixpoint compute_npi_fix
 Polymorphic Fixpoint generate_push_fns
     (todo        : list (kername * inductive))
     (all_map     : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
     (cur_mp      : modpath)
     : TemplateMonad unit :=
@@ -3535,7 +3634,7 @@ Polymorphic Fixpoint generate_eqfn_defs
 Polymorphic Fixpoint generate_lifted_fns
     (fn_infos   : list (kername * list term * term))
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     (cur_mp     : modpath)
     : TemplateMonad unit :=
   match fn_infos with
@@ -3568,16 +3667,14 @@ Polymorphic Fixpoint generate_lifted_fns
         | None      => None
         end
       | tApp (tInd head_ind _) arg_terms =>
-        let kn      := inductive_mind head_ind in
-        let arg_kns := flat_map (fun a =>
-          match a with tInd i _ => [inductive_mind i] | _ => [] end) arg_terms in
-        if negb (Nat.eqb #|arg_kns| #|arg_terms|) then None
+        let kn := inductive_mind head_ind in
+        if negb (forallb is_ind_type arg_terms) then None
         else
           match find (fun e =>
             andb (eq_kername (fst (fst e)) kn)
-                 (andb (Nat.eqb #|snd (fst e)| #|arg_kns|)
-                       (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                                (combine arg_kns (snd (fst e))))))
+                 (andb (Nat.eqb #|snd (fst e)| #|arg_terms|)
+                       (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                                (combine (snd (fst e)) arg_terms))))
             app_kn_map with
           | Some (_, new_ind) =>
             match find (fun e =>
@@ -3682,7 +3779,7 @@ Polymorphic Fixpoint generate_lifted_fns
     the type is tracked in [type_map]/[app_kn_map], or [(t, None)] if not. *)
 Definition classify_in_type
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     (cur_mp     : modpath)
     (t          : term)
     : term * option term :=
@@ -3695,16 +3792,16 @@ Definition classify_in_type
     | None => (t, None)
     end
   | tApp (tInd ind _) args =>
-    let kn      := inductive_mind ind in
-    let arg_kns := List.concat (List.map (fun a =>
-      match a with tInd i _ => [inductive_mind i] | _ => [] end) args) in
+    let kn := inductive_mind ind in
     let found :=
-      find (fun e =>
-              andb (eq_kername (fst (fst e)) kn)
-                   (andb (Nat.eqb #|arg_kns| #|snd (fst e)|)
-                         (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                                  (combine arg_kns (snd (fst e))))))
-           app_kn_map in
+      if negb (forallb is_ind_type args) then None
+      else
+        find (fun e =>
+                andb (eq_kername (fst (fst e)) kn)
+                     (andb (Nat.eqb #|snd (fst e)| #|args|)
+                           (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                                    (combine (snd (fst e)) args))))
+             app_kn_map in
     match found with
     | Some (_, new_ind) =>
       match find (fun e =>
@@ -3774,7 +3871,7 @@ Definition make_inputLift_term
 Polymorphic Fixpoint generate_inputLift_fns
     (todo        : list (kername * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
     (prod_kn     : kername)
     (anim_res_kn : kername)
     (cur_mp      : modpath)
@@ -3812,7 +3909,7 @@ Polymorphic Fixpoint generate_inputLift_fns
     [is_pi] is true when the push function takes no [nat] depth argument (purely inductive). *)
 Definition classify_out_type
     (type_map   : list (kername * inductive))
-    (app_kn_map : list (kername * list kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
     (pi_set     : list kername)
     (cur_mp     : modpath)
     (t          : term)
@@ -3827,16 +3924,16 @@ Definition classify_out_type
     | None => (t, None)
     end
   | tApp (tInd ind _) args =>
-    let kn      := inductive_mind ind in
-    let arg_kns := List.concat (List.map (fun a =>
-      match a with tInd i _ => [inductive_mind i] | _ => [] end) args) in
+    let kn := inductive_mind ind in
     let found :=
-      find (fun e =>
-              andb (eq_kername (fst (fst e)) kn)
-                   (andb (Nat.eqb #|arg_kns| #|snd (fst e)|)
-                         (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                                  (combine arg_kns (snd (fst e))))))
-           app_kn_map in
+      if negb (forallb is_ind_type args) then None
+      else
+        find (fun e =>
+                andb (eq_kername (fst (fst e)) kn)
+                     (andb (Nat.eqb #|snd (fst e)| #|args|)
+                           (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
+                                    (combine (snd (fst e)) args))))
+             app_kn_map in
     match found with
     | Some (_, new_ind) =>
       match find (fun e =>
@@ -3917,7 +4014,7 @@ Definition make_outputPush_term
 Polymorphic Fixpoint generate_outputPush_fns
     (todo        : list (kername * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
-    (app_kn_map  : list (kername * list kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
     (prod_kn     : kername)
     (anim_res_kn : kername)
