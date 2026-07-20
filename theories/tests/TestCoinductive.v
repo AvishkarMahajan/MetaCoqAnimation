@@ -21,7 +21,54 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 Print Stream.
+Module StackStep.
+Definition total_map (A : Type) := string -> A.
+Inductive state : Type :=
+| stCtor : (string -> nat) -> state. 
 
+Inductive sinstr : Type :=
+| SPush (n : nat)
+| SLoad (x : string)
+| SPlus
+| SMinus
+| SMult.
+
+Fixpoint decEqsinstr : forall (t1 t2 : sinstr), {t1 = t2} + {t1 <> t2}.
+Proof.
+  decide equality. decide equality. decide equality. decide equality.
+Defined.
+
+Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
+  if decEqsinstr t1 t2 then true else false.
+
+Definition stack := list nat.
+Definition prog  := list sinstr.
+
+
+
+Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat -> Prop :=
+| SS_Push  : forall st stk n p,
+     stack_step st ((SPush n :: p), stk) (p, (n :: stk)) 
+| SS_Load  : forall fn stk i p,
+     
+     stack_step (stCtor fn) ((SLoad i :: p),  stk) (p, ((fn) i :: stk))
+(*    
+| SS_Plus  : forall st stk n m p ps0 ps1,
+    ps0 = (SPlus :: p, n :: m :: stk) /\ ps1 = (p, (m + n) :: stk)
+    -> stack_step st ps0 ps1
+| SS_Minus : forall st stk n m p ps0 ps1,
+    ps0 = (SMinus :: p, n :: m :: stk) /\ ps1 = (p, (m - n) :: stk)
+    -> stack_step st ps0 ps1
+| SS_Mult  : forall st stk n m p ps0 ps1,
+    ps0 = (SMult :: p, n :: m :: stk) /\ ps1 = (p, (m * n) :: stk)
+    -> stack_step st ps0 ps1 *).
+
+(*    
+
+MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
+  [("stack_step", ([0;1], [2]))] 200).
+*)
+End StackStep.
 Module STLCStepTr.
 
 Inductive ty : Type :=
@@ -234,4 +281,83 @@ MetaRocq Run (animate_coinductive_with_lift <? Integrate ?>
 Compute (IntegrateAnimatedTopFn 25 (Success stream (from 4))).
 Compute (IntegrateAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
 End integrateStreams.  
+
+
+Module ImpSem.
+
+Inductive co_vars : Type :=
+| pure        : (nat -> nat) -> co_vars.
+
+
+Definition set (vs : nat -> nat) (v n : nat) : nat -> nat :=
+  fun v' => if Nat.eqb v v' then n else vs v'.
+
+Inductive exp : Type :=
+| Const : nat -> exp
+| Var   : nat -> exp
+| Plus  : exp -> exp -> exp.
+
+Fixpoint eqFnexp (e1: exp) (e2 : exp) : bool :=
+match e1 with
+| Const n => match e2 with
+             | Const m => Nat.eqb n m
+             | _ => false
+             end
+| Var n =>   match e2 with
+             | Var m => Nat.eqb n m
+             | _ => false
+             end
+| Plus e1' e1'' => match e2 with
+                   | Plus e2' e2'' => andb (eqFnexp e1' e2') (eqFnexp e2' e2'')
+                   | _ => false
+                   end
+end.                                             
+
+Fixpoint evalExp (vs : nat -> nat) (e : exp) : nat :=
+  match e with
+  | Const n     => n
+  | Var v       => vs v
+  | Plus e1 e2  => evalExp vs e1 + evalExp vs e2
+  end.
+
+Inductive cmd : Type :=
+| Assign : nat -> exp -> cmd
+| Seq    : cmd -> cmd -> cmd
+| While  : exp -> cmd -> cmd.
+
+CoInductive evalCmd : co_vars -> cmd -> co_vars -> Prop :=
+| EvalAssign     : forall vs' vs v e,
+    vs' = pure vs
+    -> evalCmd vs' (Assign v e) (pure (set vs v (evalExp vs e)))
+| EvalSeq        : forall vs1 vs2 vs3 c1 c2,
+    evalCmd vs1 c1 vs2 /\ evalCmd vs2 c2 vs3
+    -> evalCmd vs1 (Seq c1 c2) vs3
+| EvalWhileFalse : forall vs' vs e c,
+    vs' = pure vs /\ evalExp vs e = 0
+    -> evalCmd vs' (While e c) vs'
+| EvalWhileTrue  : forall vs1' vs2' vs3' vs1 e c,
+    vs1' = pure vs1 /\ evalExp vs1 e <> 0
+    /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
+    -> evalCmd vs1' (While e c) vs3'.
+    
+MetaRocq Run (animate_coinductive_with_lift <? evalCmd ?>
+  [("evalCmd", ([0;1], [2]))] 500).
+
+Definition prog  := While (Var 4) (Assign 8 (Const 8)).
+Definition initFn := pure (fun m : nat => m + 1).
+Compute (evalCmdAnimatedTopFn 35 (Success (co_vars * cmd) (initFn, prog))).
+
+
+Definition prog''   :=
+  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
+    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
+Definition initFn'' := pure (fun m : nat => m).
+
+Compute (evalCmdAnimatedTopFn 35 (Success (co_vars * cmd) (initFn'', prog''))).
+
+End ImpSem.
+
+
+      
+
   

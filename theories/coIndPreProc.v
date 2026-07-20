@@ -1553,8 +1553,8 @@ Fixpoint extract_arg_types (skip n : nat) (t : term) : list term :=
 
 Unset Universe Checking.
 Polymorphic Definition preprocess_coind_types
-    (modes : mode_map)
-    (fuel  : nat)
+    (modes       : mode_map)
+    (fuel        : nat)
     : TemplateMonad (list (kername * inductive) * list (kername * list kername * inductive)) :=
   (* Step 1: resolve each mode entry to a specific body (kn + body index) *)
   rel_inds <- monad_map (fun p =>
@@ -1621,7 +1621,16 @@ Polymorphic Definition preprocess_coind_types
       let idx_ctx := snd mwi in
       flat_map (fun i =>
         match nth_error idx_ctx i with
-        | Some d => collect_tind_kns d.(decl_type)
+        | Some d =>
+          (* Only collect the direct head kname of each mode-position type;
+             do NOT recurse into type arguments.  Constituent types like [nat]
+             from [list nat] must NOT enter the lifting set automatically — they
+             only belong there if a function applied in a constructor returns them. *)
+          match d.(decl_type) with
+          | tInd ind _  => [inductive_mind ind]
+          | tApp f' _   => match f' with tInd ind _ => [inductive_mind ind] | _ => [] end
+          | _           => []
+          end
         | None   => []
         end)
       (List.app in_pos out_pos))
@@ -2048,26 +2057,23 @@ Definition lookup_ctor_app_kn
   match f with
   | tConstruct ind _ _ =>
     let head_kn := inductive_mind ind in
-    match find (fun e => eq_kername (fst (fst e)) head_kn) app_kn_mapping with
-    | None => None
-    | Some e =>
+    match find (fun e =>
       let arg_kns  := snd (fst e) in
       let n_params := #|arg_kns| in
-      if Nat.leb n_params #|args| then
+      andb (eq_kername (fst (fst e)) head_kn)
+      (if Nat.leb n_params #|args| then
         let type_args := firstn n_params args in
         if forallb (fun a => match a with tInd _ _ => true | _ => false end) type_args then
           let type_arg_kns :=
-            flat_map (fun a => match a with
-                               | tInd i _ => [inductive_mind i]
-                               | _        => []
-                               end) type_args in
-          if andb (Nat.eqb #|type_arg_kns| #|arg_kns|)
-                  (forallb (fun ab => eq_kername (fst ab) (snd ab))
-                           (combine arg_kns type_arg_kns))
-          then Some (snd e, n_params)
-          else None
-        else None
-      else None
+            flat_map (fun a => match a with tInd i _ => [inductive_mind i] | _ => [] end)
+                     type_args in
+          andb (Nat.eqb #|type_arg_kns| #|arg_kns|)
+               (forallb (fun ab => eq_kername (fst ab) (snd ab))
+                        (combine arg_kns type_arg_kns))
+        else false
+      else false)) app_kn_mapping with
+    | None   => None
+    | Some e => Some (snd e, #|snd (fst e)|)
     end
   | _ => None
   end.
@@ -3979,8 +3985,8 @@ Polymorphic Definition lift_relation_names
     [modes]  : input/output positions for every body of the mutual block. *)
 Unset Universe Checking.
 Polymorphic Definition lift_coinductive_relation
-    (modes  : mode_map)
-    (fuel   : nat)
+    (modes       : mode_map)
+    (fuel        : nat)
     : TemplateMonad unit :=
   (* Resolve every mode entry to its mutual-block kname, in order. *)
   kn_mode_list <- monad_fold_left (fun acc me =>
@@ -4172,6 +4178,7 @@ Definition animate_coinductive_with_lift
   | None, _ => tmFail ("animate_coinductive_with_lift: no mode entry for " ++ rel_nm)
   | _, None  => tmFail ("animate_coinductive_with_lift: cannot find body " ++ rel_nm)
   end.
+
   
   
   
