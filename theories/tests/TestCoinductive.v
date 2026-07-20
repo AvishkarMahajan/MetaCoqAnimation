@@ -31,6 +31,8 @@ Inductive prodRel : list nat * list nat -> list nat * list nat -> Prop :=
 
 MetaRocq Run (animate_coinductive_with_lift <? prodRel ?>
   [("prodRel", ([0], [1]))] 200).
+
+Compute prodRelAnimatedTopFn 10 (Success (list nat * list nat) ([2;3],[8])).  
 End prodRel.
 (** mixedRel: index 0 is [list nat] (direct mode position → listnat enters lifting set)
     and index 1 is [list nat * list nat] (nested → prodlistnatlistnat enters lifting set).
@@ -42,6 +44,8 @@ Inductive mixedRel : list nat -> list nat * list nat -> Prop :=
 
 MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
   [("mixedRel", ([0], [1]))] 200).
+  
+Compute mixedRelAnimatedTopFn 10 (Success (list nat) ([2;3])).  
 End mixedRel.  
 Module StackStep.
 Definition total_map (A : Type) := string -> A.
@@ -74,7 +78,7 @@ Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat
 | SS_Load  : forall fn stk i p,
      
      stack_step (stCtor fn) ((SLoad i :: p),  stk) (p, ((fn) i :: stk))
-(*    
+   
 | SS_Plus  : forall st stk n m p ps0 ps1,
     ps0 = (SPlus :: p, n :: m :: stk) /\ ps1 = (p, (m + n) :: stk)
     -> stack_step st ps0 ps1
@@ -83,13 +87,13 @@ Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat
     -> stack_step st ps0 ps1
 | SS_Mult  : forall st stk n m p ps0 ps1,
     ps0 = (SMult :: p, n :: m :: stk) /\ ps1 = (p, (m * n) :: stk)
-    -> stack_step st ps0 ps1 *).
+    -> stack_step st ps0 ps1 .
 
-(*    
-
+   
+(* VERY SLOW!! NEED TO INVESTIGATE 
 MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
-  [("stack_step", ([0;1], [2]))] 200).
-*)
+  [("stack_step", ([0;1], [2]))] 200).*)
+
 End StackStep.
 Module STLCStepTr.
 
