@@ -46,58 +46,8 @@ MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
   [("mixedRel", ([0], [1]))] 200).
   
 Compute mixedRelAnimatedTopFn 10 (Success (list nat) ([2;3])).  
-End mixedRel.  
-Module StackStep.
-Definition total_map (A : Type) := string -> A.
-Inductive state : Type :=
-| stCtor : (string -> nat) -> state. 
+End mixedRel. 
 
-Inductive sinstr : Type :=
-| SPush (n : nat)
-| SLoad (x : string)
-| SPlus
-| SMinus
-| SMult.
-
-Fixpoint decEqsinstr : forall (t1 t2 : sinstr), {t1 = t2} + {t1 <> t2}.
-Proof.
-  decide equality. decide equality. decide equality. decide equality.
-Defined.
-
-Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
-  if decEqsinstr t1 t2 then true else false.
-
-Definition stack := list nat.
-Definition prog  := list sinstr.
-
-
-
-Inductive stack_step : state -> list sinstr -> list nat -> list sinstr -> list nat -> Prop :=
-| SS_Push  : forall st stk n p,
-     stack_step st (SPush n :: p) stk p (n :: stk) 
-| SS_Load  : forall fn stk i p,
-     
-     stack_step (stCtor fn) (SLoad i :: p)  stk p ((fn) i :: stk) 
-   
-| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((m + n) :: stk)
-| SS_Minus : forall st stk n m p,
-    stack_step st (SMinus :: p) (n :: m :: stk) p  ((m - n) :: stk)
-| SS_Mult  : forall st stk n m p,
-    stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
-
-   
-(* Product type version is VERY SLOW!! NEED TO INVESTIGATE *)
-MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
-  [("stack_step", ([0;1;2], [3;4]))] 200). 
-
-Definition empty_state : state :=   (stCtor (fun (_ : string) => 0)).
-
- 
-Compute (stack_stepAnimatedTopFn 50
-  (Success (state * (list sinstr * list nat))
-    (empty_state, ([SPush 3; SPush 4; SPlus], [])))).  
-
-End StackStep.
 Module STLCStepTr.
 
 Inductive ty : Type :=
@@ -190,18 +140,7 @@ Definition omega : tm :=
 Compute bigStepTrAnimatedTopFn 25 (Success tm omega). 
 Compute bigStepTrAnimatedTopFn 25 (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue)).              
 End STLCStepTr.
-Module IndCoInd.
-CoFixpoint plus1Stm (s : Stream nat) : Stream nat :=
-match s with
-| Cons n s' => Cons (S n) (plus1Stm s')
-end.
 
-Fixpoint plus1StmLst (ls : list (Stream nat)) : list (Stream nat) :=
-match ls with
-| [] => []
-| h :: t => plus1Stm h :: (plus1StmLst t)
-end.
-End IndCoInd.
 Module zip.
 
 (** A stream of naturals, with explicit undefined and nil sentinels. *)
@@ -385,6 +324,60 @@ Definition initFn'' := pure (fun m : nat => m).
 Compute (evalCmdAnimatedTopFn 35 (Success (co_vars * cmd) (initFn'', prog''))).
 
 End ImpSem.
+
+
+Module StackStep.
+Definition total_map (A : Type) := string -> A.
+Inductive state : Type :=
+| stCtor : (string -> nat) -> state. 
+
+Inductive sinstr : Type :=
+| SPush (n : nat)
+| SLoad (x : string)
+| SPlus
+| SMinus
+| SMult.
+
+Fixpoint decEqsinstr : forall (t1 t2 : sinstr), {t1 = t2} + {t1 <> t2}.
+Proof.
+  decide equality. decide equality. decide equality. decide equality.
+Defined.
+
+Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
+  if decEqsinstr t1 t2 then true else false.
+
+Definition stack := list nat.
+Definition prog  := list sinstr.
+
+
+
+Inductive stack_step : state -> list sinstr -> list nat -> list sinstr -> list nat -> Prop :=
+| SS_Push  : forall st stk n p,
+     stack_step st (SPush n :: p) stk p (n :: stk) 
+| SS_Load  : forall fn stk i p,
+     
+     stack_step (stCtor fn) (SLoad i :: p)  stk p ((fn) i :: stk) 
+   
+| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((m + n) :: stk)
+| SS_Minus : forall st stk n m p,
+    stack_step st (SMinus :: p) (n :: m :: stk) p  ((m - n) :: stk)
+| SS_Mult  : forall st stk n m p,
+    stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
+
+   
+(* Product type version is VERY SLOW!! NEED TO INVESTIGATE *)
+MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
+  [("stack_step", ([0;1;2], [3;4]))] 200). 
+
+Definition empty_state : state :=   (stCtor (fun (_ : string) => 0)).
+
+ 
+Compute (stack_stepAnimatedTopFn 50
+  (Success (state * (list sinstr * list nat))
+    (empty_state, ([SPush 3; SPush 4; SPlus], [])))).  
+
+End StackStep.
+
 
 
       
