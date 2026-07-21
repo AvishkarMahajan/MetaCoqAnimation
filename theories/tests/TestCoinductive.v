@@ -72,27 +72,30 @@ Definition prog  := list sinstr.
 
 
 
-Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat -> Prop :=
+Inductive stack_step : state -> list sinstr -> list nat -> list sinstr -> list nat -> Prop :=
 | SS_Push  : forall st stk n p,
-     stack_step st ((SPush n :: p), stk) (p, (n :: stk)) 
+     stack_step st (SPush n :: p) stk p (n :: stk) 
 | SS_Load  : forall fn stk i p,
      
-     stack_step (stCtor fn) ((SLoad i :: p),  stk) (p, ((fn) i :: stk))
+     stack_step (stCtor fn) (SLoad i :: p)  stk p ((fn) i :: stk) 
    
-| SS_Plus  : forall st stk n m p ps0 ps1,
-    ps0 = (SPlus :: p, n :: m :: stk) /\ ps1 = (p, (m + n) :: stk)
-    -> stack_step st ps0 ps1
-| SS_Minus : forall st stk n m p ps0 ps1,
-    ps0 = (SMinus :: p, n :: m :: stk) /\ ps1 = (p, (m - n) :: stk)
-    -> stack_step st ps0 ps1
-| SS_Mult  : forall st stk n m p ps0 ps1,
-    ps0 = (SMult :: p, n :: m :: stk) /\ ps1 = (p, (m * n) :: stk)
-    -> stack_step st ps0 ps1 .
+| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((m + n) :: stk)
+| SS_Minus : forall st stk n m p,
+    stack_step st (SMinus :: p) (n :: m :: stk) p  ((m - n) :: stk)
+| SS_Mult  : forall st stk n m p,
+    stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
 
    
-(* VERY SLOW!! NEED TO INVESTIGATE 
+(* Product type version is VERY SLOW!! NEED TO INVESTIGATE *)
 MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
-  [("stack_step", ([0;1], [2]))] 200).*)
+  [("stack_step", ([0;1;2], [3;4]))] 200). 
+
+Definition empty_state : state :=   (stCtor (fun (_ : string) => 0)).
+
+ 
+Compute (stack_stepAnimatedTopFn 50
+  (Success (state * (list sinstr * list nat))
+    (empty_state, ([SPush 3; SPush 4; SPlus], [])))).  
 
 End StackStep.
 Module STLCStepTr.

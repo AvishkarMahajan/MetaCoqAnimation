@@ -996,7 +996,12 @@ Fixpoint collect_fn_dep_edges_from_ctx
                 end
               | _ => []
               end)
-            (match rhs with tApp _ fn_args => fn_args | _ => [] end) in
+            (match rhs with
+             | tApp (tConstruct _ _ _) _ => []
+             | tApp (tInd _ _) _         => []
+             | tApp _ fn_args            => fn_args
+             | _                         => []
+             end) in
           let in_kns := dedup_kns (flat_map resolve_kns arg_types) in
           let edges :=
             flat_map (fun ok =>
@@ -1710,9 +1715,12 @@ Polymorphic Definition preprocess_coind_types
     else
       let spec_name :=
         fold_left (fun s t => s ++ ind_type_name t) arg_terms_e (snd head_kn) in
-      let concrete_args := arg_terms_e in
-      tmMkInductivePreserveFinite
-        (specialize_mind head_mind head_kn concrete_args spec_name) ;;
+      (* MetaRocq de Bruijn: after strip_leading_prods n, the last param sits at
+         tRel 0 and the first at tRel (n-1).  subst s 0 maps tRel i → s[i], so
+         s must be in reverse parameter order to match. *)
+      let concrete_args := List.rev arg_terms_e in
+      spec_body <- tmEval all (specialize_mind head_mind head_kn concrete_args spec_name) ;;
+      tmMkInductivePreserveFinite spec_body ;;
       refs <- tmLocate spec_name ;;
       let spec_kn :=
         match find (fun g =>
@@ -1722,6 +1730,7 @@ Polymorphic Definition preprocess_coind_types
         end in
       tmReturn (List.app acc [(entry, spec_kn)]))
     raw_ind_apps [] ;;
+  spec_kn_pairs <- tmEval all spec_kn_pairs ;;
   let spec_kns := List.map snd spec_kn_pairs in
   (* Step 4c: compute function-application dependency edges (pure).
      For each relation constructor type, traverse with a de Bruijn context to
@@ -1781,6 +1790,7 @@ Polymorphic Definition preprocess_coind_types
     let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
     tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs ;;
   let fn_app_infos := List.app fn_app_infos_base extra_fn_infos in
+  fn_app_infos <- tmEval all fn_app_infos ;;
   (* Step 5: initial lifting set = signature types + specialised parametric
      types (spec_kns), filtered to non-Prop / non-parametric.
      Equality-premise types are NOT in the initial lifting set; they act
@@ -1810,6 +1820,7 @@ Polymorphic Definition preprocess_coind_types
      constructor argument type (or function-application dep) already in the
      lifting set. *)
   type_kns <- expand_dep_closure_fix (type_kns ++ eq_seed_kns) type_kns rel_kns fn_dep_edges fuel fuel ;;
+  type_kns <- tmEval all type_kns ;;
   let pre_mapping := List.map (fun kn => (kn, (cur_mp, snd kn ++ "'"))) type_kns in
   (* Helper: given a term [t], return the lifted knames it mentions —
      either as a plain [tInd kn] in [pre_mapping], or as a recognised
@@ -1865,6 +1876,7 @@ Polymorphic Definition preprocess_coind_types
     mind <- tmQuoteInductive kn ;;
     tmReturn (kn, mind))
     type_kns ;;
+  type_minds <- tmEval all type_minds ;;
   (* Spec-derived dep edges: if spec_kn [outer] was built by specialising
      head_kn at args that include another spec_kn [inner] (e.g.
      prodlistnatlistnat was built from prod applied to [list nat, list nat]
@@ -1930,6 +1942,7 @@ Polymorphic Definition preprocess_coind_types
       tmReturn (List.app acc [(kn, body)])
     end)
   sorted_kns [] ;;
+  computed_bodies <- tmEval all computed_bodies ;;
   let new_kn_to_old :=
     List.map (fun p => (inductive_mind (snd p), fst p)) pre_ind_mapping in
   let dep_edges :=
@@ -2082,7 +2095,8 @@ Polymorphic Definition preprocess_coind_types
            ind_variance  := None;
            ind_params    := [];
            ind_bodies    := all_bodies |} in
-      tmMkInductivePreserveFinite combined ;;
+      combined_ev <- tmEval all combined ;;
+      tmMkInductivePreserveFinite combined_ev ;;
       actual_inds <- monad_map (fun kn_i =>
         let short_nm := snd kn_i ++ "'" in
         refs <- tmLocate short_nm ;;
@@ -2096,6 +2110,7 @@ Polymorphic Definition preprocess_coind_types
       tmReturn (List.app acc actual_inds)
     end)
   sorted_groups [] ;;
+  actual_mapping <- tmEval all actual_mapping ;;
   let final_app_kn_mapping :=
     flat_map (fun e =>
       let head_kn    := fst (fst e) in
@@ -2518,9 +2533,10 @@ Polymorphic Definition lift_relation
     | None     => @tmFail (inductive * one_inductive_body) "lift_relation: empty lifted type"
     end)
     type_mapping ;;
-  tmMkInductivePreserveFinite
+  lifted_rel_mind <- tmEval all
     (make_lifted_relation_mind old_mind rel_kn new_rel_kn rel_mapping type_mapping
-       app_kn_mapping modes_with_idx type_body_map fn_kn_map).
+       app_kn_mapping modes_with_idx type_body_map fn_kn_map) ;;
+  tmMkInductivePreserveFinite lifted_rel_mind.
 
 
 (** Convert [k1; k2; k3; k4; ...] into [(k1,k2); (k3,k4); ...]. *)
@@ -2707,7 +2723,8 @@ Polymorphic Fixpoint generate_lift_fns
                 match old_mind.(ind_finite) with CoFinite => true | _ => false end in
               let d := make_lift_def old_kn oib new_ind all_map app_kn_map cur_mp orig_form in
               let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
-              tmMkDefinition (snd old_kn ++ "Lift") fn_term
+              fn_term_ev <- tmEval all fn_term ;;
+              tmMkDefinition (snd old_kn ++ "Lift") fn_term_ev
             end) (fun _ =>
     generate_lift_fns rest all_map app_kn_map cur_mp))
   end.
@@ -2842,9 +2859,9 @@ Polymorphic Fixpoint generate_fnSymb_params
               List.fold_left
                 (fun acc c =>
                    tmBind acc (fun _ =>
-                   tmMkParameter (c.(cstr_name) ++ "fnSymb")
-                                 (make_fnSymb_type new_ind n_bodies n_params
-                                                  c type_map app_kn_map)))
+                   let fnSymb_ty := make_fnSymb_type new_ind n_bodies n_params c type_map app_kn_map in
+                   fnSymb_ty_ev <- tmEval all fnSymb_ty ;;
+                   tmMkParameter (c.(cstr_name) ++ "fnSymb") fnSymb_ty_ev))
                 extra (tmReturn tt)
             end) (fun _ =>
     generate_fnSymb_params rest type_map app_kn_map)))
@@ -3022,7 +3039,8 @@ Polymorphic Fixpoint generate_rest_fns
               out_pos)
       (fun out_ctors =>
       let fn_term := make_rest_term prod_kn in_types out_types out_ctors in
-      tmBind (tmMkDefinition (rel_name ++ "'Rest") fn_term) (fun _ =>
+      fn_term_ev <- tmEval all fn_term ;;
+      tmBind (tmMkDefinition (rel_name ++ "'Rest") fn_term_ev) (fun _ =>
       generate_rest_fns rest_todo cur_mp prod_kn))
     end)
   end.
@@ -3313,7 +3331,7 @@ Polymorphic Fixpoint compute_npi_fix
     structural fix with no depth parameter.  Types with coinductive deps keep
     the depth-bounded form used previously. *)
 Polymorphic Fixpoint generate_push_fns
-    (todo        : list (kername * inductive))
+    (todo        : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map     : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
@@ -3321,11 +3339,7 @@ Polymorphic Fixpoint generate_push_fns
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
-  | entry :: rest =>
-    let old_kn  := fst entry in
-    let new_ind := snd entry in
-    tmBind (tmQuoteInductive old_kn) (fun old_mind =>
-    tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
     tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
             | None =>
               tmFail ("generate_push_fns: no body for " ++ snd old_kn)
@@ -3339,9 +3353,10 @@ Polymorphic Fixpoint generate_push_fns
               let is_purely_ind := existsb (eq_kername old_kn) pi_set in
               let d := make_push_def old_kn new_ind n_block new_oib n_old_ctors
                                      all_map app_kn_map pi_set is_purely_ind cur_mp in
-              tmMkDefinition (snd old_kn ++ "Push") (tFix [d] 0)
+              push_term_ev <- tmEval all (tFix [d] 0) ;;
+              tmMkDefinition (snd old_kn ++ "Push") push_term_ev
             end) (fun _ =>
-    generate_push_fns rest all_map app_kn_map pi_set cur_mp)))
+    generate_push_fns rest all_map app_kn_map pi_set cur_mp)
   end.
 
 (* ------------------------------------------------------------------ *)
@@ -3418,21 +3433,17 @@ Definition make_chk_def
 (** Declare a [ChkNoExtraCstrs] function for every purely-inductive type in
     [todo].  Non-purely-inductive entries are silently skipped. *)
 Polymorphic Fixpoint generate_chk_fns
-    (todo    : list (kername * inductive))
+    (todo    : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map : list (kername * inductive))
     (pi_set  : list kername)
     (cur_mp  : modpath)
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
-  | entry :: rest =>
-    let old_kn  := fst entry in
-    let new_ind := snd entry in
+  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
     if negb (existsb (eq_kername old_kn) pi_set)
     then generate_chk_fns rest all_map pi_set cur_mp
     else
-      tmBind (tmQuoteInductive old_kn) (fun old_mind =>
-      tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
       tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
               | None =>
                 tmFail ("generate_chk_fns: no body for " ++ snd old_kn)
@@ -3444,9 +3455,10 @@ Polymorphic Fixpoint generate_chk_fns
                   end in
                 let n_block := List.length new_mind.(ind_bodies) in
                 let d := make_chk_def old_kn new_ind n_block new_oib n_old_ctors all_map cur_mp in
-                tmMkDefinition (snd old_kn ++ "ChkNoExtraCstrs") (tFix [d] 0)
+                chk_term_ev <- tmEval all (tFix [d] 0) ;;
+                tmMkDefinition (snd old_kn ++ "ChkNoExtraCstrs") chk_term_ev
               end) (fun _ =>
-      generate_chk_fns rest all_map pi_set cur_mp)))
+      generate_chk_fns rest all_map pi_set cur_mp)
   end.
 
 (* ------------------------------------------------------------------ *)
@@ -3578,21 +3590,17 @@ Definition make_eqfn_def
     bodies at index [j > 0] the name is ["eqFn" ++ block_kname ++ "_" ++ j].
     This matches what [EqualityResolution.type_to_eq_fn] generates. *)
 Polymorphic Fixpoint generate_eqfn_defs
-    (todo    : list (kername * inductive))
+    (todo    : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map : list (kername * inductive))
     (pi_set  : list kername)
     (cur_mp  : modpath)
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
-  | entry :: rest =>
-    let old_kn  := fst entry in
-    let new_ind := snd entry in
+  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
     if negb (existsb (eq_kername old_kn) pi_set)
     then generate_eqfn_defs rest all_map pi_set cur_mp
     else
-      tmBind (tmQuoteInductive old_kn) (fun old_mind =>
-      tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
       tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
               | None =>
                 tmFail ("generate_eqfn_defs: no body for " ++ snd old_kn)
@@ -3611,9 +3619,10 @@ Polymorphic Fixpoint generate_eqfn_defs
                 let fn_nm :=
                   if Nat.eqb body_j 0 then "eqFn" ++ blk_nm
                   else "eqFn" ++ blk_nm ++ "_" ++ string_of_nat body_j in
-                tmMkDefinition fn_nm (tFix [d] 0)
+                eqfn_term_ev <- tmEval all (tFix [d] 0) ;;
+                tmMkDefinition fn_nm eqfn_term_ev
               end) (fun _ =>
-      generate_eqfn_defs rest all_map pi_set cur_mp)))
+      generate_eqfn_defs rest all_map pi_set cur_mp)
   end.
 
 (* ------------------------------------------------------------------ *)
@@ -3752,21 +3761,25 @@ Polymorphic Fixpoint generate_lifted_fns
            let fn_term :=
              List.fold_right
                (fun tp acc => tLambda anon_b tp acc) body lifted_arg_types in
-           tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term)
+           fn_term_ev <- tmEval all fn_term ;;
+           tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term_ev)
        | true, None =>
          let fn_term :=
            List.fold_right
              (fun tp acc => tLambda anon_b tp acc) f_applied lifted_arg_types in
-         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term
+         fn_term_ev <- tmEval all fn_term ;;
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term_ev
        | false, Some (ret_old_kn, _) =>
          let lift_fn := tConst (cur_mp, snd ret_old_kn ++ "Lift") [] in
          let body    := tApp lift_fn [f_applied] in
          let fn_term :=
            List.fold_right
              (fun tp acc => tLambda anon_b tp acc) body lifted_arg_types in
-         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term
+         fn_term_ev <- tmEval all fn_term ;;
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term_ev
        | false, None =>
-         tmMkDefinition (snd fn_kn ++ "liftedFunc") (tConst fn_kn [])
+         fn_term_ev <- tmEval all (tConst fn_kn []) ;;
+         tmMkDefinition (snd fn_kn ++ "liftedFunc") fn_term_ev
        end) (fun _ =>
     generate_lifted_fns rest type_map app_kn_map cur_mp)
   end.
@@ -3895,7 +3908,8 @@ Polymorphic Fixpoint generate_inputLift_fns
       let lifted_types := List.map fst classified in
       let lift_fns     := List.map snd classified in
       let fn_term := make_inputLift_term prod_kn anim_res_kn in_types lifted_types lift_fns in
-      tmBind (tmMkDefinition (rel_name ++ "inputLift") fn_term) (fun _ =>
+      fn_term_ev <- tmEval all fn_term ;;
+      tmBind (tmMkDefinition (rel_name ++ "inputLift") fn_term_ev) (fun _ =>
       generate_inputLift_fns rest type_map app_kn_map prod_kn anim_res_kn cur_mp)
     end)
   end.
@@ -4039,7 +4053,8 @@ Polymorphic Fixpoint generate_outputPush_fns
       let lifted_types := List.map fst classified in
       let push_fns     := List.map snd classified in
       let fn_term := make_outputPush_term prod_kn anim_res_kn orig_types lifted_types push_fns in
-      tmBind (tmMkDefinition (rel_name ++ "outputPush") fn_term) (fun _ =>
+      fn_term_ev <- tmEval all fn_term ;;
+      tmBind (tmMkDefinition (rel_name ++ "outputPush") fn_term_ev) (fun _ =>
       generate_outputPush_fns rest type_map app_kn_map pi_set prod_kn anim_res_kn cur_mp)
     end)
   end.
@@ -4097,6 +4112,7 @@ Polymorphic Definition lift_coinductive_relation
   | [] => @tmFail unit "lift_coinductive_relation: no modes provided"
   | _  =>
     preproc_result <- preprocess_coind_types modes fuel ;;
+    preproc_result <- tmEval all preproc_result ;;
     let type_mapping   := fst preproc_result in
     let app_kn_mapping := snd preproc_result in
     cur_mp <- tmCurrentModPath tt ;;
@@ -4123,6 +4139,7 @@ Polymorphic Definition lift_coinductive_relation
       mind <- tmQuoteInductive kn ;;
       tmReturn (kn, mind))
       unique_block_kns ;;
+    rel_block_minds_assoc <- tmEval all rel_block_minds_assoc ;;
     let block_id_map := List.map (fun kn => (kn, kn)) unique_block_kns in
     let sorted_block_kns :=
       topo_sort_kns unique_block_kns rel_block_minds_assoc block_id_map
@@ -4142,11 +4159,18 @@ Polymorphic Definition lift_coinductive_relation
          that reference them are type-checked by tmMkInductive. *)
       _ <- generate_push_params type_mapping type_mapping app_kn_mapping ;;
       npi_set <- compute_npi_fix type_mapping [] (List.length type_mapping + 1) ;;
+      npi_set <- tmEval all npi_set ;;
       let pi_set :=
         List.map fst (filter (fun e => negb (existsb (eq_kername (fst e)) npi_set)) type_mapping) in
-      _ <- generate_push_fns type_mapping type_mapping app_kn_mapping pi_set cur_mp ;;
-      _ <- generate_chk_fns type_mapping type_mapping pi_set cur_mp ;;
-      _ <- generate_eqfn_defs type_mapping type_mapping pi_set cur_mp ;;
+      type_minds <- monad_map (fun entry =>
+        old_mind <- tmQuoteInductive (fst entry) ;;
+        new_mind <- tmQuoteInductive (inductive_mind (snd entry)) ;;
+        tmReturn (entry, (old_mind, new_mind)))
+        type_mapping ;;
+      type_minds <- tmEval all type_minds ;;
+      _ <- generate_push_fns type_minds type_mapping app_kn_mapping pi_set cur_mp ;;
+      _ <- generate_chk_fns type_minds type_mapping pi_set cur_mp ;;
+      _ <- generate_eqfn_defs type_minds type_mapping pi_set cur_mp ;;
       let all_fn_infos_base :=
         flat_map (fun km =>
           let n_params := (snd km).(ind_npars) in
@@ -4164,6 +4188,7 @@ Polymorphic Definition lift_coinductive_relation
           then acc
           else List.app acc [entry])
         all_fn_infos_base [] in
+      unique_fn_infos_base <- tmEval all unique_fn_infos_base ;;
       (* Also pick up function applications nested inside constructor applications
          in index terms (e.g. [Nat.add m n] inside [Seq (m+n) s2]).  Look up
          the return type for any new fn_kn via tmQuoteConstant. *)
@@ -4181,13 +4206,16 @@ Polymorphic Definition lift_coinductive_relation
           then acc
           else List.app acc [p])
         extra_fn_pairs_r [] in
+      new_fn_pairs_r <- tmEval all new_fn_pairs_r ;;
       extra_fn_infos_r <- monad_map (fun p =>
         let fn_kn   := fst p in
         let arg_tps := snd p in
         cb <- tmQuoteConstant fn_kn false ;;
         let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
         tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs_r ;;
+      extra_fn_infos_r <- tmEval all extra_fn_infos_r ;;
       let unique_fn_infos := List.app unique_fn_infos_base extra_fn_infos_r in
+      unique_fn_infos <- tmEval all unique_fn_infos ;;
       _ <- generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp ;;
       (* Build fn_kn_map from unique_fn_infos: every function that has a liftedFunc
          definition maps old_kn → (cur_mp, name ++ "liftedFunc"). *)
