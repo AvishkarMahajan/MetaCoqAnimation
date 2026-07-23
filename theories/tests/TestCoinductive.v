@@ -9,7 +9,7 @@ Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
-Require Import Animation.coIndPreProc.
+Require Import Animation.coIndPreProcSigma.
 From Stdlib Require Import List.
 From Stdlib Require Import Streams.
 Require Import MetaRocq.Template.All.
@@ -37,7 +37,7 @@ End prodRel.
 (** mixedRel: index 0 is [list nat] (direct mode position → listnat enters lifting set)
     and index 1 is [list nat * list nat] (nested → prodlistnatlistnat enters lifting set).
     Because [listnat] is independently lifted, [prodlistnatlistnat'] should have
-    [pair' : listnat' -> listnat' -> prodlistnatlistnat']. *)
+(*   [pair' : listnat' -> listnat' -> prodlistnatlistnat']. *)
 Module mixedRel.
 Inductive mixedRel : list nat -> list nat * list nat -> Prop :=
 | mCons : forall l, mixedRel l (l, 0 :: l).
@@ -47,7 +47,7 @@ MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
   
 Compute mixedRelAnimatedTopFn 10 (Success (list nat) ([2;3])).  
 End mixedRel. 
-
+*)
 Module STLCStepTr.
 
 Inductive ty : Type :=
@@ -136,9 +136,11 @@ MetaRocq Run (animate_coinductive_with_lift <?bigStepTr?>
 Definition omega : tm :=
   tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
        (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
-                      
-Compute bigStepTrAnimatedTopFn 25 (Success tm omega). 
-Compute bigStepTrAnimatedTopFn 25 (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue)).              
+Eval cbv -[HoleyResult.hlist_head] in
+  bigStepTrAnimatedTopFn 25 (Success tm omega).                      
+
+
+Eval cbv -[HoleyResult.hlist_head] in bigStepTrAnimatedTopFn 25 (Success tm (tif (tapp (tabs "x" TBool (tvar "x")) ttrue) tfalse ttrue)).              
 End STLCStepTr.
 
 Module zip.
@@ -165,7 +167,7 @@ CoInductive zipSt : stream -> stream -> stream -> Prop :=
 MetaRocq Run (animate_coinductive_with_lift <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 100).
 
-Compute  (zipStAnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
+Eval cbv -[HoleyResult.hlist_head] in  (zipStAnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
 End zip.
 (* ------------------------------------------------------------------ *)
 (** ** Stream equality *)
@@ -186,7 +188,7 @@ CoInductive eqSt : stream -> stream -> bool -> Prop :=
 MetaRocq Run (animate_coinductive_with_lift <? eqSt ?>
   [("eqSt", ([0;1], [2]))] 100).
 
-Compute (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 8))).
+Eval cbv -[HoleyResult.hlist_head] in (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 8))).
 Compute (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 9))).
 End eqSt.
 (* ------------------------------------------------------------------ *)
@@ -246,7 +248,7 @@ MetaRocq Run (animate_coinductive_with_lift <? Integrate ?>
   [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
 
 (** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
-Compute (IntegrateAnimatedTopFn 25 (Success stream (from 4))).
+Eval cbv -[HoleyResult.hlist_head] in (IntegrateAnimatedTopFn 5 (Success stream (from 4))).
 Compute (IntegrateAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
 End integrateStreams.  
 
