@@ -3355,7 +3355,31 @@ Definition make_push_def
                       tApp push_const [tRel snoc_i]
                     else
                       tApp push_const [tRel n_args; tRel snoc_i] in
-                  (ext_push, tInd {| inductive_mind := kn; inductive_ind := 0 |} [])
+                  (* For parametric specialisations (e.g. [kn = listnat], the
+                     original type is [list nat], not [listnat]).  Recover the
+                     head + params via app_kn_map so that B_types uses the same
+                     form as the original constructor's signature. *)
+                  let kn_ind := {| inductive_mind := kn; inductive_ind := 0 |} in
+                  let lifted_for_kn :=
+                    match find (fun e => eq_kername (fst e) kn) type_map with
+                    | Some (_, ni) => ni
+                    | None         => kn_ind
+                    end in
+                  let orig_arg_t :=
+                    match find (fun e =>
+                                  andb (eq_kername (inductive_mind (snd e))
+                                                   (inductive_mind lifted_for_kn))
+                                       (Nat.eqb (inductive_ind (snd e))
+                                                (inductive_ind lifted_for_kn)))
+                               app_kn_map with
+                    | Some ((head_kn, params), _) =>
+                        match params with
+                        | [] => tInd {| inductive_mind := head_kn; inductive_ind := 0 |} []
+                        | _  => tApp (tInd {| inductive_mind := head_kn; inductive_ind := 0 |} []) params
+                        end
+                    | None => tInd kn_ind []
+                    end in
+                  (ext_push, orig_arg_t)
               | None =>
                   (tApp hr_pure_c [arg_t; tRel snoc_i], arg_t)
               end)

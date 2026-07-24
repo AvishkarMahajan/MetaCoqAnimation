@@ -37,7 +37,7 @@ End prodRel.
 (** mixedRel: index 0 is [list nat] (direct mode position → listnat enters lifting set)
     and index 1 is [list nat * list nat] (nested → prodlistnatlistnat enters lifting set).
     Because [listnat] is independently lifted, [prodlistnatlistnat'] should have
-(*   [pair' : listnat' -> listnat' -> prodlistnatlistnat']. *)
+   [pair' : listnat' -> listnat' -> prodlistnatlistnat']. *)
 Module mixedRel.
 Inductive mixedRel : list nat -> list nat * list nat -> Prop :=
 | mCons : forall l, mixedRel l (l, 0 :: l).
@@ -47,7 +47,7 @@ MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
   
 Compute mixedRelAnimatedTopFn 10 (Success (list nat) ([2;3])).  
 End mixedRel. 
-*)
+
 Module STLCStepTr.
 
 Inductive ty : Type :=
@@ -218,7 +218,7 @@ CoInductive filterEven : stream -> stream -> Prop :=
 MetaRocq Run (animate_coinductive_with_lift <? filterEven ?>
   [("filterEven", ([0], [1]))] 100).
 
-Compute ((filterEvenAnimatedTopFn 30 (Success stream (from 0)))).
+Eval cbv -[HoleyResult.hlist_head] in ((filterEvenAnimatedTopFn 30 (Success stream (from 0)))).
 End isEven.
 
 Module integrateStreams.
@@ -241,14 +241,17 @@ CoInductive Integrate : stream -> stream -> Prop :=
 
 with addStm : nat -> stream -> stream -> Prop :=
 | addStmNil : forall m, addStm m nil nil
-| plusm : forall m s1 n s2, addStm m s1 s2 -> addStm m (Seq n s1) (Seq (m + n) s2).
+| plusm : forall m s1 n o s2, addStm m s1 s2 /\ plus m n o -> addStm m (Seq n s1) (Seq (o) s2)
+with plus : nat -> nat -> nat -> Prop :=
+| plus0 : forall m, plus m 0 m
+| plusSucc : forall m n u, plus m n u -> plus m (S n) (S u).
 
 
 MetaRocq Run (animate_coinductive_with_lift <? Integrate ?>
-  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
+  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2])); ("plus", ([0;1], [2]))] 100).
 
 (** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
-Eval cbv -[HoleyResult.hlist_head] in (IntegrateAnimatedTopFn 5 (Success stream (from 4))).
+Eval cbv -[HoleyResult.hlist_head HoleyResult.hlist_tail] in (IntegrateAnimatedTopFn 25 (Success stream (from 4))).
 Compute (IntegrateAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
 End integrateStreams.  
 
