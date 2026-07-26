@@ -29,7 +29,7 @@ Inductive prodRel : list nat * list nat -> list nat * list nat -> Prop :=
 | pCons : forall l1 l2, prodRel (l1,l2) ((0 :: l1), (0 :: l2)).
 
 
-MetaRocq Run (animate_coinductive_with_lift <? prodRel ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? prodRel ?>
   [("prodRel", ([0], [1]))] 200).
 
 Compute prodRelAnimatedTopFn 10 (Success (list nat * list nat) ([2;3],[8])).  
@@ -42,7 +42,7 @@ Module mixedRel.
 Inductive mixedRel : list nat -> list nat * list nat -> Prop :=
 | mCons : forall l, mixedRel l (l, 0 :: l).
 
-MetaRocq Run (animate_coinductive_with_lift <? mixedRel ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? mixedRel ?>
   [("mixedRel", ([0], [1]))] 200).
   
 Compute mixedRelAnimatedTopFn 10 (Success (list nat) ([2;3])).  
@@ -128,7 +128,7 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 | bigVal4 : bigStepTr tfalse ((coSeq tfalse) coNil)
 | bigStep : forall t tr_lst t',
     step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst).
-MetaRocq Run (animate_coinductive_with_lift <?bigStepTr?>
+MetaRocq Run (animate_coinductive_opaque_sigma <?bigStepTr?>
                [("bigStepTr", ([0],  [1])); ("step", ([0],  [1]))
                 ]
                100).
@@ -164,7 +164,7 @@ CoInductive zipSt : stream -> stream -> stream -> Prop :=
 
 
 
-MetaRocq Run (animate_coinductive_with_lift <? zipSt ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 100).
 
 Eval cbv -[HoleyResult.hlist_head] in  (zipStAnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
@@ -185,7 +185,7 @@ CoInductive eqSt : stream -> stream -> bool -> Prop :=
 
 
 
-MetaRocq Run (animate_coinductive_with_lift <? eqSt ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? eqSt ?>
   [("eqSt", ([0;1], [2]))] 100).
 
 Eval cbv -[HoleyResult.hlist_head] in (eqStAnimatedTopFn 12 (Success (stream * stream) (from 8, from 8))).
@@ -215,7 +215,7 @@ CoInductive filterEven : stream -> stream -> Prop :=
 | filtOdd : forall n s1 s2, false = isEven n /\ filterEven s1 s2 -> filterEven (Seq n s1) s2.
 
 
-MetaRocq Run (animate_coinductive_with_lift <? filterEven ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? filterEven ?>
   [("filterEven", ([0], [1]))] 100).
 
 Eval cbv -[HoleyResult.hlist_head] in ((filterEvenAnimatedTopFn 30 (Success stream (from 0)))).
@@ -247,7 +247,7 @@ with plus : nat -> nat -> nat -> Prop :=
 | plusSucc : forall m n u, plus m n u -> plus m (S n) (S u).
 
 
-MetaRocq Run (animate_coinductive_with_lift <? Integrate ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? Integrate ?>
   [("Integrate", ([0], [1])); ("addStm", ([0;1], [2])); ("plus", ([0;1], [2]))] 100).
 
 (** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
@@ -313,7 +313,7 @@ CoInductive evalCmd : co_vars -> cmd -> co_vars -> Prop :=
     /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
     -> evalCmd vs1' (While e c) vs3'.
     
-MetaRocq Run (animate_coinductive_with_lift <? evalCmd ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? evalCmd ?>
   [("evalCmd", ([0;1], [2]))] 500).
 
 Definition prog  := While (Var 4) (Assign 8 (Const 8)).
@@ -371,7 +371,7 @@ Inductive stack_step : state -> list sinstr -> list nat -> list sinstr -> list n
 
    
 (* Product type version is VERY SLOW!! NEED TO INVESTIGATE *)
-MetaRocq Run (animate_coinductive_with_lift <? stack_step ?>
+MetaRocq Run (animate_coinductive_opaque_sigma <? stack_step ?>
   [("stack_step", ([0;1;2], [3;4]))] 200). 
 
 Definition empty_state : state :=   (stCtor (fun (_ : string) => 0)).
