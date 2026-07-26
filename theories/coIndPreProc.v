@@ -3392,9 +3392,16 @@ Polymorphic Fixpoint generate_coIndPush_fns
     Differs from [make_push_def] in two ways:
     - Extra constructors apply [ctor ++ "fnSymb"] to pushed args (not [undefinedConst]).
     - Depth-0 branch of non-pi push calls [typeNmcoIndPush] on the scrutinee.
-    Cross-block pi refs use [kn ++ "TransparentPush"] (no depth);
-    cross-block non-pi refs in purely-ind push use [kn ++ "coIndPush"] (no depth);
-    cross-block non-pi refs in depth-bounded push use [kn ++ "TransparentPush"] (with depth). *)
+
+    Pi-type self-refs and cross-pi-refs use de Bruijn indices into a shared mutual
+    fixpoint block ([self_idx], [n_mut], [pi_mut_map]) instead of external constants.
+    This avoids forward-reference anomalies when pi types have mutual extra-ctor deps
+    (e.g. [listsinstr'] and [listnat'] both appear in each other's extra constructors
+    for [stack_step]).  For non-pi types, pass [self_idx=0, n_mut=1, pi_mut_map=[]].
+
+    Cross-pi refs NOT in [pi_mut_map] use [kn ++ "TransparentPush"] (already declared).
+    Cross-non-pi refs in pi push use [kn ++ "coIndPush"] (depth-free axiom).
+    Cross-non-pi refs in non-pi push use [kn ++ "TransparentPush"] (with depth). *)
 Definition make_transparent_push_def
     (old_kn        : kername)
     (new_ind       : inductive)
@@ -3405,6 +3412,9 @@ Definition make_transparent_push_def
     (app_kn_map    : list (kername * list term * inductive))
     (pi_set        : list kername)
     (is_purely_ind : bool)
+    (self_idx      : nat)
+    (n_mut         : nat)
+    (pi_mut_map    : list (kername * nat))
     (cur_mp        : modpath)
     : def term :=
   let orig_form :=
@@ -3444,14 +3454,20 @@ Definition make_transparent_push_def
                        | Some d => d.(decl_type) | None => tVar "?" end in
           match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
           | Some None =>
+              (* Self-reference.  For pi types in a mutual block, index into the block;
+                 for non-pi (single fix), use the fixed offset n_args+3. *)
               if is_purely_ind
-              then tApp (tRel (n_args + 1)) [tRel snoc_i]
+              then tApp (tRel (n_args + n_mut - self_idx)) [tRel snoc_i]
               else tApp (tRel (n_args + 3)) [tRel n_args; tRel snoc_i]
           | Some (Some kn) =>
               let is_kn_pi := existsb (eq_kername kn) pi_set in
               if is_kn_pi then
-                (* Pi-type Push takes no depth parameter — terminates structurally. *)
-                tApp (tConst (cur_mp, snd kn ++ "Push") []) [tRel snoc_i]
+                (* Pi cross-ref: use de Bruijn index if kn is in the shared mutual block,
+                   else fall back to the external TransparentPush const (already declared). *)
+                match find (fun e => eq_kername (fst e) kn) pi_mut_map with
+                | Some (_, j) => tApp (tRel (n_args + n_mut - j)) [tRel snoc_i]
+                | None        => tApp (tConst (cur_mp, snd kn ++ "TransparentPush") []) [tRel snoc_i]
+                end
               else if is_purely_ind then
                 tApp (tConst (cur_mp, snd kn ++ "coIndPush") []) [tRel snoc_i]
               else
@@ -3506,37 +3522,105 @@ Definition make_transparent_push_def
        dbody  := dbody;
        rarg   := 0 |}.
 
+(** Build the list of [def term]s for the mutual pi-type transparent-push fixpoint.
+    All pi types are declared together as [tFix pi_defs i] so that mutually-dependent
+    extra-constructor branches (e.g. [listsinstr'] ↔ [listnat'] in [stack_step]) can
+    reference each other via de Bruijn indices without forward-reference anomalies. *)
+Polymorphic Fixpoint build_pi_transparent_push_defs
+    (pi_todos    : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
+    (all_map     : list (kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
+    (pi_set      : list kername)
+    (n_mut       : nat)
+    (pi_mut_map  : list (kername * nat))
+    (cur_mp      : modpath)
+    : TemplateMonad (list (def term)) :=
+  match pi_todos with
+  | [] => tmReturn []
+  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
+    let self_idx :=
+      match find (fun e => eq_kername (fst e) old_kn) pi_mut_map with
+      | Some (_, i) => i | None => 0 end in
+    match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+    | None => tmFail ("build_pi_transparent_push_defs: no body for " ++ snd old_kn)
+    | Some new_oib =>
+      let n_old_ctors :=
+        match nth_error old_mind.(ind_bodies) 0 with
+        | Some ob => List.length ob.(ind_ctors) | None => 0 end in
+      let n_block := List.length new_mind.(ind_bodies) in
+      let d := make_transparent_push_def old_kn new_ind n_block new_oib n_old_ctors
+                                          all_map app_kn_map pi_set true
+                                          self_idx n_mut pi_mut_map cur_mp in
+      rest_defs <- build_pi_transparent_push_defs rest all_map app_kn_map pi_set
+                                                   n_mut pi_mut_map cur_mp ;;
+      tmReturn (d :: rest_defs)
+    end
+  end.
+
+(** Declare each pi type's [TransparentPush] as [tFix all_pi_defs i]. *)
+Polymorphic Fixpoint declare_pi_transparent_push_fns
+    (pi_todos   : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
+    (pi_defs    : list (def term))
+    (pi_mut_map : list (kername * nat))
+    : TemplateMonad unit :=
+  match pi_todos with
+  | [] => tmReturn tt
+  | ((old_kn, _), _) :: rest =>
+    let i :=
+      match find (fun e => eq_kername (fst e) old_kn) pi_mut_map with
+      | Some (_, j) => j | None => 0 end in
+    push_term_ev <- tmEval all (tFix pi_defs i) ;;
+    tmBind (tmMkDefinition (snd old_kn ++ "TransparentPush") push_term_ev) (fun _ =>
+    declare_pi_transparent_push_fns rest pi_defs pi_mut_map)
+  end.
+
+(** Emit [typeNmTransparentPush] for each non-pi type (individual single fixpoints;
+    by the time these run, all pi [TransparentPush] consts are in the environment). *)
+Polymorphic Fixpoint generate_npi_transparent_push_fns
+    (npi_todos   : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
+    (all_map     : list (kername * inductive))
+    (app_kn_map  : list (kername * list term * inductive))
+    (pi_set      : list kername)
+    (cur_mp      : modpath)
+    : TemplateMonad unit :=
+  match npi_todos with
+  | [] => tmReturn tt
+  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
+    tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+            | None => tmFail ("generate_npi_transparent_push_fns: no body for " ++ snd old_kn)
+            | Some new_oib =>
+              let n_old_ctors :=
+                match nth_error old_mind.(ind_bodies) 0 with
+                | Some ob => List.length ob.(ind_ctors) | None => 0 end in
+              let n_block := List.length new_mind.(ind_bodies) in
+              let d := make_transparent_push_def old_kn new_ind n_block new_oib n_old_ctors
+                                                  all_map app_kn_map pi_set false
+                                                  0 1 [] cur_mp in
+              push_term_ev <- tmEval all (tFix [d] 0) ;;
+              tmMkDefinition (snd old_kn ++ "TransparentPush") push_term_ev
+            end) (fun _ =>
+    generate_npi_transparent_push_fns rest all_map app_kn_map pi_set cur_mp)
+  end.
+
 (** Emit [typeNmTransparentPush] for every type in [todo] (both pi and non-pi).
-    Pi types get a depth-free variant that still maps extra constructors to [fnSymb]
-    rather than [undefinedConst] as the standard [Push] does. *)
-Polymorphic Fixpoint generate_transparent_push_fns
+    All pi types are emitted as a single mutual fixpoint so mutually-dependent
+    extra-constructor branches can reference each other without forward declarations.
+    Non-pi types follow as individual fixpoints, with pi [TransparentPush]s already live. *)
+Polymorphic Definition generate_transparent_push_fns
     (todo        : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map     : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
     (cur_mp      : modpath)
     : TemplateMonad unit :=
-  match todo with
-  | [] => tmReturn tt
-  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
-    tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
-            | None =>
-              tmFail ("generate_transparent_push_fns: no body for " ++ snd old_kn)
-            | Some new_oib =>
-              let n_old_ctors :=
-                match nth_error old_mind.(ind_bodies) 0 with
-                | Some ob => List.length ob.(ind_ctors)
-                | None    => 0
-                end in
-              let n_block       := List.length new_mind.(ind_bodies) in
-              let is_purely_ind := existsb (eq_kername old_kn) pi_set in
-              let d := make_transparent_push_def old_kn new_ind n_block new_oib n_old_ctors
-                                                 all_map app_kn_map pi_set is_purely_ind cur_mp in
-              push_term_ev <- tmEval all (tFix [d] 0) ;;
-              tmMkDefinition (snd old_kn ++ "TransparentPush") push_term_ev
-            end) (fun _ =>
-    generate_transparent_push_fns rest all_map app_kn_map pi_set cur_mp)
-  end.
+  let pi_todos  := filter (fun e => existsb (eq_kername (fst (fst e))) pi_set)        todo in
+  let npi_todos := filter (fun e => negb (existsb (eq_kername (fst (fst e))) pi_set)) todo in
+  let n_mut     := List.length pi_todos in
+  let pi_mut_map := mapi (fun i e => (fst (fst e), i)) pi_todos in
+  pi_defs <- build_pi_transparent_push_defs pi_todos all_map app_kn_map pi_set
+                                             n_mut pi_mut_map cur_mp ;;
+  _ <- declare_pi_transparent_push_fns pi_todos pi_defs pi_mut_map ;;
+  generate_npi_transparent_push_fns npi_todos all_map app_kn_map pi_set cur_mp.
 
 (* ------------------------------------------------------------------ *)
 (** ** ChkNoExtraCstrs function generation                            *)

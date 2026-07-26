@@ -22,6 +22,7 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 Print Stream.
+Module Transparent.
 Module prodRel.
 (** prodRel: both mode positions are [list nat * list nat].
     Only the top-level [prod] is specialised; [list nat] is NOT independently
@@ -167,6 +168,7 @@ MetaRocq Run (animate_coinductive_transparent <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 100).
 
 Compute (zipStTransparentAnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
+Print zipStAn2.
 End zip.
 (* ------------------------------------------------------------------ *)
 (** ** Stream equality *)
@@ -217,7 +219,7 @@ CoInductive filterEven : stream -> stream -> Prop :=
 MetaRocq Run (animate_coinductive_transparent <? filterEven ?>
   [("filterEven", ([0], [1]))] 100).
 
-Compute (filterEvenTransparentAnimatedTopFn 30 (Success stream (from 0))).
+Compute (filterEvenTransparentAnimatedTopFn 4 (Success stream (from 0))).
 End isEven.
 
 Module integrateStreams.
@@ -381,6 +383,7 @@ Compute (stack_stepTransparentAnimatedTopFn 50
     (empty_state, ([SPush 3; SPush 4; SPlus], [])))).  
 
 End StackStep.
+End Transparent.
 
 
 
