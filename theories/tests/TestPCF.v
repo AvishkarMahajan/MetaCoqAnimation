@@ -268,4 +268,108 @@ Definition omega_succ : tm :=
 
 Compute (evalTransparentAnimatedTopFn 40 (Success tm (tapp omega_succ tzero))).
 
+(* ------------------------------------------------------------------ *)
+(** ** CBV small-step semantics                                        *)
+(*                                                                     *)
+(*  Values: lambda abstractions, zero, and succ applied to a value.   *)
+(*  step t t'  means t reduces to t' in one step.                     *)
+(* ------------------------------------------------------------------ *)
+
+Inductive is_value : tm -> Prop :=
+| V_Lam  : forall x T t,  is_value (tabs x T t)
+| V_Zero :                 is_value tzero
+| V_Succ : forall v,       is_value v -> is_value (tsucc v).
+
+Inductive step : tm -> tm -> Prop :=
+(** Beta reduction: operator is a lambda, argument is a value. *)
+| ST_AppAbs  : forall x T t v,
+    is_value v ->
+    step (tapp (tabs x T t) v) (subst x v t)
+(** Reduce the operator first. *)
+| ST_App1    : forall t1 t1' t2,
+    step t1 t1' ->
+    step (tapp t1 t2) (tapp t1' t2)
+(** Operator is a value; reduce the argument. *)
+| ST_App2    : forall v t2 t2',
+    is_value v /\ step t2 t2' ->
+    step (tapp v t2) (tapp v t2')
+(** Reduce under succ. *)
+| ST_Succ    : forall t t',
+    step t t' ->
+    step (tsucc t) (tsucc t')
+(** pred zero → zero *)
+| ST_PredZero :
+    step (tpred tzero) tzero
+(** pred (succ v) → v *)
+| ST_PredSucc : forall v,
+    is_value v ->
+    step (tpred (tsucc v)) v
+(** Reduce under pred. *)
+| ST_Pred    : forall t t',
+    step t t' ->
+    step (tpred t) (tpred t')
+(** ifz zero t1 t2 → t1 *)
+| ST_IfzZero : forall t1 t2,
+    step (tifz tzero t1 t2) t1
+(** ifz (succ v) t1 t2 → t2 *)
+| ST_IfzSucc : forall v t1 t2,
+    is_value v ->
+    step (tifz (tsucc v) t1 t2) t2
+(** Reduce the discriminant of ifz. *)
+| ST_Ifz     : forall t t' t1 t2,
+    step t t' ->
+    step (tifz t t1 t2) (tifz t' t1 t2)
+(** Unroll fixpoint by one step. *)
+| ST_Fix     : forall f T t,
+    step (tfix f T t) (subst f (tfix f T t) t).
+    
+Inductive stepRTCBounded : tm -> nat -> tm -> Prop :=
+| RTCVal : forall t m, is_value t -> stepRTCBounded t m t
+| RTC0 : forall t, stepRTCBounded t 0 t
+| RTCSuccVal : forall t m t', stepRTCBounded t m t' /\ is_value t'-> stepRTCBounded t (S m) t'  
+| RTCSuccValst : forall t m t' t'', stepRTCBounded t m t' /\ step t' t''-> stepRTCBounded t (S m) t''.
+
+MetaRocq Run (animate_inductive <?stepRTCBounded?> [("stepRTCBounded", ([0;1], [2])); ("step", ([0],[1])); ("is_value", ([0],[]))] 800).
+
+
+Compute (evalTransparentAnimatedTopFn 55 (Success tm (tapp omega_succ tzero))).  
+
+(*
+Compute (stepRTCBoundedAnimatedTopFn 200 (Success (tm * nat) (tapp omega_succ tzero, 14))).
+*)  
+Compute  (subst "x"
+               (tsucc (tsucc (tsucc (tsucc ((tsucc (tsucc tzero)))))))
+               (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
+                  (tsucc (tvar "x")))). 
+                  
+                  
+(*
+StepRTC bounded inductive animation with input : (tapp omega_succ tzero, 14)  
+Success tm
+         (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
+            (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc tzero))))))))
+     : animation_result tm
+     
+eval coinductive animation input (tapp omega_succ tzero) fuel : 55
+
+(evalAn1fnSymb
+            (substLiftedCstrfnSymb "x"
+               (tsucc (tsucc (tsucc (tsucc (evalAn1fnSymb (tsucc (tsucc tzero)))))))
+               (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
+                  (tsucc (tvar "x")))))
+ 
+using evalAn1fnSymb t = t' => eval t t' 
+substLiftCsstrfnSymb = subst
+the result evaluates to 
+eval1An1fnSymb 
+(tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
+         (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc tzero))))))))
+                       
+
+In bigStop paper : bigStop = smallstepRTCBounded
+Aim : Demonstrate that bigStep animated using coinductive animation = evalAn1fnSymb (smallstepRTCBounded)
+=> bigStep-coind animation = evalAn1fnSymb (bigStop)     
+*) 
+
+                 
 End PCFBigStep.
