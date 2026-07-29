@@ -371,5 +371,88 @@ Aim : Demonstrate that bigStep animated using coinductive animation = evalAn1fnS
 => bigStep-coind animation = evalAn1fnSymb (bigStop)     
 *) 
 
-                 
+(* ------------------------------------------------------------------ *)
+(** ** Big-Stop Semantics (Kahn, Hoffmann, Li — POPL 2026, Figure 5) *)
+(*                                                                     *)
+(*  The judgment [bigstop e e'] means that e partially evaluates to   *)
+(*  e' in finitely many steps; e' need not be a value.                *)
+(*                                                                     *)
+(*  Rules split into two groups:                                       *)
+(*  - Stopping rules (St-Stop schema): nondeterministically halt at   *)
+(*    any sub-expression, leaving the rest unevaluated.               *)
+(*  - Progressing rules: mirror the big-step rules, but with bigstop  *)
+(*    in the premises and explicit [is_value] premises where big-step  *)
+(*    previously got them for free.                                    *)
+(*                                                                     *)
+(*  Key theorem (Stop/Multi Equivalence, Thm 7 of the paper):         *)
+(*    bigstop e e'  iff  e -->* e'                                     *)
+(* ------------------------------------------------------------------ *)
+
+Inductive bigstop : tm -> tm -> Prop :=
+
+(** -- Stopping rules (St-Stop schema, expanded) -------------------- *)
+
+(** St-Stop (k=0): any expression can stop at itself. *)
+| BS_Stop : forall e,
+    bigstop e e
+
+(** St-Succ (k=1): stop inside the argument of succ. *)
+| BS_Succ : forall e e',
+    bigstop e e' ->
+    bigstop (tsucc e) (tsucc e')
+
+(** St-Pred (k=1): stop inside the argument of pred. *)
+| BS_Pred : forall e e',
+    bigstop e e' ->
+    bigstop (tpred e) (tpred e')
+
+(** St-IfzDisc (k=1): stop inside the discriminant of ifz. *)
+| BS_IfzDisc : forall e e' t1 t2,
+    bigstop e e' ->
+    bigstop (tifz e t1 t2) (tifz e' t1 t2)
+
+(** St-App1 (k=1): stop inside the operator of an application. *)
+| BS_App1 : forall t1 t1' t2,
+    bigstop t1 t1' ->
+    bigstop (tapp t1 t2) (tapp t1' t2)
+
+(** St-App2 (k=2): operator has reached a value; stop inside the operand. *)
+| BS_App2 : forall t1 v1 t2 t2',
+    bigstop t1 v1 /\ is_value v1 /\ bigstop t2 t2' ->
+    bigstop (tapp t1 t2) (tapp v1 t2')
+
+(** -- Progressing rules (St-CaseZ / St-CaseS / St-App analogues) --- *)
+
+(** St-PredZero: discriminant big-stops to zero. *)
+| BS_PredZero : forall e,
+    bigstop e tzero ->
+    bigstop (tpred e) tzero
+
+(** St-PredSucc: discriminant big-stops to succ v (v a value). *)
+| BS_PredSucc : forall e v,
+    bigstop e (tsucc v) /\ is_value v ->
+    bigstop (tpred e) v
+
+(** St-IfzZero: discriminant big-stops to zero; then big-stop the zero branch. *)
+| BS_IfzZero : forall e t1 t1' t2,
+    bigstop e tzero /\ bigstop t1 t1' ->
+    bigstop (tifz e t1 t2) t1'
+
+(** St-IfzSucc: discriminant big-stops to succ vn; big-stop the succ branch.
+    (vn is the predecessor; our ifz has no binding for it in the succ branch.) *)
+| BS_IfzSucc : forall e vn t1 t2 t2',
+    bigstop e (tsucc vn) /\ is_value vn /\ bigstop t2 t2' ->
+    bigstop (tifz e t1 t2) t2'
+
+(** St-App: operator big-stops to a lambda, operand to a value, body big-stopped. *)
+| BS_App : forall t1 x T t3 t2 v2 e',
+    bigstop t1 (tabs x T t3) /\ bigstop t2 v2 /\ is_value v2 /\
+    bigstop (subst x v2 t3) e' ->
+    bigstop (tapp t1 t2) e'
+
+(** St-Fix: unroll the fixpoint once, then big-stop the substituted body. *)
+| BS_Fix : forall f T t e',
+    bigstop (subst f (tfix f T t) t) e' ->
+    bigstop (tfix f T t) e'.
+
 End PCFBigStep.

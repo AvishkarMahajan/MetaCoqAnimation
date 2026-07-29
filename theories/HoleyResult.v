@@ -72,3 +72,11 @@ Definition hr_ap (A B : Type) (rf : HoleyResult (A -> B)) (ra : HoleyResult A)
 Definition hr_pair (A B : Type) (ra : HoleyResult A) (rb : HoleyResult B)
     : HoleyResult (A * B) :=
   hr_ap B (A * B) (hr_map A (B -> A * B) (@pair A B) ra) rb.
+
+(** A single hole of named wrapper type [W] whose only constructor wraps [A -> B],
+    applied to a concrete argument [arg : A].  Calling [unwrap] extracts the
+    function from the wrapper; the HList exposes [W] (not [A -> B]) so the hole
+    name is visible in printed output. *)
+Definition hr_named_hole_apply (W A B : Type) (unwrap : W -> (A -> B)) (arg : A)
+    : HoleyResult B :=
+  existT _ [W] (fun hl => (unwrap (hlist_head hl)) arg).
