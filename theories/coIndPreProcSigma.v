@@ -4555,6 +4555,107 @@ Polymorphic Fixpoint generate_fnSymb_wrapper_inductives
     generate_fnSymb_wrapper_inductives rest type_map app_kn_map cur_mp)))
   end.
 
+(** Return the first index i such that [f (nth i l)] is true, starting from
+    [cur].  Returns [None] if no element satisfies [f]. *)
+Fixpoint find_first_index_opt {A} (f : A -> bool) (l : list A) (cur : nat)
+    : option nat :=
+  match l with
+  | []      => None
+  | x :: xs => if f x then Some cur else find_first_index_opt f xs (S cur)
+  end.
+
+(** Deduplicate a list of hole-type terms by wrapper inductive identity
+    ([inductive_mind] of the [tInd] node).  Returns [(unique_types, canon_map)]
+    where [List.nth i canon_map 0] is the canonical index in [unique_types] for
+    the i-th entry of the original list. *)
+Fixpoint dedup_hole_types_go
+    (todo      : list term)
+    (seen      : list term)
+    (seen_kns  : list kername)
+    (canon_rev : list nat)
+    : list term * list nat :=
+  match todo with
+  | []      => (seen, List.rev canon_rev)
+  | t :: rest =>
+    let opt_kn :=
+      match t with
+      | tInd ind _ => Some (inductive_mind ind)
+      | _          => None
+      end in
+    match opt_kn with
+    | None =>
+      let j := List.length seen in
+      dedup_hole_types_go rest (seen ++ [t]) seen_kns (j :: canon_rev)
+    | Some kn =>
+      match find_first_index_opt (eq_kername kn) seen_kns 0 with
+      | Some j => dedup_hole_types_go rest seen seen_kns (j :: canon_rev)
+      | None   =>
+        let j := List.length seen in
+        dedup_hole_types_go rest (seen ++ [t]) (seen_kns ++ [kn]) (j :: canon_rev)
+      end
+    end
+  end.
+
+Definition dedup_hole_types (types : list term) : list term * list nat :=
+  dedup_hole_types_go types [] [] [].
+
+(** Index of the first [tInd] entry in [unique_ht_terms] whose kername equals [kn].
+    Returns 0 if not found. *)
+Definition find_hole_idx_by_kn (kn : kername) (unique_ht_terms : list term) : nat :=
+  match find_first_index_opt (fun ht =>
+    match ht with tInd ind _ => eq_kername (inductive_mind ind) kn | _ => false end)
+    unique_ht_terms 0 with
+  | Some j => j
+  | None   => 0
+  end.
+
+(** Compute the unique hole-type terms for [old_kn]'s transparent-sigma push body.
+    Returns [(unique_ht_terms, canon_map)] ordered: coIndPushSymb (non-pi) first,
+    then extra-ctor Symb holes, then transitively required holes from external types
+    (looked up from [pi_set_holes]).  Duplicates collapsed by [dedup_hole_types]. *)
+Definition compute_push_unique_holes
+    (old_kn        : kername)
+    (new_ind       : inductive)
+    (n_block       : nat)
+    (new_oib       : one_inductive_body)
+    (n_old_ctors   : nat)
+    (type_map      : list (kername * inductive))
+    (pi_set        : list kername)
+    (is_purely_ind : bool)
+    (cur_mp        : modpath)
+    (pi_set_holes  : list (kername * list term))
+    : list term * list nat :=
+  let new_kn   := inductive_mind new_ind in
+  let body_idx := inductive_ind new_ind in
+  let type_nm  := snd old_kn in
+  let coind_ts :=
+    if is_purely_ind then []
+    else [tInd {| inductive_mind := (cur_mp, type_nm ++ "coIndPushSymb"); inductive_ind := 0 |} []] in
+  let extra_ctor_ts :=
+    List.flat_map (fun '(ctor_idx, ctor) =>
+      if Nat.ltb ctor_idx n_old_ctors then []
+      else [tInd {| inductive_mind := (cur_mp, ctor.(cstr_name) ++ "Symb"); inductive_ind := 0 |} []])
+    (mapi (fun i c => (i, c)) new_oib.(ind_ctors)) in
+  let external_ts :=
+    List.flat_map (fun ctor =>
+      let n_args := ctor.(cstr_arity) in
+      List.flat_map (fun snoc_i =>
+        let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                     | Some d => d.(decl_type) | None => tVar "?" end in
+        match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+        | Some (Some kn) =>
+          match find (fun e => eq_kername (fst e) kn) pi_set_holes with
+          | Some (_, kn_hs) => kn_hs
+          | None =>
+            if existsb (eq_kername kn) pi_set then []
+            else [tInd {| inductive_mind := (cur_mp, snd kn ++ "coIndPushSymb"); inductive_ind := 0 |} []]
+          end
+        | _ => []
+        end)
+      (seq 0 n_args))
+    new_oib.(ind_ctors) in
+  dedup_hole_types (coind_ts ++ extra_ctor_ts ++ external_ts).
+
 (** Declare a wrapper inductive
     [Inductive typeNm{suffix} := mk_typeNm{suffix} : (T' -> T) -> typeNm{suffix}]
     and its unwrap function for each type in [todo].
@@ -4855,41 +4956,289 @@ Definition make_transparent_sigma_push_def
        dbody  := dbody;
        rarg   := 0 |}.
 
-(** Declare [typeNmTransparentSigmaPush] for every type in [todo]. *)
+(** Build the body fixpoint [def term] for [typeNmTransparentSigmaPushBody].
+    The body takes hole values as leading parameters, then depth (non-pi only), then
+    the new-type scrutinee, and returns [old_type] directly (no HoleyResult).
+    Self-recursive and external-type calls pass hole values through explicitly so that
+    the resulting wrapper can use a STATIC hole list with no duplicates. *)
+Definition make_transparent_sigma_push_body_def
+    (old_kn          : kername)
+    (new_ind         : inductive)
+    (n_block         : nat)
+    (new_oib         : one_inductive_body)
+    (n_old_ctors     : nat)
+    (type_map        : list (kername * inductive))
+    (app_kn_map      : list (kername * list term * inductive))
+    (pi_set          : list kername)
+    (is_purely_ind   : bool)
+    (cur_mp          : modpath)
+    (unique_ht_terms : list term)
+    (pi_set_holes    : list (kername * list term))
+    : def term :=
+  let orig_form :=
+    match find (fun e =>
+                  andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                       (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+               app_kn_map with
+    | Some e => Some (fst (fst e), snd (fst e))
+    | None   => None
+    end in
+  let head_ind :=
+    match orig_form with
+    | None              => {| inductive_mind := old_kn; inductive_ind := 0 |}
+    | Some (head_kn, _) => {| inductive_mind := head_kn; inductive_ind := 0 |}
+    end in
+  let par_terms :=
+    match orig_form with
+    | None                => []
+    | Some (_, arg_terms) => arg_terms
+    end in
+  let old_type :=
+    match par_terms with
+    | [] => tInd head_ind []
+    | _  => tApp (tInd head_ind []) par_terms
+    end in
+  let new_type   := tInd new_ind [] in
+  let type_nm    := snd old_kn in
+  let new_kn     := inductive_mind new_ind in
+  let body_idx   := inductive_ind new_ind in
+  let anon_b     := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let n_holes    := List.length unique_ht_terms in
+  (* De-Bruijn ref to hole k (0 = outermost) inside a S-branch ctor body. *)
+  let s_hole_ref := fun (n_args k : nat) =>
+    if is_purely_ind then tRel (n_args + n_holes - k)
+    else tRel (n_args + 2 + n_holes - k) in
+  (* All hole refs [h_0; ...; h_{n-1}] inside S-branch ctor body. *)
+  let all_s_hole_refs := fun (n_args : nat) =>
+    List.map (fun k => s_hole_ref n_args k) (seq 0 n_holes) in
+  (* Fix self-ref inside S-branch ctor body. *)
+  let s_fix_ref := fun (n_args : nat) =>
+    if is_purely_ind then tRel (n_args + n_holes + 1)
+    else tRel (n_args + n_holes + 3) in
+  (* Hole refs for kn's unique holes remapped to current type's positions. *)
+  let kn_hole_refs_in_s := fun (n_args : nat) (kn : kername) =>
+    let kn_hs := match find (fun e => eq_kername (fst e) kn) pi_set_holes with
+                 | Some (_, hs) => hs | None => [] end in
+    List.map (fun h_t =>
+      match h_t with
+      | tInd ind _ => s_hole_ref n_args (find_hole_idx_by_kn (inductive_mind ind) unique_ht_terms)
+      | _          => tVar "hole_kn_not_found"
+      end)
+    kn_hs in
+  let branches :=
+    mapi (fun ctor_idx ctor =>
+      let n_args := ctor.(cstr_arity) in
+      let bbody :=
+        if Nat.ltb ctor_idx n_old_ctors then
+          (* Regular constructor: apply ctor to pushed args. *)
+          let pushed_snoc :=
+            List.map (fun snoc_i =>
+              let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                           | Some d => d.(decl_type) | None => tVar "?" end in
+              match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+              | Some None =>
+                let call_args :=
+                  List.app (all_s_hole_refs n_args)
+                  (List.app (if is_purely_ind then [] else [tRel n_args])
+                             [tRel snoc_i]) in
+                tApp (s_fix_ref n_args) call_args
+              | Some (Some kn) =>
+                let body_c := tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") [] in
+                let kn_h_list : list term := kn_hole_refs_in_s n_args kn in
+                let call_args :=
+                  List.app kn_h_list
+                  (List.app (if existsb (eq_kername kn) pi_set then [] else [tRel n_args])
+                             [tRel snoc_i]) in
+                tApp body_c call_args
+              | None => tRel snoc_i
+              end)
+            (seq 0 n_args) in
+          let pushed    := List.rev pushed_snoc in
+          let ctor_base := match par_terms with
+            | [] => tConstruct head_ind ctor_idx []
+            | _  => tApp (tConstruct head_ind ctor_idx []) par_terms end in
+          match pushed with
+          | [] => ctor_base
+          | _  => tApp ctor_base pushed
+          end
+        else
+          (* Animation/extra constructor: apply Symb_unwrap hole to pushed args. *)
+          let ctor_nm  := ctor.(cstr_name) in
+          let w_kn     := (cur_mp, ctor_nm ++ "Symb") in
+          let w_idx    := find_hole_idx_by_kn w_kn unique_ht_terms in
+          let fn_ref   := tApp (tConst (cur_mp, ctor_nm ++ "Symb_unwrap") [])
+                               [s_hole_ref n_args w_idx] in
+          let pushed_snoc :=
+            List.map (fun snoc_i =>
+              let arg_t := match nth_error ctor.(cstr_args) snoc_i with
+                           | Some d => d.(decl_type) | None => tVar "?" end in
+              match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+              | Some None =>
+                if is_purely_ind then
+                  tApp (s_fix_ref n_args) (List.app (all_s_hole_refs n_args) [tRel snoc_i])
+                else
+                  let coind_kn  := (cur_mp, type_nm ++ "coIndPushSymb") in
+                  let coind_idx := find_hole_idx_by_kn coind_kn unique_ht_terms in
+                  tApp (tConst (cur_mp, type_nm ++ "coIndPushSymb_unwrap") [])
+                       [s_hole_ref n_args coind_idx; tRel snoc_i]
+              | Some (Some kn) =>
+                let kn_h_refs : list term := kn_hole_refs_in_s n_args kn in
+                if existsb (eq_kername kn) pi_set then
+                  tApp (tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") [])
+                       (List.app kn_h_refs [tRel snoc_i])
+                else
+                  let kn_coind_kn  := (cur_mp, snd kn ++ "coIndPushSymb") in
+                  let kn_coind_idx := find_hole_idx_by_kn kn_coind_kn unique_ht_terms in
+                  tApp (tConst (cur_mp, snd kn ++ "coIndPushSymb_unwrap") [])
+                       [s_hole_ref n_args kn_coind_idx; tRel snoc_i]
+              | None => tRel snoc_i
+              end)
+            (seq 0 n_args) in
+          let pushed := List.rev pushed_snoc in
+          match pushed with
+          | [] => fn_ref
+          | _  => tApp fn_ref pushed
+          end
+      in
+      {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
+         bbody    := bbody |})
+    new_oib.(ind_ctors) in
+  let pred  := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := old_type |} in
+  let ci    := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
+  let dname := {| binder_name := nNamed (type_nm ++ "TransparentSigmaPushBody");
+                  binder_relevance := Relevant |} in
+  let base_dtype :=
+    if is_purely_ind then tProd anon_b new_type old_type
+    else let nat_r := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+         tProd anon_b (tInd nat_r []) (tProd anon_b new_type old_type) in
+  let dtype := List.fold_right (fun h_t acc => tProd anon_b h_t acc) base_dtype unique_ht_terms in
+  if is_purely_ind then
+    let dbody :=
+      List.fold_right (fun h_t acc => tLambda anon_b h_t acc)
+        (tLambda anon_b new_type (tCase ci pred (tRel 0) branches))
+        unique_ht_terms in
+    {| dname := dname; dtype := dtype; dbody := dbody; rarg := n_holes |}
+  else
+    let nat_ind_ref := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+    let nat_ci   := {| ci_ind := nat_ind_ref; ci_npar := 0; ci_relevance := Relevant |} in
+    let nat_pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := old_type |} in
+    let inner_case := tCase ci pred (tRel 1) branches in
+    (* O-branch: coIndPushSymb_unwrap h_coind s.
+       In o-branch context (no ctor args, no S-binder): tRel 0 = s, tRel 1 = depth,
+       tRel 2 = h_{n-1}, ..., tRel 1+n_holes = h_0, tRel 2+n_holes = f. *)
+    let coind_kn      := (cur_mp, type_nm ++ "coIndPushSymb") in
+    let coind_idx     := find_hole_idx_by_kn coind_kn unique_ht_terms in
+    let o_coind_ref   := tRel (1 + n_holes - coind_idx) in
+    let o_branch_body := tApp (tConst (cur_mp, type_nm ++ "coIndPushSymb_unwrap") [])
+                              [o_coind_ref; tRel 0] in
+    let o_branch := {| bcontext := []; bbody := o_branch_body |} in
+    let s_branch := {| bcontext := [anon_b]; bbody := inner_case |} in
+    let dbody :=
+      List.fold_right (fun h_t acc => tLambda anon_b h_t acc)
+        (tLambda anon_b (tInd nat_ind_ref [])
+          (tLambda anon_b new_type
+            (tCase nat_ci nat_pred (tRel 1) [o_branch; s_branch])))
+        unique_ht_terms in
+    {| dname := dname; dtype := dtype; dbody := dbody; rarg := n_holes |}.
+
+(** Build the wrapper term for [typeNmTransparentSigmaPush] that wraps the body
+    in a HoleyResult with exactly [unique_ht_terms] as the static hole list. *)
+Definition make_transparent_sigma_push_wrapper_term
+    (old_kn          : kername)
+    (new_ind         : inductive)
+    (type_map        : list (kername * inductive))
+    (app_kn_map      : list (kername * list term * inductive))
+    (is_purely_ind   : bool)
+    (cur_mp          : modpath)
+    (unique_ht_terms : list term)
+    (hr_pure_c hr_ap_c hr_hole_c : term)
+    : term :=
+  let old_type    := subst_ind_to_old type_map app_kn_map new_ind in
+  let new_type    := tInd new_ind [] in
+  let anon_b      := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let nat_ind_ref := {| inductive_mind := <?nat?>; inductive_ind := 0 |} in
+  let body_c      := tConst (cur_mp, snd old_kn ++ "TransparentSigmaPushBody") [] in
+  let n_holes     := List.length unique_ht_terms in
+  (* Inside n_holes inner lambdas: tRel 0 = h_{n-1}, ..., tRel n_holes-1 = h_0.
+     Outer lambdas: non-pi -> tRel n_holes = s, tRel n_holes+1 = depth;
+                    pi     -> tRel n_holes = s. *)
+  let hole_args :=
+    List.map (fun k => tRel (n_holes - 1 - k)) (seq 0 n_holes) in
+  let s_ref    := tRel n_holes in
+  let body_call :=
+    if is_purely_ind then tApp body_c (hole_args ++ [s_ref])
+    else tApp body_c (hole_args ++ [tRel (n_holes + 1); s_ref]) in
+  (* inner_fn: tLambda H_0 (... (tLambda H_{n-1} body_call) ...) *)
+  let inner_fn :=
+    List.fold_right (fun h_t acc => tLambda anon_b h_t acc) body_call unique_ht_terms in
+  (* B-type chain: [B_0; B_1; ...; B_{n-1}; old_type]
+     where B_k = H_k -> B_{k+1}. *)
+  let b_type_chain :=
+    List.fold_right (fun h_t acc => tProd anon_b h_t (List.hd old_type acc) :: acc)
+      [old_type] unique_ht_terms in
+  (* Build the hr_ap chain: step by step applying hr_hole for each hole type. *)
+  let init_hr := tApp hr_pure_c [List.hd old_type b_type_chain; inner_fn] in
+  let '(_, final_hr) :=
+    List.fold_left
+      (fun '(b_tail, cur_hr) h_t =>
+        let b_cur := List.hd old_type b_tail in
+        (List.tl b_tail, tApp hr_ap_c [h_t; b_cur; cur_hr; tApp hr_hole_c [h_t]]))
+      unique_ht_terms
+      (List.tl b_type_chain, init_hr) in
+  if is_purely_ind then tLambda anon_b new_type final_hr
+  else tLambda anon_b (tInd nat_ind_ref []) (tLambda anon_b new_type final_hr).
+
+(** Declare [typeNmTransparentSigmaPushBody] and [typeNmTransparentSigmaPush]
+    for every type in [todo].  Pi-set types must appear before non-pi types in
+    [todo] so that body constants are declared before they are referenced. *)
 Polymorphic Fixpoint generate_transparent_sigma_push_fns
-    (todo        : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
-    (all_map     : list (kername * inductive))
-    (app_kn_map  : list (kername * list term * inductive))
-    (pi_set      : list kername)
-    (cur_mp      : modpath)
-    (hr_hole_c   : term)
-    (hr_pure_c   : term)
-    (hr_ap_c     : term)
-    (hr_map_c    : term)
-    (hr_type_c   : term)
+    (todo           : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
+    (all_map        : list (kername * inductive))
+    (app_kn_map     : list (kername * list term * inductive))
+    (pi_set         : list kername)
+    (cur_mp         : modpath)
+    (hr_hole_c      : term)
+    (hr_pure_c      : term)
+    (hr_ap_c        : term)
+    (hr_map_c       : term)
+    (hr_type_c      : term)
+    (pi_set_holes   : list (kername * list term))
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
   | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
+    let n_old_ctors :=
+      match nth_error old_mind.(ind_bodies) 0 with
+      | Some ob => List.length ob.(ind_ctors) | None => 0
+      end in
+    let n_block       := List.length new_mind.(ind_bodies) in
+    let is_purely_ind := existsb (eq_kername old_kn) pi_set in
+    let '(unique_ht_terms, _) :=
+      match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+      | Some new_oib =>
+        compute_push_unique_holes old_kn new_ind n_block new_oib n_old_ctors
+          all_map pi_set is_purely_ind cur_mp pi_set_holes
+      | None => ([], [])
+      end in
     tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
             | None =>
               tmFail ("generate_transparent_sigma_push_fns: no body for " ++ snd old_kn)
             | Some new_oib =>
-              let n_old_ctors :=
-                match nth_error old_mind.(ind_bodies) 0 with
-                | Some ob => List.length ob.(ind_ctors) | None => 0
-                end in
-              let n_block := List.length new_mind.(ind_bodies) in
-              let is_purely_ind := existsb (eq_kername old_kn) pi_set in
-              let d := make_transparent_sigma_push_def
-                         old_kn new_ind n_block new_oib n_old_ctors
-                         all_map app_kn_map pi_set is_purely_ind cur_mp
-                         hr_hole_c hr_pure_c hr_ap_c hr_map_c hr_type_c in
-              push_term_ev <- tmEval all (tFix [d] 0) ;;
-              tmMkDefinition (snd old_kn ++ "TransparentSigmaPush") push_term_ev
-            end) (fun _ =>
-    generate_transparent_sigma_push_fns rest all_map app_kn_map pi_set cur_mp
-                      hr_hole_c hr_pure_c hr_ap_c hr_map_c hr_type_c)
+              let d_body := make_transparent_sigma_push_body_def
+                              old_kn new_ind n_block new_oib n_old_ctors
+                              all_map app_kn_map pi_set is_purely_ind cur_mp
+                              unique_ht_terms pi_set_holes in
+              body_ev <- tmEval all (tFix [d_body] 0) ;;
+              _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPushBody") body_ev ;;
+              wrapper_ev <- tmEval all (make_transparent_sigma_push_wrapper_term
+                              old_kn new_ind all_map app_kn_map is_purely_ind cur_mp
+                              unique_ht_terms hr_pure_c hr_ap_c hr_hole_c) ;;
+              tmMkDefinition (snd old_kn ++ "TransparentSigmaPush") wrapper_ev
+            end)
+    (fun _ =>
+      generate_transparent_sigma_push_fns rest all_map app_kn_map pi_set cur_mp
+        hr_hole_c hr_pure_c hr_ap_c hr_map_c hr_type_c
+        (pi_set_holes ++ [(old_kn, unique_ht_terms)]))
   end.
 
 (** Classify an output type for the transparent-sigma output push:
@@ -5365,7 +5714,9 @@ Polymorphic Fixpoint declare_coIndPush_fn_axioms
     it as [rel_nm ++ "AnimatedTopFnProp"].  The holes are the wrapper inductives
     for An-holes (one per extra animation constructor) followed by coIndPush holes
     (one per non-pi lifted type).  Each property uses the unwrapped hole rather
-    than a global axiom: e.g. [{cstrNm}Symb_unwrap h] instead of [{cstrNm}fnSymb]. *)
+    than a global axiom: e.g. [{cstrNm}Symb_unwrap h] instead of [{cstrNm}fnSymb].
+    Hole types are deduplicated by wrapper inductive kername so that each unique
+    wrapper inductive appears at most once as a forall binder. *)
 Polymorphic Definition generate_animated_top_fn_prop
     (rel_nm       : ident)
     (type_minds   : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
@@ -5396,11 +5747,9 @@ Polymorphic Definition generate_animated_top_fn_prop
   let n_an      := List.length an_hole_infos in
   let n_push    := List.length push_hole_infos in
   let n_pi_push := List.length pi_push_hole_infos in
-  (* Total binder count; order in hole_types: An, coIndPush, piPushFull.
-     fold_right makes the last list element innermost (tRel 0), so piPushFull holes
-     are innermost, coIndPush holes next, An-holes outermost. *)
-  let n_total := n_an + n_push + n_pi_push in
-  (* Step 2: build hole-type terms (An-holes first, then coIndPush, then piPushFull). *)
+  (* Step 2: build hole-type terms (An-holes first, then coIndPush, then piPushFull).
+     fold_right makes the last element innermost (tRel 0): piPushFull holes are
+     innermost, coIndPush next, An-holes outermost. *)
   let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
   let an_hole_types :=
     List.map (fun x =>
@@ -5416,28 +5765,35 @@ Polymorphic Definition generate_animated_top_fn_prop
     List.map (fun '(((old_kn, _), _), _) =>
       tInd {| inductive_mind := (cur_mp, snd old_kn ++ "PushFullSymb"); inductive_ind := 0 |} [])
     pi_push_hole_infos in
-  let hole_types := List.app an_hole_types (List.app push_hole_types pi_push_hole_types) in
-  (* Step 3: fn_tms for An-holes — depth n_total-1-i (outermost binders). *)
+  let hole_types_raw :=
+    List.app an_hole_types (List.app push_hole_types pi_push_hole_types) in
+  (* Deduplicate by wrapper inductive kername so each unique hole type gets
+     exactly one forall binder.  canon_map.(i) is the canonical index in
+     unique_hole_types for the i-th entry of hole_types_raw.
+     canon_rel i = tRel-depth for entry i under the deduplicated binder list. *)
+  let '(unique_hole_types, canon_map) := dedup_hole_types hole_types_raw in
+  let n_unique := List.length unique_hole_types in
+  let canon_rel (k : nat) := n_unique - 1 - nth k canon_map 0 in
+  (* Step 3: fn_tms for An-holes — use canonical depth. *)
   let an_fn_tms :=
     mapi (fun i x =>
       let '(((_, _), cstr_nm), _) := x in
       let unwrap_c := tConst (cur_mp, cstr_nm ++ "Symb_unwrap") [] in
-      tApp unwrap_c [tRel (n_total - 1 - i)])
+      tApp unwrap_c [tRel (canon_rel i)])
     an_hole_infos in
-  (* Step 4: coIndPush holes — depth n_pi_push+n_push-1-j.
-     Build the map first; tms are just the values. *)
+  (* Step 4: coIndPush holes — canonical offset = n_an + j. *)
   let push_hole_map :=
     mapi (fun j x =>
       let '(((old_kn, _), _), _) := x in
       let unwrap_c := tConst (cur_mp, snd old_kn ++ "coIndPushSymb_unwrap") [] in
-      (old_kn, tApp unwrap_c [tRel (n_pi_push + n_push - 1 - j)]))
+      (old_kn, tApp unwrap_c [tRel (canon_rel (n_an + j))]))
     push_hole_infos in
   let push_tms := List.map snd push_hole_map in
-  (* Step 4b: piPushFull holes — depth n_pi_push-1-j (innermost binders). *)
+  (* Step 4b: piPushFull holes — canonical offset = n_an + n_push + j. *)
   let pi_push_map :=
     mapi (fun j '(((old_kn, _), _), _) =>
       let unwrap_c := tConst (cur_mp, snd old_kn ++ "PushFullSymb_unwrap") [] in
-      (old_kn, tApp unwrap_c [tRel (n_pi_push - 1 - j)]))
+      (old_kn, tApp unwrap_c [tRel (canon_rel (n_an + n_push + j))]))
     pi_push_hole_infos in
   let pi_push_tms := List.map snd pi_push_map in
   (* Step 5: build An-hole props. *)
@@ -5541,7 +5897,7 @@ Polymorphic Definition generate_animated_top_fn_prop
   let conjoined := make_conjunction true_sample and_tm
     (List.app an_props (List.app push_props pi_push_props)) in
   let prop_tm :=
-    List.fold_right (fun ht acc => tProd anon_b ht acc) conjoined hole_types in
+    List.fold_right (fun ht acc => tProd anon_b ht acc) conjoined unique_hole_types in
   all_ev <- tmEval all prop_tm ;;
   tmMkDefinition (rel_nm ++ "AnimatedTopFnProp") all_ev.
 
@@ -5683,9 +6039,14 @@ Polymorphic Definition animate_coinductive_transparent_sigma
                                                 pi_set cur_mp "coIndPushSymb" false ;;
       _ <- generate_pushSymb_wrapper_inductives type_minds type_mapping app_kn_mapping
                                                 pi_set cur_mp "PushFullSymb" true ;;
-      (* Transparent sigma push functions (return HoleyResult T with named wrapper holes). *)
-      _ <- generate_transparent_sigma_push_fns type_minds type_mapping app_kn_mapping pi_set cur_mp
-                      hr_hole_tm hr_pure_tm hr_ap_tm hr_map_tm hr_type_tm ;;
+      (* Transparent sigma push functions: body takes hole values, wrapper holds static hole list.
+         Sort so pi-set types (whose bodies reference no other bodies) come first. *)
+      let type_minds_pi_first :=
+        List.app
+          (List.filter (fun '((old_kn, _), _) => existsb (eq_kername old_kn) pi_set) type_minds)
+          (List.filter (fun '((old_kn, _), _) => negb (existsb (eq_kername old_kn) pi_set)) type_minds) in
+      _ <- generate_transparent_sigma_push_fns type_minds_pi_first type_mapping app_kn_mapping pi_set cur_mp
+                      hr_hole_tm hr_pure_tm hr_ap_tm hr_map_tm hr_type_tm [] ;;
       (* Output push for the transparent sigma version. *)
       _ <- generate_transparent_sigma_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set
                               prod_kn anim_res_kn cur_mp hr_type_tm hr_pair_tm hr_pure_tm ;;

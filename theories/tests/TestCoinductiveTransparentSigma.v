@@ -288,7 +288,7 @@ MetaRocq Run (animate_coinductive_transparent_sigma <? Integrate ?>
 (** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
 Eval cbv -[HoleyResult.hlist_head] in (IntegrateTransparentSigmaAnimatedTopFn 10 (Success stream (from 4))).
 Print IntegrateAnimatedTopFnProp.
-Compute (IntegrateTransparentAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
+Compute (IntegrateTransparentSigmaAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
 End integrateStreams.  
 
 
