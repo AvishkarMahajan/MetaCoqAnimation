@@ -1124,6 +1124,10 @@ Fixpoint extract_arg_types_early (skip n : nat) (t : term) : list term :=
     end
   end.
 
+(** Extract the first [n] arg types and the return type from a [tProd]-chain in one pass. *)
+Definition fn_info_from_cst_type (n : nat) (cst_ty : term) : list term * term :=
+  (extract_arg_types_early 0 n cst_ty, skip_prods n cst_ty).
+
 (** Given a list of (arg_term, ret_type) pairs from a relation application or
     conclusion index, emit [(fn_kn, arg_types, ret_tp)] for each pair where
     arg_term = [tApp (tConst fn_kn) fn_args] and all fn_args are [tRel] nodes
@@ -1285,7 +1289,12 @@ Fixpoint collect_const_fn_kns_from_ctx
         let arg_types :=
           flat_map (fun o => match o with Some tp => [tp] | None => [] end) maybe_types in
         List.app [(fn_kn, arg_types)] rec_hits
-      else rec_hits
+      else
+        (* Some args are nested calls (not tRel). Still record fn_kn with a
+           dummy list of the right length so the arity is preserved for
+           extra_fn_infos_r, which will recover the true types from the
+           constant's declaration via extract_arg_types_early. *)
+        List.app [(fn_kn, List.repeat (tSort sProp) (List.length args))] rec_hits
     | _ => rec_hits
     end
   | _ => []
@@ -1785,11 +1794,11 @@ Polymorphic Definition preprocess_coind_types
       else List.app acc [p])
     extra_fn_pairs [] in
   extra_fn_infos <- monad_map (fun p =>
-    let fn_kn   := fst p in
-    let arg_tps := snd p in
+    let fn_kn := fst p in
+    let n     := List.length (snd p) in
     cb <- tmQuoteConstant fn_kn false ;;
-    let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
-    tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs ;;
+    let '(decl_arg_types, ret_tp) := fn_info_from_cst_type n cb.(cst_type) in
+    tmReturn (fn_kn, decl_arg_types, ret_tp)) new_fn_pairs ;;
   let fn_app_infos := List.app fn_app_infos_base extra_fn_infos in
   fn_app_infos <- tmEval all fn_app_infos ;;
   (* Step 5: initial lifting set = signature types + specialised parametric
@@ -3013,16 +3022,16 @@ Definition get_out_ctor
     paired) output.  The lifted relations must already exist in the
     global environment when this is called. *)
 Polymorphic Fixpoint generate_rest_fns
-    (todo    : list (kername * (string * (list nat * list nat))))
+    (todo    : list (inductive * (string * (list nat * list nat))))
     (cur_mp  : modpath)
     (prod_kn : kername)
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
-  | (block_kn, (rel_name, (in_pos, out_pos))) :: rest_todo =>
+  | (block_ind, (rel_name, (in_pos, out_pos))) :: rest_todo =>
     (* The lifted block is registered under snd(block_kn) ++ prime,
        so we quote that block and then search for the body by name. *)
-    let lifted_block_kn := (cur_mp, snd block_kn ++ "'") in
+    let lifted_block_kn := (cur_mp, snd (inductive_mind block_ind) ++ "'") in
     let lifted_nm       := rel_name ++ "'" in
     tmBind (tmQuoteInductive lifted_block_kn) (fun new_mind =>
     let n_params := new_mind.(ind_npars) in
@@ -4066,7 +4075,7 @@ Definition make_inputLift_term
 
 (** Declare [<rel_name>inputLift] for every entry in [kn_mode_list]. *)
 Polymorphic Fixpoint generate_inputLift_fns
-    (todo        : list (kername * (string * (list nat * list nat))))
+    (todo        : list (inductive * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (prod_kn     : kername)
@@ -4076,7 +4085,7 @@ Polymorphic Fixpoint generate_inputLift_fns
   match todo with
   | [] => tmReturn tt
   | entry :: rest =>
-    let block_kn := fst entry in
+    let block_kn := inductive_mind (fst entry) in
     let rel_name := fst (snd entry) in
     let in_pos   := fst (snd (snd entry)) in
     let out_pos  := snd (snd (snd entry)) in
@@ -4226,7 +4235,7 @@ Definition make_outputPush_term
     Every generated function takes a leading [nat] depth argument and passes it
     to each push function applied to an output value. *)
 Polymorphic Fixpoint generate_outputPush_fns
-    (todo        : list (kername * (string * (list nat * list nat))))
+    (todo        : list (inductive * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
@@ -4240,7 +4249,7 @@ Polymorphic Fixpoint generate_outputPush_fns
   match todo with
   | [] => tmReturn tt
   | entry :: rest =>
-    let block_kn := fst entry in
+    let block_kn := inductive_mind (fst entry) in
     let rel_name := fst (snd entry) in
     let in_pos   := fst (snd (snd entry)) in
     let out_pos  := snd (snd (snd entry)) in
@@ -4309,7 +4318,7 @@ Polymorphic Definition lift_coinductive_relation
   kn_mode_list <- monad_fold_left (fun acc me =>
     refs <- tmLocate (fst me) ;;
     match find (fun g => match g with IndRef _ => true | _ => false end) refs with
-    | Some (IndRef ind) => tmReturn (List.app acc [(inductive_mind ind, me)])
+    | Some (IndRef ind) => tmReturn (List.app acc [(ind, me)])
     | _ => tmFail ("lift_coinductive_relation: cannot find '" ++ fst me ++ "'")
     end)
     modes [] ;;
@@ -4324,8 +4333,8 @@ Polymorphic Definition lift_coinductive_relation
     (* Deduplicate block knames, preserving order of first appearance. *)
     let unique_block_kns :=
       fold_left (fun acc p =>
-        if existsb (eq_kername (fst p)) acc then acc
-        else List.app acc [fst p])
+        if existsb (eq_kername (inductive_mind (fst p))) acc then acc
+        else List.app acc [inductive_mind (fst p)])
       kn_mode_list [] in
     (* Pre-compute new inductives for all relation blocks so cross-block references
        in constructor types are substituted correctly when lifting each block. *)
@@ -4420,11 +4429,11 @@ Polymorphic Definition lift_coinductive_relation
         extra_fn_pairs_r [] in
       new_fn_pairs_r <- tmEval all new_fn_pairs_r ;;
       extra_fn_infos_r <- monad_map (fun p =>
-        let fn_kn   := fst p in
-        let arg_tps := snd p in
+        let fn_kn := fst p in
+        let n     := List.length (snd p) in
         cb <- tmQuoteConstant fn_kn false ;;
-        let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
-        tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs_r ;;
+        let '(decl_arg_types, ret_tp) := fn_info_from_cst_type n cb.(cst_type) in
+        tmReturn (fn_kn, decl_arg_types, ret_tp)) new_fn_pairs_r ;;
       extra_fn_infos_r <- tmEval all extra_fn_infos_r ;;
       let unique_fn_infos := List.app unique_fn_infos_base extra_fn_infos_r in
       unique_fn_infos <- tmEval all unique_fn_infos ;;
@@ -4437,7 +4446,7 @@ Polymorphic Definition lift_coinductive_relation
       (* Now all liftedFunc constants exist; declare the lifted relation blocks. *)
       _ <- monad_fold_left (fun _ block_kn =>
         let block_modes :=
-          List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
+          List.map snd (filter (fun p => eq_kername (inductive_mind (fst p)) block_kn) kn_mode_list) in
         lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes fn_kn_map)
         sorted_block_kns tt ;;
       _ <- generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
@@ -4546,35 +4555,39 @@ Polymorphic Fixpoint generate_fnSymb_wrapper_inductives
     generate_fnSymb_wrapper_inductives rest type_map app_kn_map cur_mp)))
   end.
 
-(** For each non-pi type in the lifting set, declare a wrapper inductive
-    [Inductive typeNmcoIndPushSymb := mk_typeNmcoIndPushSymb : (T' -> T) -> typeNmcoIndPushSymb].
-    These are the named hole types for coIndPush positions (depth-0 and coinductive args). *)
-Polymorphic Fixpoint generate_coIndPushSymb_wrapper_inductives
+(** Declare a wrapper inductive
+    [Inductive typeNm{suffix} := mk_typeNm{suffix} : (T' -> T) -> typeNm{suffix}]
+    and its unwrap function for each type in [todo].
+    [for_pi = false]: generate for types NOT in [pi_set] (coIndPushSymb holes).
+    [for_pi = true]:  generate for types IN [pi_set]     (PushFullSymb holes). *)
+Polymorphic Fixpoint generate_pushSymb_wrapper_inductives
     (todo        : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map     : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
     (cur_mp      : modpath)
+    (suffix      : string)
+    (for_pi      : bool)
     : TemplateMonad unit :=
   match todo with
   | [] => tmReturn tt
   | ((old_kn, new_ind), _) :: rest =>
-    tmBind (if existsb (eq_kername old_kn) pi_set then tmReturn tt
-            else
+    tmBind (if Bool.eqb for_pi (existsb (eq_kername old_kn) pi_set) then
               let old_type := subst_ind_to_old all_map app_kn_map new_ind in
               let new_type := tInd new_ind [] in
               let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
               let push_fn_type := tProd anon_b new_type old_type in
               push_fn_type_ev <- tmEval all push_fn_type ;;
-              let wrapper_nm := snd old_kn ++ "coIndPushSymb" in
+              let wrapper_nm := snd old_kn ++ suffix in
               let body := make_wrapper_inductive_body wrapper_nm push_fn_type_ev in
               body_ev <- tmEval all body ;;
               let W_ind := {| inductive_mind := (cur_mp, wrapper_nm); inductive_ind := 0 |} in
               let unwrap_body := build_unwrap_fn W_ind push_fn_type_ev in
               unwrap_ev <- tmEval all unwrap_body ;;
               _ <- tmMkInductive' body_ev ;;
-              tmMkDefinition (wrapper_nm ++ "_unwrap") unwrap_ev)
-    (fun _ => generate_coIndPushSymb_wrapper_inductives rest all_map app_kn_map pi_set cur_mp)
+              tmMkDefinition (wrapper_nm ++ "_unwrap") unwrap_ev
+            else tmReturn tt)
+    (fun _ => generate_pushSymb_wrapper_inductives rest all_map app_kn_map pi_set cur_mp suffix for_pi)
   end.
 
 (** Build the [def term] for the transparent-sigma push function of [old_kn].
@@ -4928,7 +4941,7 @@ Definition classify_out_type_transparent_sigma
 
 (** Declare [relTransparentSigmaOutputPush] for every entry in [kn_mode_list]. *)
 Polymorphic Fixpoint generate_transparent_sigma_outputPush_fns
-    (todo        : list (kername * (string * (list nat * list nat))))
+    (todo        : list (inductive * (string * (list nat * list nat))))
     (type_map    : list (kername * inductive))
     (app_kn_map  : list (kername * list term * inductive))
     (pi_set      : list kername)
@@ -4942,7 +4955,7 @@ Polymorphic Fixpoint generate_transparent_sigma_outputPush_fns
   match todo with
   | [] => tmReturn tt
   | entry :: rest =>
-    let block_kn := fst entry in
+    let block_kn := inductive_mind (fst entry) in
     let rel_name := fst (snd entry) in
     let in_pos   := fst (snd (snd entry)) in
     let out_pos  := snd (snd (snd entry)) in
@@ -5075,12 +5088,12 @@ Fixpoint subst_new_block_at_depth
     it is lifted by [n_args] before use so outer hole tRels survive the binders.
     [fnSymb_ty] = result of [make_fnSymb_type] (product of original-type arg types). *)
 Definition build_an_hole_prop
-    (old_kn    : kername)
+    (old_ind   : inductive)
     (new_ind   : inductive)
     (fn_tm     : term)
     (fnSymb_ty : term)
     : term :=
-  let old_rel_ind := {| inductive_mind := old_kn; inductive_ind := inductive_ind new_ind |} in
+  let old_rel_ind := old_ind in
   let '(arg_pairs, _) := extract_prod_args fnSymb_ty in
   let n_args    := List.length arg_pairs in
   let fn_tm_in  := lift n_args 0 fn_tm in
@@ -5239,16 +5252,18 @@ Fixpoint string_is_prefix (s1 s2 : string) : bool :=
   end.
 
 (** Collect An-hole metadata from already-quoted [type_minds].
-    Returns [(rel_kn, new_ind, cstr_nm, fnSymb_ty)] for every extra constructor
+    Returns [(rel_ind, new_ind, cstr_nm, fnSymb_ty)] for every extra constructor
     whose name starts with the relation name (convention: [{relName}An{k}]).
+    [rel_ind] carries both the block kername and the relation's body index so that
+    [build_an_hole_prop] can construct a valid [tInd] even for mutual relations.
     Order: outer loop is [kn_mode_list], so An-holes are grouped by relation. *)
 Definition collect_an_hole_infos
     (type_minds   : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (type_map     : list (kername * inductive))
     (app_kn_map   : list (kername * list term * inductive))
-    (kn_mode_list : list (kername * (string * (list nat * list nat))))
-    : list (kername * inductive * string * term) :=
-  List.flat_map (fun '(rel_kn, (rel_nm, _)) =>
+    (kn_mode_list : list (inductive * (string * (list nat * list nat))))
+    : list (inductive * inductive * string * term) :=
+  List.flat_map (fun '(rel_ind, (rel_nm, _)) =>
     List.flat_map (fun '((old_kn, new_ind), (old_mind, new_mind)) =>
       let n_bodies := List.length new_mind.(ind_bodies) in
       let n_params := new_mind.(ind_npars) in
@@ -5264,7 +5279,7 @@ Definition collect_an_hole_infos
         let matching := filter (fun c => string_is_prefix rel_nm c.(cstr_name)) extra in
         List.map (fun c =>
           let fnSymb_ty := make_fnSymb_type new_ind n_bodies n_params c type_map app_kn_map in
-          (rel_kn, new_ind, c.(cstr_name), fnSymb_ty))
+          (rel_ind, new_ind, c.(cstr_name), fnSymb_ty))
         matching
       end)
     type_minds)
@@ -5280,10 +5295,20 @@ Definition collect_coind_push_hole_infos
     else [(old_kn, new_ind, old_mind, new_mind)])
   type_minds.
 
+(** Collect metadata for piPushFull holes: one entry per pi_set type in [type_minds]. *)
+Definition collect_pi_push_hole_infos
+    (type_minds : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
+    (pi_set     : list kername)
+    : list (kername * inductive * mutual_inductive_body * mutual_inductive_body) :=
+  List.flat_map (fun '((old_kn, new_ind), (old_mind, new_mind)) =>
+    if existsb (eq_kername old_kn) pi_set then [(old_kn, new_ind, old_mind, new_mind)]
+    else [])
+  type_minds.
+
 (** Walk [an_hole_infos] and [an_fn_tms] in lockstep to find the fn_tm
     for the An-hole whose [cstr_nm] matches [target]. *)
 Fixpoint find_an_fn_tm (target : ident)
-    (an_infos  : list (kername * inductive * string * term))
+    (an_infos  : list (inductive * inductive * string * term))
     (an_fn_tms : list term)
     : term :=
   match an_infos, an_fn_tms with
@@ -5292,6 +5317,19 @@ Fixpoint find_an_fn_tm (target : ident)
     let '(((_, _), c_nm), _) := x in
     if String.eqb c_nm target then tm
     else find_an_fn_tm target rest_infos rest_tms
+  end.
+
+(** Like [find_an_fn_tm] but returns [None] instead of a fallback term when no match is found. *)
+Fixpoint find_an_fn_tm_opt (target : ident)
+    (an_infos  : list (inductive * inductive * string * term))
+    (an_fn_tms : list term)
+    : option term :=
+  match an_infos, an_fn_tms with
+  | [], _ | _, [] => None
+  | x :: rest_infos, tm :: rest_tms =>
+    let '(((_, _), c_nm), _) := x in
+    if String.eqb c_nm target then Some tm
+    else find_an_fn_tm_opt target rest_infos rest_tms
   end.
 
 (** Right-associate a list of prop terms with [/\]. Returns [True] for [[]]. *)
@@ -5335,7 +5373,8 @@ Polymorphic Definition generate_animated_top_fn_prop
     (app_kn_map   : list (kername * list term * inductive))
     (pi_set       : list kername)
     (cur_mp       : modpath)
-    (kn_mode_list : list (kername * (string * (list nat * list nat))))
+    (kn_mode_list : list (inductive * (string * (list nat * list nat))))
+    (fn_infos     : list (kername * list term * term))
     : TemplateMonad unit :=
   eq_sample   <- tmQuote (0 = 0) ;;
   and_sample  <- tmQuote (True /\ True) ;;
@@ -5351,12 +5390,17 @@ Polymorphic Definition generate_animated_top_fn_prop
     | _         => tVar "and_not_found"
     end in
   (* Step 1: collect hole metadata in fixed order. *)
-  let an_hole_infos  := collect_an_hole_infos type_minds type_map app_kn_map kn_mode_list in
-  let push_hole_infos := collect_coind_push_hole_infos type_minds pi_set in
-  let n_an   := List.length an_hole_infos in
-  let n_push := List.length push_hole_infos in
-  let n_holes := n_an + n_push in
-  (* Step 2: build hole-type terms (An-holes first, then push holes). *)
+  let an_hole_infos      := collect_an_hole_infos type_minds type_map app_kn_map kn_mode_list in
+  let push_hole_infos    := collect_coind_push_hole_infos type_minds pi_set in
+  let pi_push_hole_infos := collect_pi_push_hole_infos type_minds pi_set in
+  let n_an      := List.length an_hole_infos in
+  let n_push    := List.length push_hole_infos in
+  let n_pi_push := List.length pi_push_hole_infos in
+  (* Total binder count; order in hole_types: An, coIndPush, piPushFull.
+     fold_right makes the last list element innermost (tRel 0), so piPushFull holes
+     are innermost, coIndPush holes next, An-holes outermost. *)
+  let n_total := n_an + n_push + n_pi_push in
+  (* Step 2: build hole-type terms (An-holes first, then coIndPush, then piPushFull). *)
   let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
   let an_hole_types :=
     List.map (fun x =>
@@ -5368,43 +5412,74 @@ Polymorphic Definition generate_animated_top_fn_prop
       let '(((old_kn, _), _), _) := x in
       tInd {| inductive_mind := (cur_mp, snd old_kn ++ "coIndPushSymb"); inductive_ind := 0 |} [])
     push_hole_infos in
-  let hole_types := List.app an_hole_types push_hole_types in
-  (* Step 3: fn_tms for An-holes — tApp (tConst unwrap []) [tRel (n_holes-1-i)] at depth 0. *)
+  let pi_push_hole_types :=
+    List.map (fun '(((old_kn, _), _), _) =>
+      tInd {| inductive_mind := (cur_mp, snd old_kn ++ "PushFullSymb"); inductive_ind := 0 |} [])
+    pi_push_hole_infos in
+  let hole_types := List.app an_hole_types (List.app push_hole_types pi_push_hole_types) in
+  (* Step 3: fn_tms for An-holes — depth n_total-1-i (outermost binders). *)
   let an_fn_tms :=
     mapi (fun i x =>
       let '(((_, _), cstr_nm), _) := x in
       let unwrap_c := tConst (cur_mp, cstr_nm ++ "Symb_unwrap") [] in
-      tApp unwrap_c [tRel (n_holes - 1 - i)])
+      tApp unwrap_c [tRel (n_total - 1 - i)])
     an_hole_infos in
-  (* Step 4: push_tms for push holes and the push_hole_map for sub-type lookup. *)
-  let push_tms :=
-    mapi (fun j x =>
-      let '(((old_kn, _), _), _) := x in
-      let unwrap_c := tConst (cur_mp, snd old_kn ++ "coIndPushSymb_unwrap") [] in
-      tApp unwrap_c [tRel (n_holes - 1 - (n_an + j))])
-    push_hole_infos in
+  (* Step 4: coIndPush holes — depth n_pi_push+n_push-1-j.
+     Build the map first; tms are just the values. *)
   let push_hole_map :=
     mapi (fun j x =>
       let '(((old_kn, _), _), _) := x in
       let unwrap_c := tConst (cur_mp, snd old_kn ++ "coIndPushSymb_unwrap") [] in
-      (old_kn, tApp unwrap_c [tRel (n_holes - 1 - (n_an + j))]))
+      (old_kn, tApp unwrap_c [tRel (n_pi_push + n_push - 1 - j)]))
     push_hole_infos in
+  let push_tms := List.map snd push_hole_map in
+  (* Step 4b: piPushFull holes — depth n_pi_push-1-j (innermost binders). *)
+  let pi_push_map :=
+    mapi (fun j '(((old_kn, _), _), _) =>
+      let unwrap_c := tConst (cur_mp, snd old_kn ++ "PushFullSymb_unwrap") [] in
+      (old_kn, tApp unwrap_c [tRel (n_pi_push - 1 - j)]))
+    pi_push_hole_infos in
+  let pi_push_tms := List.map snd pi_push_map in
   (* Step 5: build An-hole props. *)
   let an_props :=
     mapi (fun i x =>
-      let '(((rel_kn, new_ind), _), fnSymb_ty) := x in
+      let '(((rel_ind, new_ind), _), fnSymb_ty) := x in
       let fn_tm := nth i an_fn_tms (tVar "an_fn_not_found") in
-      build_an_hole_prop rel_kn new_ind fn_tm fnSymb_ty)
+      build_an_hole_prop rel_ind new_ind fn_tm fnSymb_ty)
     an_hole_infos in
-  (* pi_push_map: maps each pi_set type kn -> its PushPlain constant.
-     Used to push purely-inductive args in the coIndPush prop equations. *)
-  let pi_push_map :=
-    List.fold_right (fun '((old_kn, _), _) acc =>
-      if existsb (eq_kername old_kn) pi_set
-      then (old_kn, tConst (cur_mp, snd old_kn ++ "PushPlain") []) :: acc
-      else acc)
-    [] type_minds in
-  (* Step 6: build coIndPush props (regular + extra ctors for each push hole). *)
+  (* Map from LiftedCstr ctor name -> original function kername.
+     LiftedCstr ctors are named [snd fn_kn ++ "LiftedCstr"], so stripping that
+     suffix and looking up in fn_infos recovers the original function. *)
+  let lifted_ctor_fn_map :=
+    List.map (fun fi => (snd (fst (fst fi)) ++ "LiftedCstr", fst (fst fi)))
+    fn_infos in
+  (* Build the extra-ctor equation for a single ctor beyond n_old_ctors.
+     - Animation ctor (in an_hole_infos): RHS uses the unwrapped An-hole.
+     - LiftedCstr ctor (in lifted_ctor_fn_map): RHS uses the concrete original function
+       applied to recursively pushed arguments — same builder, different fn_tm.
+     - Unknown extra ctor: skip (should not occur in a well-formed lifting). *)
+  let build_extra_prop (push_tm : term) (old_kn : kername) (new_ind : inductive)
+      (new_kn : kername) (n_bodies : nat) (ctor_idx : nat) (new_ctor : constructor_body)
+      (old_type : term) : list term :=
+    let nm := new_ctor.(cstr_name) in
+    match find_an_fn_tm_opt nm an_hole_infos an_fn_tms with
+    | Some fn_tm =>
+      [build_coIndPush_eq_for_extra_ctor
+         old_kn new_ind new_kn n_bodies ctor_idx new_ctor
+         type_map pi_set push_tm push_hole_map pi_push_map fn_tm eq_ind_tm old_type]
+    | None =>
+      match find (fun e => String.eqb (fst e) nm) lifted_ctor_fn_map with
+      | Some (_, fn_kn) =>
+        let fn_tm := tConst fn_kn [] in
+        [build_coIndPush_eq_for_extra_ctor
+           old_kn new_ind new_kn n_bodies ctor_idx new_ctor
+           type_map pi_set push_tm push_hole_map pi_push_map fn_tm eq_ind_tm old_type]
+      | None => []
+      end
+    end in
+  (* Step 6: build coIndPush props (regular + all extra ctors for each push hole).
+     pi_push_map now carries tRel references to PushFullSymb holes.
+     Animation ctors use An-hole unwrap; LiftedCstr ctors use the concrete function. *)
   let push_props :=
     List.concat (mapi (fun j x =>
       let '(((old_kn, new_ind), old_mind), new_mind) := x in
@@ -5423,19 +5498,48 @@ Polymorphic Definition generate_animated_top_fn_prop
               type_map pi_set push_tm push_hole_map pi_push_map eq_ind_tm old_type)
           (List.firstn n_old_ctors new_oib.(ind_ctors)) in
         let extra_props :=
-          mapi (fun i new_ctor =>
-            let fn_tm :=
-              find_an_fn_tm new_ctor.(cstr_name) an_hole_infos an_fn_tms in
-            build_coIndPush_eq_for_extra_ctor
-              old_kn new_ind new_kn n_bodies (n_old_ctors + i) new_ctor
-              type_map pi_set push_tm push_hole_map pi_push_map fn_tm eq_ind_tm old_type)
-          (List.skipn n_old_ctors new_oib.(ind_ctors)) in
+          List.concat (mapi (fun i new_ctor =>
+            build_extra_prop push_tm old_kn new_ind new_kn n_bodies (n_old_ctors + i)
+              new_ctor old_type)
+          (List.skipn n_old_ctors new_oib.(ind_ctors))) in
         List.app regular_props extra_props
       | _, _ => []
       end)
     push_hole_infos) in
-  (* Step 7: conjoin props and wrap in foralls over all hole types. *)
-  let conjoined := make_conjunction true_sample and_tm (List.app an_props push_props) in
+  (* Step 6b: build piPushFull props — one equation per ctor of each pi_set lifted type.
+     Regular (lifted-old) ctors use recursive PushFullSymb calls.
+     Animation ctors delegate to the corresponding An-hole.
+     LiftedCstr ctors (e.g. substLiftedCstr) use the concrete original function
+     applied to recursively pushed arguments — no hole needed for these. *)
+  let pi_push_props :=
+    List.concat (mapi (fun j x =>
+      let '(((old_kn, new_ind), old_mind), new_mind) := x in
+      let new_kn   := inductive_mind new_ind in
+      let n_bodies := List.length new_mind.(ind_bodies) in
+      let old_type := subst_ind_to_old type_map app_kn_map new_ind in
+      let push_tm  := nth j pi_push_tms (tVar "pi_push_tm_not_found") in
+      match nth_error new_mind.(ind_bodies) (inductive_ind new_ind),
+            nth_error old_mind.(ind_bodies) (inductive_ind new_ind) with
+      | Some new_oib, Some old_oib =>
+        let n_old_ctors := List.length old_oib.(ind_ctors) in
+        let regular_props :=
+          mapi (fun ctor_idx new_ctor =>
+            build_coIndPush_eq_for_ctor
+              old_kn new_ind new_kn n_bodies ctor_idx new_ctor
+              type_map pi_set push_tm push_hole_map pi_push_map eq_ind_tm old_type)
+          (List.firstn n_old_ctors new_oib.(ind_ctors)) in
+        let extra_props :=
+          List.concat (mapi (fun i new_ctor =>
+            build_extra_prop push_tm old_kn new_ind new_kn n_bodies (n_old_ctors + i)
+              new_ctor old_type)
+          (List.skipn n_old_ctors new_oib.(ind_ctors))) in
+        List.app regular_props extra_props
+      | _, _ => []
+      end)
+    pi_push_hole_infos) in
+  (* Step 7: conjoin all props and wrap in foralls over all hole types. *)
+  let conjoined := make_conjunction true_sample and_tm
+    (List.app an_props (List.app push_props pi_push_props)) in
   let prop_tm :=
     List.fold_right (fun ht acc => tProd anon_b ht acc) conjoined hole_types in
   all_ev <- tmEval all prop_tm ;;
@@ -5457,7 +5561,7 @@ Polymorphic Definition animate_coinductive_transparent_sigma
   kn_mode_list <- monad_fold_left (fun acc me =>
     refs <- tmLocate (fst me) ;;
     match find (fun g => match g with IndRef _ => true | _ => false end) refs with
-    | Some (IndRef ind) => tmReturn (List.app acc [(inductive_mind ind, me)])
+    | Some (IndRef ind) => tmReturn (List.app acc [(ind, me)])
     | _ => tmFail ("animate_coinductive_transparent_sigma: cannot find '" ++ fst me ++ "'")
     end)
     modes [] ;;
@@ -5471,8 +5575,8 @@ Polymorphic Definition animate_coinductive_transparent_sigma
     cur_mp <- tmCurrentModPath tt ;;
     let unique_block_kns :=
       fold_left (fun acc p =>
-        if existsb (eq_kername (fst p)) acc then acc
-        else List.app acc [fst p])
+        if existsb (eq_kername (inductive_mind (fst p))) acc then acc
+        else List.app acc [inductive_mind (fst p)])
       kn_mode_list [] in
     let rel_mapping :=
       List.map (fun kn =>
@@ -5552,11 +5656,11 @@ Polymorphic Definition animate_coinductive_transparent_sigma
         extra_fn_pairs_r [] in
       new_fn_pairs_r <- tmEval all new_fn_pairs_r ;;
       extra_fn_infos_r <- monad_map (fun p =>
-        let fn_kn   := fst p in
-        let arg_tps := snd p in
+        let fn_kn := fst p in
+        let n     := List.length (snd p) in
         cb <- tmQuoteConstant fn_kn false ;;
-        let ret_tp := skip_prods (List.length arg_tps) cb.(cst_type) in
-        tmReturn (fn_kn, arg_tps, ret_tp)) new_fn_pairs_r ;;
+        let '(decl_arg_types, ret_tp) := fn_info_from_cst_type n cb.(cst_type) in
+        tmReturn (fn_kn, decl_arg_types, ret_tp)) new_fn_pairs_r ;;
       extra_fn_infos_r <- tmEval all extra_fn_infos_r ;;
       let unique_fn_infos := List.app unique_fn_infos_base extra_fn_infos_r in
       unique_fn_infos <- tmEval all unique_fn_infos ;;
@@ -5566,7 +5670,7 @@ Polymorphic Definition animate_coinductive_transparent_sigma
                  unique_fn_infos in
       _ <- monad_fold_left (fun _ block_kn =>
         let block_modes :=
-          List.map snd (filter (fun p => eq_kername (fst p) block_kn) kn_mode_list) in
+          List.map snd (filter (fun p => eq_kername (inductive_mind (fst p)) block_kn) kn_mode_list) in
         lift_relation block_kn rel_mapping type_mapping app_kn_mapping block_modes fn_kn_map)
         sorted_block_kns tt ;;
       _ <- generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
@@ -5574,9 +5678,11 @@ Polymorphic Definition animate_coinductive_transparent_sigma
       _ <- generate_rest_fns kn_mode_list cur_mp prod_kn ;;
       (* Generate fnSymb wrapper inductives (ctorNameSymb for animation ctor holes). *)
       _ <- generate_fnSymb_wrapper_inductives type_mapping type_mapping app_kn_mapping cur_mp ;;
-      (* Generate coIndPushSymb wrapper inductives (typeNmcoIndPushSymb for push holes). *)
-      _ <- generate_coIndPushSymb_wrapper_inductives type_minds type_mapping app_kn_mapping
-                                                     pi_set cur_mp ;;
+      (* Generate wrapper inductives for push holes: coIndPushSymb (non-pi) and PushFullSymb (pi). *)
+      _ <- generate_pushSymb_wrapper_inductives type_minds type_mapping app_kn_mapping
+                                                pi_set cur_mp "coIndPushSymb" false ;;
+      _ <- generate_pushSymb_wrapper_inductives type_minds type_mapping app_kn_mapping
+                                                pi_set cur_mp "PushFullSymb" true ;;
       (* Transparent sigma push functions (return HoleyResult T with named wrapper holes). *)
       _ <- generate_transparent_sigma_push_fns type_minds type_mapping app_kn_mapping pi_set cur_mp
                       hr_hole_tm hr_pure_tm hr_ap_tm hr_map_tm hr_type_tm ;;
@@ -5619,7 +5725,7 @@ Polymorphic Definition animate_coinductive_transparent_sigma
           in
           _ <- generate_animated_top_fn_prop
                   rel_nm type_minds type_mapping app_kn_mapping pi_set cur_mp
-                  kn_mode_list ;;
+                  kn_mode_list unique_fn_infos ;;
           tmMkDefinition (rel_nm ++ "TransparentSigmaAnimatedTopFn") composite
         | _, _ =>
           tmFail "animate_coinductive_transparent_sigma: cannot locate prod or animation_result (2)"

@@ -170,5 +170,131 @@ MetaRocq Run (animate_coinductive_transparent_sigma <?bigStepTr?>
                [("bigStepTr", ([0],  [1])); ("step", ([0],  [1]))
                 ]
                100).
+               
+Definition omega : tm :=
+  tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+       (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
+Eval cbv -[HoleyResult.hlist_head bigStepTrAn1Symb_unwrap] in bigStepTrTransparentSigmaAnimatedTopFn 25 (Success tm omega).
+Print bigStepTrAnimatedTopFnProp.  
+Print tm'.
+      
 
 End STLCStepTr.
+
+Module ImpSem.
+
+Inductive co_vars : Type :=
+| pure        : (nat -> nat) -> co_vars.
+
+
+Definition set (vs : nat -> nat) (v n : nat) : nat -> nat :=
+  fun v' => if Nat.eqb v v' then n else vs v'.
+
+Inductive exp : Type :=
+| Const : nat -> exp
+| Var   : nat -> exp
+| Plus  : exp -> exp -> exp.
+
+Fixpoint eqFnexp (e1: exp) (e2 : exp) : bool :=
+match e1 with
+| Const n => match e2 with
+             | Const m => Nat.eqb n m
+             | _ => false
+             end
+| Var n =>   match e2 with
+             | Var m => Nat.eqb n m
+             | _ => false
+             end
+| Plus e1' e1'' => match e2 with
+                   | Plus e2' e2'' => andb (eqFnexp e1' e2') (eqFnexp e2' e2'')
+                   | _ => false
+                   end
+end.                                             
+
+Fixpoint evalExp (vs : nat -> nat) (e : exp) : nat :=
+  match e with
+  | Const n     => n
+  | Var v       => vs v
+  | Plus e1 e2  => evalExp vs e1 + evalExp vs e2
+  end.
+
+Inductive cmd : Type :=
+| Assign : nat -> exp -> cmd
+| Seq    : cmd -> cmd -> cmd
+| While  : exp -> cmd -> cmd.
+
+CoInductive evalCmd : co_vars -> cmd -> co_vars -> Prop :=
+| EvalAssign     : forall vs' vs v e,
+    vs' = pure vs
+    -> evalCmd vs' (Assign v e) (pure (set vs v (evalExp vs e)))
+| EvalSeq        : forall vs1 vs2 vs3 c1 c2,
+    evalCmd vs1 c1 vs2 /\ evalCmd vs2 c2 vs3
+    -> evalCmd vs1 (Seq c1 c2) vs3
+| EvalWhileFalse : forall vs' vs e c,
+    vs' = pure vs /\ evalExp vs e = 0
+    -> evalCmd vs' (While e c) vs'
+| EvalWhileTrue  : forall vs1' vs2' vs3' vs1 e c,
+    vs1' = pure vs1 /\ evalExp vs1 e <> 0
+    /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
+    -> evalCmd vs1' (While e c) vs3'.
+    
+MetaRocq Run (animate_coinductive_transparent_sigma <? evalCmd ?>
+  [("evalCmd", ([0;1], [2]))] 500).
+
+Definition prog  := While (Var 4) (Assign 8 (Const 8)).
+Definition initFn := pure (fun m : nat => m + 1).
+Eval cbv -[HoleyResult.hlist_head evalCmdAn2Symb_unwrap] in (evalCmdTransparentSigmaAnimatedTopFn 35 (Success (co_vars * cmd) (initFn, prog))).
+
+
+Definition prog''   :=
+  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
+    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
+Definition initFn'' := pure (fun m : nat => m).
+
+Eval cbv -[HoleyResult.hlist_head evalCmdAn2Symb_unwrap] in (evalCmdTransparentSigmaAnimatedTopFn 35 (Success (co_vars * cmd) (initFn'', prog''))).
+
+End ImpSem.
+
+
+Module integrateStreams.
+(** A stream of naturals, with explicit undefined and nil sentinels. *)
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+
+
+
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
+
+(* ------------------------------------------------------------------ *)
+(** ** Integrate *)
+
+CoInductive Integrate : stream -> stream -> Prop :=
+| integNil : Integrate nil nil
+| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
+
+with addStm : nat -> stream -> stream -> Prop :=
+| addStmNil : forall m, addStm m nil nil
+| plusm : forall m s1 n o s2, addStm m s1 s2 /\ plus m n o -> addStm m (Seq n s1) (Seq (o) s2)
+with plus : nat -> nat -> nat -> Prop :=
+| plus0 : forall m, plus m 0 m
+| plusSucc : forall m n u, plus m n u -> plus m (S n) (S u).
+
+
+MetaRocq Run (animate_coinductive_transparent_sigma <? Integrate ?>
+  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2])); ("plus", ([0;1], [2]))] 100).
+
+(** Integrate [4, 5, 6, …] gives [4, 9, 15, …] (prefix sums). *)
+Eval cbv -[HoleyResult.hlist_head] in (IntegrateTransparentSigmaAnimatedTopFn 10 (Success stream (from 4))).
+Print IntegrateAnimatedTopFnProp.
+Compute (IntegrateTransparentAnimatedTopFn 25 (Success stream (Seq 4 (Seq 3 (Seq 2 nil))))).
+End integrateStreams.  
+
+
+
+
+
+
+
+
