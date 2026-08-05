@@ -22,6 +22,82 @@ Local Open Scope nat_scope.
 Open Scope bs.
 
 (* ------------------------------------------------------------------ *)
+
+Module ImpSem.
+(*
+Inductive co_vars : Type :=
+| pure        : (nat -> nat) -> co_vars.
+*)
+
+Definition set (vs : nat -> nat) (v n : nat) : nat -> nat :=
+  fun v' => if Nat.eqb v v' then n else vs v'.
+
+Inductive exp : Type :=
+| Const : nat -> exp
+| Var   : nat -> exp
+| Plus  : exp -> exp -> exp.
+
+Fixpoint eqFnexp (e1: exp) (e2 : exp) : bool :=
+match e1 with
+| Const n => match e2 with
+             | Const m => Nat.eqb n m
+             | _ => false
+             end
+| Var n =>   match e2 with
+             | Var m => Nat.eqb n m
+             | _ => false
+             end
+| Plus e1' e1'' => match e2 with
+                   | Plus e2' e2'' => andb (eqFnexp e1' e2') (eqFnexp e2' e2'')
+                   | _ => false
+                   end
+end.                                             
+
+Fixpoint evalExp (vs : nat -> nat) (e : exp) : nat :=
+  match e with
+  | Const n     => n
+  | Var v       => vs v
+  | Plus e1 e2  => evalExp vs e1 + evalExp vs e2
+  end.
+
+Inductive cmd : Type :=
+| Assign : nat -> exp -> cmd
+| Seq    : cmd -> cmd -> cmd
+| While  : exp -> cmd -> cmd.
+
+CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
+| EvalAssign     : forall  vs v e,
+     evalCmd vs (Assign v e) ( (set vs v (evalExp vs e)))
+| EvalSeq        : forall vs1 vs2 vs3 c1 c2,
+    evalCmd vs1 c1 vs2 /\ evalCmd vs2 c2 vs3
+    -> evalCmd vs1 (Seq c1 c2) vs3
+| EvalWhileFalse : forall vs e c,
+     evalExp vs e = 0
+    -> evalCmd vs (While e c) vs
+| EvalWhileTrue  : forall vs1' vs2' vs3'  e c,
+     evalExp vs1' e <> 0
+    /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
+    -> evalCmd vs1' (While e c) vs3'.
+    
+MetaRocq Run (animate_coinductive_with_fn_pos <? evalCmd ?>
+  [("evalCmd", ([0;1], [2]))] 500).
+
+Definition prog  := While (Var 4) (Assign 8 (Const 8)).
+Definition initFn : nat -> nat := fun m : nat => m + 1.
+Eval cbv -[HoleyResult.hlist_head evalCmdremoveFnPosAn2Symb_unwrap] in
+  (evalCmdTransparentSigma2AnimatedTopFn 35 (Success ((nat -> nat) * cmd) (initFn, prog))).
+
+
+Definition prog''   :=
+  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
+    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
+Definition initFn'' : nat -> nat := fun m : nat => m.
+
+Eval cbv -[HoleyResult.hlist_head evalCmdremoveFnPosAn2Symb_unwrap] in
+  (evalCmdTransparentSigma2AnimatedTopFn 35 (Success ((nat -> nat) * cmd) (initFn'', prog''))).
+
+End ImpSem.
+
 (** ** Simple coinductive stream zip relation *)
 Module zip.
 
@@ -36,17 +112,17 @@ CoInductive zipSt : stream -> stream -> stream -> Prop :=
     s1 = Seq n s2 /\ s3 = Seq m s4 /\ zipSt s2 s4 s5 /\ s6 = Seq n (Seq m s5)
     -> zipSt s1 s3 s6.
 
-MetaRocq Run (animate_coinductive_transparent_sigma2 <? zipSt ?>
+MetaRocq Run (animate_coinductive_with_fn_pos <? zipSt ?>
   [("zipSt", ([0;1], [2]))] 100).
 
 (* The output should have named wrapper holes (zipStAn..Symb) instead of raw holes. *)
 Eval cbv -[HoleyResult.hlist_head HoleyResult.hlist_tail] in
   (zipStTransparentSigma2AnimatedTopFn 6 (Success (stream * stream) (from 7, from 9))).
   
-
+(*
 
 Print zipStAnimatedTopFnProp.
-
+*)
 End zip.
 
 (* ------------------------------------------------------------------ *)
@@ -182,79 +258,7 @@ Check (tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
 
 End STLCStepTr.
 
-Module ImpSem.
 
-Inductive co_vars : Type :=
-| pure        : (nat -> nat) -> co_vars.
-
-
-Definition set (vs : nat -> nat) (v n : nat) : nat -> nat :=
-  fun v' => if Nat.eqb v v' then n else vs v'.
-
-Inductive exp : Type :=
-| Const : nat -> exp
-| Var   : nat -> exp
-| Plus  : exp -> exp -> exp.
-
-Fixpoint eqFnexp (e1: exp) (e2 : exp) : bool :=
-match e1 with
-| Const n => match e2 with
-             | Const m => Nat.eqb n m
-             | _ => false
-             end
-| Var n =>   match e2 with
-             | Var m => Nat.eqb n m
-             | _ => false
-             end
-| Plus e1' e1'' => match e2 with
-                   | Plus e2' e2'' => andb (eqFnexp e1' e2') (eqFnexp e2' e2'')
-                   | _ => false
-                   end
-end.                                             
-
-Fixpoint evalExp (vs : nat -> nat) (e : exp) : nat :=
-  match e with
-  | Const n     => n
-  | Var v       => vs v
-  | Plus e1 e2  => evalExp vs e1 + evalExp vs e2
-  end.
-
-Inductive cmd : Type :=
-| Assign : nat -> exp -> cmd
-| Seq    : cmd -> cmd -> cmd
-| While  : exp -> cmd -> cmd.
-
-CoInductive evalCmd : co_vars -> cmd -> co_vars -> Prop :=
-| EvalAssign     : forall vs' vs v e,
-    vs' = pure vs
-    -> evalCmd vs' (Assign v e) (pure (set vs v (evalExp vs e)))
-| EvalSeq        : forall vs1 vs2 vs3 c1 c2,
-    evalCmd vs1 c1 vs2 /\ evalCmd vs2 c2 vs3
-    -> evalCmd vs1 (Seq c1 c2) vs3
-| EvalWhileFalse : forall vs' vs e c,
-    vs' = pure vs /\ evalExp vs e = 0
-    -> evalCmd vs' (While e c) vs'
-| EvalWhileTrue  : forall vs1' vs2' vs3' vs1 e c,
-    vs1' = pure vs1 /\ evalExp vs1 e <> 0
-    /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
-    -> evalCmd vs1' (While e c) vs3'.
-    
-MetaRocq Run (animate_coinductive_transparent_sigma2 <? evalCmd ?>
-  [("evalCmd", ([0;1], [2]))] 500).
-
-Definition prog  := While (Var 4) (Assign 8 (Const 8)).
-Definition initFn := pure (fun m : nat => m + 1).
-Eval cbv -[HoleyResult.hlist_head evalCmdAn2Symb_unwrap] in (evalCmdTransparentSigma2AnimatedTopFn 35 (Success (co_vars * cmd) (initFn, prog))).
-
-
-Definition prog''   :=
-  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
-    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
-Definition initFn'' := pure (fun m : nat => m).
-
-Eval cbv -[HoleyResult.hlist_head evalCmdAn2Symb_unwrap] in (evalCmdTransparentSigma2AnimatedTopFn 35 (Success (co_vars * cmd) (initFn'', prog''))).
-
-End ImpSem.
 
 
 Module integrateStreams.
