@@ -116,6 +116,40 @@ Fixpoint.
 
 **Relation extra ctor**: evalCmdremoveFnPos has input types `(nat→nat, cmd)` and output type `nat→nat` at position 2 → add `evalCmdremoveFnPosAn2 : fnType0 → cmd' → fnType0` to fnType0
 
+### Lifted relation
+
+```
+CoInductive evalCmdremoveFnPos' : fnType0 → cmd' → fnType0 → Prop :=
+| EvalAssignremoveFnPos' : ∀ (vs' : fnType0) (v' : nat') (e' : exp'),
+    evalCmdremoveFnPos' vs' (Assign' v' e') (setliftedFunc vs' v' (evalExpliftedFunc vs' e'))
+| EvalSeqremoveFnPos' : ∀ (vs1' vs2' vs3' : fnType0) (c1' c2' : cmd'),
+    evalCmdremoveFnPos' vs1' c1' vs2' ∧ evalCmdremoveFnPos' vs2' c2' vs3'
+    → evalCmdremoveFnPos' vs1' (Seq' c1' c2') vs3'
+| EvalWhileFalseremoveFnPos' : ∀ (vs' : fnType0) (e' : exp') (c' : cmd'),
+    evalExpliftedFunc vs' e' = O'
+    → evalCmdremoveFnPos' vs' (While' e' c') vs'
+| EvalWhileTrueremoveFnPos' : ∀ (vs1' vs2' vs3' : fnType0) (e' : exp') (c' : cmd'),
+    evalExpliftedFunc vs1' e' ≠ O'
+    ∧ evalCmdremoveFnPos' vs1' c' vs2' ∧ evalCmdremoveFnPos' vs2' (While' e' c') vs3'
+    → evalCmdremoveFnPos' vs1' (While' e' c') vs3'
+| evalCmdremoveFnPos'Undef : ∀ (vs' : fnType0) (c' : cmd'),
+    evalCmdremoveFnPos' vs' c' (evalCmdremoveFnPosAn2 vs' c')
+```
+
+**How named functions are substituted** (`sub_ty` in `make_lifted_relation_mind`):
+
+`sub_ty` traverses the entire constructor type — both premise argument types (e.g. equality premises like `evalExp vs e = 0`) and index terms in the return type. The substitution rule is the same everywhere:
+
+- Named function `f` in **application head position** (`tApp (tConst f_kn) args`) → replaced with `fliftedFunc args'`
+- Named function `f` as a **value** (not applied), where `type(f)` is lifted to `fnTypeK` → replaced with `fnTypeKCstr f` (the basic embedding constructor, just wraps the original value)
+- Named function `f` whose type is not in the lifting set → unchanged
+
+`fnTypeKCstr` (e.g. `fnType0Cstr : (nat→nat) → fnType0`) is the plain embedding constructor. It is distinct from `fLiftedCstr` (e.g. `setLiftedCstr`), which encodes a specific function's lifted call pattern and is added by the a2i/a2a/i2a/i2i rules.
+
+In ImpSem, `evalExp` and `set` both appear only in application position, so both become `liftedFunc` versions.
+
+---
+
 ### Lifted types
 
 ```
