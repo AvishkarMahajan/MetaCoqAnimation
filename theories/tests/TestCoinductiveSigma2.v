@@ -160,7 +160,7 @@ MetaRocq Run (animate_coinductive_transparent_sigma2 <?bigStepTr?>
                [("bigStepTr", ([0],  [1])); ("step", ([0],  [1]))
                 ]
                100).
-
+Print bigStepTr'.
 Definition omega : tm :=
   tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
        (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
