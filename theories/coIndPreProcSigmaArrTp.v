@@ -2824,13 +2824,16 @@ Definition lift_arg_class
     in that case the lift function takes [head_kn arg_kns...] as input
     rather than the intermediate specialized type [old_kn]. *)
 Definition make_lift_def
-    (old_kn      : kername)
-    (oib         : one_inductive_body)
-    (new_ind     : inductive)
-    (type_map    : list (kername * inductive))
-    (app_kn_map  : list (kername * list term * inductive))
-    (cur_mp      : modpath)
-    (orig_form   : option (kername * list term))
+    (old_kn        : kername)
+    (oib           : one_inductive_body)
+    (new_ind       : inductive)
+    (type_map      : list (kername * inductive))
+    (app_kn_map    : list (kername * list term * inductive))
+    (cur_mp        : modpath)
+    (orig_form     : option (kername * list term))
+    (fix_size      : nat)
+    (fix_idx       : nat)
+    (kn_to_fix_idx : list (kername * nat))
     : def term :=
   let old_ind  := {| inductive_mind := old_kn; inductive_ind := 0 |} in
   (* Determine the case-expression's inductive, npar, params, and input type. *)
@@ -2865,9 +2868,14 @@ Definition make_lift_def
                        | Some d => d.(decl_type) | None => tVar "?" end in
           match lift_arg_class old_kn n_args snoc_i type_map app_kn_map arg_t with
           | Some None =>
-            tApp (tRel (n_args + 1)) [tRel snoc_i]
+            tApp (tRel (fix_size + n_args - fix_idx)) [tRel snoc_i]
           | Some (Some kn) =>
-            tApp (tConst (cur_mp, snd kn ++ "Lift") []) [tRel snoc_i]
+            let fn_ref :=
+              match find (fun p => eq_kername (fst p) kn) kn_to_fix_idx with
+              | Some (_, k) => tRel (fix_size + n_args - k)
+              | None => tConst (cur_mp, snd kn ++ "Lift") []
+              end in
+            tApp fn_ref [tRel snoc_i]
           | None =>
             tRel snoc_i
           end)
@@ -2917,6 +2925,9 @@ Definition make_lift_def_sigma2
     (orig_form     : option (kername * list term))
     (npi_set       : list kername)
     (lift_cstr_idx : nat)
+    (fix_size      : nat)
+    (fix_idx       : nat)
+    (kn_to_fix_idx : list (kername * nat))
     : def term :=
   let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
   let old_ind  := {| inductive_mind := old_kn; inductive_ind := 0 |} in
@@ -2955,11 +2966,16 @@ Definition make_lift_def_sigma2
                        | Some d => d.(decl_type) | None => tVar "?" end in
           match lift_arg_class old_kn n_args snoc_i all_map app_kn_map arg_t with
           | Some None =>
-            tApp (tRel (n_args + 3)) [tRel n_args; tRel snoc_i]
+            tApp (tRel (fix_size + n_args + 2 - fix_idx)) [tRel n_args; tRel snoc_i]
           | Some (Some kn) =>
+            let fn_ref :=
+              match find (fun p => eq_kername (fst p) kn) kn_to_fix_idx with
+              | Some (_, k) => tRel (fix_size + n_args + 2 - k)
+              | None => tConst (cur_mp, snd kn ++ "Lift") []
+              end in
             if existsb (eq_kername kn) npi_set
-            then tApp (tConst (cur_mp, snd kn ++ "Lift") []) [tRel n_args; tRel snoc_i]
-            else tApp (tConst (cur_mp, snd kn ++ "Lift") []) [tRel snoc_i]
+            then tApp fn_ref [tRel n_args; tRel snoc_i]
+            else tApp fn_ref [tRel snoc_i]
           | None => tRel snoc_i
           end)
         (seq 0 n_args) in
@@ -2987,29 +3003,20 @@ Definition make_lift_def_sigma2
      dbody  := dbody;
      rarg   := 0 |}.
 
-(** Declare a lift function for each type in [type_mapping] (in order, so
-    dependencies come first).  Each [old_nm ++ "Lift"] maps original
-    constructors to the corresponding lifted constructors.
-    CoInductive types get tCoFix; Inductive types get tFix.
-    If [old_kn] is a specialization of a parametric type recorded in
-    [app_kn_map], the lift function takes the original parametric application
-    as input (e.g. [list nat -> listnat']) rather than the intermediate
-    specialized type.
-    When [sigma2 = true] and the original type is CoFinite, generates a
-    depth-parameterised lift using [make_lift_def_sigma2] instead. *)
-Polymorphic Fixpoint generate_lift_fns
-    (todo        : list (kername * inductive))
-    (all_map     : list (kername * inductive))
-    (app_kn_map  : list (kername * list term * inductive))
-    (cur_mp      : modpath)
-    (sigma2      : bool)
-    (npi_set     : list kername)
-    : TemplateMonad unit :=
+(** Build the [def term] entry for one lift function, quoting as needed. *)
+Polymorphic Fixpoint collect_lift_defs
+    (todo          : list (nat * kername * inductive))
+    (all_map       : list (kername * inductive))
+    (app_kn_map    : list (kername * list term * inductive))
+    (cur_mp        : modpath)
+    (sigma2        : bool)
+    (npi_set       : list kername)
+    (fix_size      : nat)
+    (kn_to_fix_idx : list (kername * nat))
+    : TemplateMonad (list (def term)) :=
   match todo with
-  | [] => tmReturn tt
-  | entry :: rest =>
-    let old_kn  := fst entry in
-    let new_ind := snd entry in
+  | [] => tmReturn []
+  | (fix_idx, old_kn, new_ind) :: rest =>
     let orig_form :=
       match find (fun e =>
                     andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
@@ -3019,36 +3026,176 @@ Polymorphic Fixpoint generate_lift_fns
       | None   => None
       end in
     tmBind (tmQuoteInductive old_kn) (fun old_mind =>
-    let is_coind :=
-      match old_mind.(ind_finite) with CoFinite => true | _ => false end in
-    if andb sigma2 is_coind then
-      (* sigma2 non-pi: depth-parameterised tFix; quote new_ind to find LiftCstr index. *)
-      tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
-      tmBind (match nth_error old_mind.(ind_bodies) 0 with
-              | None => tmFail ("generate_lift_fns: no body for " ++ snd old_kn)
-              | Some oib =>
-                let lift_cstr_idx :=
-                  match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
-                  | Some new_oib => List.length new_oib.(ind_ctors) - 1
-                  | None         => 0
-                  end in
-                let d := make_lift_def_sigma2 old_kn oib new_ind all_map app_kn_map
-                                              cur_mp orig_form npi_set lift_cstr_idx in
-                fn_term_ev <- tmEval all (tFix [d] 0) ;;
-                tmMkDefinition (snd old_kn ++ "Lift") fn_term_ev
-              end) (fun _ =>
-      generate_lift_fns rest all_map app_kn_map cur_mp sigma2 npi_set))
-    else
-      tmBind (match nth_error old_mind.(ind_bodies) 0 with
-              | None => tmFail ("generate_lift_fns: no body for " ++ snd old_kn)
-              | Some oib =>
-                let d := make_lift_def old_kn oib new_ind all_map app_kn_map cur_mp orig_form in
-                let fn_term := if is_coind then tCoFix [d] 0 else tFix [d] 0 in
-                fn_term_ev <- tmEval all fn_term ;;
-                tmMkDefinition (snd old_kn ++ "Lift") fn_term_ev
-              end) (fun _ =>
-      generate_lift_fns rest all_map app_kn_map cur_mp sigma2 npi_set))
+    tmBind (
+      match nth_error old_mind.(ind_bodies) 0 with
+      | None => tmFail ("collect_lift_defs: no body for " ++ snd old_kn)
+      | Some oib =>
+        if andb sigma2 (existsb (eq_kername old_kn) npi_set) then
+          tmBind (tmQuoteInductive (inductive_mind new_ind)) (fun new_mind =>
+          let lift_cstr_idx :=
+            match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
+            | Some new_oib => List.length new_oib.(ind_ctors) - 1
+            | None         => 0
+            end in
+          tmReturn (make_lift_def_sigma2 old_kn oib new_ind all_map app_kn_map
+                      cur_mp orig_form npi_set lift_cstr_idx fix_size fix_idx kn_to_fix_idx))
+        else
+          tmReturn (make_lift_def old_kn oib new_ind all_map app_kn_map cur_mp orig_form
+                      fix_size fix_idx kn_to_fix_idx)
+      end) (fun d =>
+    tmBind (collect_lift_defs rest all_map app_kn_map cur_mp sigma2 npi_set fix_size kn_to_fix_idx)
+           (fun rest_defs => tmReturn (d :: rest_defs))))
   end.
+
+(** Declare one lift function per entry as [tFix all_defs fix_idx]. *)
+Polymorphic Fixpoint declare_lift_fns
+    (todo     : list (kername * inductive))
+    (all_defs : list (def term))
+    (fix_idx  : nat)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | (old_kn, _) :: rest =>
+    fn_term_ev <- tmEval all (tFix all_defs fix_idx) ;;
+    tmMkDefinition (snd old_kn ++ "Lift") fn_term_ev ;;
+    declare_lift_fns rest all_defs (S fix_idx)
+  end.
+
+(** Collect the other lifting-set types that appear as constructor-argument
+    types of [old_kn] (looking up via [lift_arg_class]), filtered to those
+    in [pi_kns].  Used to determine singleton-tFix declaration order. *)
+Definition pi_lift_deps
+    (old_kn     : kername)
+    (oib        : one_inductive_body)
+    (all_map    : list (kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
+    (pi_kns     : list kername)
+    : list kername :=
+  dedup_kns (flat_map (fun c =>
+    let n_args := c.(cstr_arity) in
+    flat_map (fun snoc_i =>
+      let arg_t := match nth_error c.(cstr_args) snoc_i with
+                   | Some d => d.(decl_type) | None => tVar "?" end in
+      match lift_arg_class old_kn n_args snoc_i all_map app_kn_map arg_t with
+      | Some (Some kn) =>
+        if andb (negb (eq_kername kn old_kn)) (existsb (eq_kername kn) pi_kns)
+        then [kn] else []
+      | _ => []
+      end)
+    (seq 0 n_args))
+  oib.(ind_ctors)).
+
+(** Topological sort of [(kn, ind)] pairs by their [pi_lift_deps] edges.
+    A type is emitted only after all types it depends on are emitted.
+    Acyclic (pi types have no coinductive transitive deps), so this
+    terminates in at most [|entries|] rounds. *)
+Fixpoint topo_sort_pi
+    (entries : list (kername * inductive * list kername))
+    (sorted  : list (kername * inductive))
+    (fuel    : nat)
+    : list (kername * inductive) :=
+  let strip := fun '(kn, ind, _) => (kn, ind) in
+  match fuel, entries with
+  | 0, _ | _, [] => List.app sorted (List.map strip entries)
+  | S f, _ =>
+    let sorted_kns := List.map fst sorted in
+    let ready := filter (fun '(_, _, deps) =>
+                           forallb (fun d => existsb (eq_kername d) sorted_kns) deps)
+                        entries in
+    let rest  := filter (fun '(_, _, deps) =>
+                           negb (forallb (fun d => existsb (eq_kername d) sorted_kns) deps))
+                        entries in
+    match ready with
+    | [] => List.app sorted (List.map strip entries)
+    | _  => topo_sort_pi rest (List.app sorted (List.map strip ready)) f
+    end
+  end.
+
+(** Declare lift functions for pi-sigma2 and arrow types.
+    Each is emitted as a standalone singleton [tFix [d] 0] (not mutual).
+    Cross-type references use [tConst], so Rocq's guard checker treats each
+    function independently and can verify structural termination on its own
+    argument.  [todo] must already be in constructor-field dependency order
+    (earlier entries referenced by later ones). *)
+Polymorphic Fixpoint declare_pi_lift_fns
+    (todo       : list (kername * inductive))
+    (all_map    : list (kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
+    (cur_mp     : modpath)
+    : TemplateMonad unit :=
+  match todo with
+  | [] => tmReturn tt
+  | (old_kn, new_ind) :: rest =>
+    let orig_form :=
+      match find (fun e =>
+                    andb (eq_kername (inductive_mind (snd e)) (inductive_mind new_ind))
+                         (Nat.eqb (inductive_ind (snd e)) (inductive_ind new_ind)))
+                 app_kn_map with
+      | Some e => Some (fst (fst e), snd (fst e))
+      | None   => None
+      end in
+    old_mind <- tmQuoteInductive old_kn ;;
+    match nth_error old_mind.(ind_bodies) 0 with
+    | None => declare_pi_lift_fns rest all_map app_kn_map cur_mp
+    | Some oib =>
+      let d := make_lift_def old_kn oib new_ind all_map app_kn_map cur_mp
+                             orig_form 1 0 [] in
+      d_ev    <- tmEval all d ;;
+      fn_term <- tmEval all (tFix [d_ev] 0) ;;
+      tmMkDefinition (snd old_kn ++ "Lift") fn_term ;;
+      declare_pi_lift_fns rest all_map app_kn_map cur_mp
+    end
+  end.
+
+(** Declare lift functions for all types in [todo].
+    - Npi sigma2 types ([kn ∈ npi_set]): one mutual [tFix] block where every
+      body decreases on [nat] (the depth parameter).  Cross-references between
+      npi bodies use [tRel]; cross-references to pi types use [tConst].
+    - Pi sigma2 and arrow types: individual singleton [tFix [d] 0] bodies,
+      declared in constructor-field dependency order so that each [tConst]
+      cross-reference is already in the environment. *)
+Polymorphic Definition generate_lift_fns
+    (todo       : list (kername * inductive))
+    (all_map    : list (kername * inductive))
+    (app_kn_map : list (kername * list term * inductive))
+    (cur_mp     : modpath)
+    (sigma2     : bool)
+    (npi_set    : list kername)
+    : TemplateMonad unit :=
+  let is_npi kn := andb sigma2 (existsb (eq_kername kn) npi_set) in
+  let npi_todo  := filter (fun '(kn, _) => is_npi kn) todo in
+  let pi_todo   := filter (fun '(kn, _) => negb (is_npi kn)) todo in
+  (* Phase A: npi sigma2 types — mutual tFix, all bodies decrease on nat *)
+  (* Phase B: pi sigma2 and arrow types — singleton tFix each, dependency order.
+     Pi types are declared BEFORE the npi block because npi lift-function bodies
+     may reference pi lift functions via tConst (e.g. coLstLift references tmLift
+     when coSeq has a tm arg).  Pi types never reference npi types in their own
+     constructor args (compute_npi_step would have marked them npi if they did),
+     so declaring pi first is always safe. *)
+  let pi_kns := List.map fst pi_todo in
+  pi_entries <- monad_map (fun '(old_kn, new_ind) =>
+    old_mind <- tmQuoteInductive old_kn ;;
+    let deps := match nth_error old_mind.(ind_bodies) 0 with
+                | Some oib => pi_lift_deps old_kn oib all_map app_kn_map pi_kns
+                | None     => ([] : list kername)
+                end in
+    tmReturn (old_kn, new_ind, deps)) pi_todo ;;
+  pi_entries <- tmEval all pi_entries ;;
+  let sorted_pi := topo_sort_pi pi_entries ([] : list (kername * inductive))
+                                (S (List.length pi_todo)) in
+  declare_pi_lift_fns sorted_pi all_map app_kn_map cur_mp ;;
+  (* Phase A: npi sigma2 types — mutual tFix, all bodies decrease on nat.
+     Declared after pi so that tConst cross-refs to pi lift fns resolve. *)
+  let npi_n := List.length npi_todo in
+  let npi_kn_to_fix_idx :=
+    snd (fold_left (fun '(i, acc) (entry : kername * inductive) =>
+                     (S i, List.app acc [(fst entry, i)]))
+                   npi_todo (0, ([] : list (kername * nat)))) in
+  let npi_indexed := mapi (fun i '(kn, ind) => (i, kn, ind)) npi_todo in
+  npi_defs <- collect_lift_defs npi_indexed all_map app_kn_map cur_mp sigma2 npi_set
+                npi_n npi_kn_to_fix_idx ;;
+  npi_defs <- tmEval all npi_defs ;;
+  declare_lift_fns npi_todo npi_defs 0.
 
 (* ------------------------------------------------------------------ *)
 (** ** fnSymb parameter generation                                   *)
@@ -8800,273 +8947,10 @@ Polymorphic Definition preprocess_all_lifting_types
         (plain_get_lifted_kns idx_ctx n_idx op))
       out_pos)
     modes_with_idx in
-  let spec_dep_edges :=
-    flat_map (fun outer_entry =>
-      let outer_spec_kn := snd outer_entry in
-      flat_map (fun arg_t =>
-        match arg_t with
-        | tApp (tInd head_ind _) inner_args =>
-          let head_kn2 := inductive_mind head_ind in
-          match find (fun inner_entry =>
-            andb (eq_kername (fst (fst inner_entry)) head_kn2)
-                 (andb (Nat.eqb #|snd (fst inner_entry)| #|inner_args|)
-                       (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
-                                (combine (snd (fst inner_entry)) inner_args))))
-            spec_kn_pairs with
-          | Some inner_entry =>
-            let inner_spec_kn := snd inner_entry in
-            if eq_kername outer_spec_kn inner_spec_kn then []
-            else [(outer_spec_kn, inner_spec_kn)]
-          | None => []
-          end
-        | _ => []
-        end)
-      (snd (fst outer_entry)))
-    spec_kn_pairs in
-  (* ── G: mode-derived cross-type dep edges ───────────────────────────── *)
-  (* Ar→B: arrow type at output position depends on sigma2 type at input. *)
-  let mode_a2i_pkn :=
-    flat_map (fun mwi =>
-      let in_pos  := fst (snd (fst mwi)) in
-      let out_pos := snd (snd (fst mwi)) in
-      let idx_ctx := snd mwi in
-      let n_idx   := #|idx_ctx| in
-      flat_map (fun op =>
-        let snoc_op := n_idx - 1 - op in
-        match nth_error idx_ctx snoc_op with
-        | None => []
-        | Some d =>
-          match find (fun p => rfp_eqb_term (fst p) d.(decl_type)) arr_name_pairs with
-          | None => []
-          | Some (_, arr_nm) =>
-            let arr_pkn := (cur_mp, arr_nm) in
-            flat_map (fun ip =>
-              List.map (fun kn => (arr_pkn, kn))
-                       (plain_get_lifted_kns idx_ctx n_idx ip))
-            in_pos
-          end
-        end)
-      out_pos)
-    modes_with_idx in
-  (* B→Ar: sigma2 output position depends on arrow-type input.
-     Used in topo-sort so that arrow pseudo-kns are declared BEFORE any
-     sigma2 type that references them via the relation-extra-ctor rule.
-     Also handles specialised parametric output types (e.g. [list sinstr]
-     → [listsinstr_kn]) by consulting [spec_kn_pairs]. *)
-  let get_sigma2_kn_at_pos idx_ctx n_idx pos :=
-    let snoc_p := n_idx - 1 - pos in
-    match nth_error idx_ctx snoc_p with
-    | None => []
-    | Some d =>
-      match d.(decl_type) with
-      | tInd ind _ =>
-        let kn := inductive_mind ind in
-        if existsb (fun p => eq_kername (fst p) kn) pre_mapping
-        then [kn] else []
-      | tApp (tInd head_ind _) args =>
-        let head_kn := inductive_mind head_ind in
-        match find (fun e =>
-          andb (eq_kername (fst (fst e)) head_kn)
-               (andb (Nat.eqb #|snd (fst e)| #|args|)
-                     (forallb (fun ab => eqb_ind_type (fst ab) (snd ab))
-                              (combine (snd (fst e)) args))))
-          spec_kn_pairs with
-        | Some entry =>
-          let spec_kn := snd entry in
-          if existsb (fun p => eq_kername (fst p) spec_kn) pre_mapping
-          then [spec_kn] else []
-        | None => []
-        end
-      | _ => []
-      end
-    end in
-  let mode_i2a_pkn :=
-    flat_map (fun mwi =>
-      let in_pos  := fst (snd (fst mwi)) in
-      let out_pos := snd (snd (fst mwi)) in
-      let idx_ctx := snd mwi in
-      let n_idx   := #|idx_ctx| in
-      flat_map (fun op =>
-        flat_map (fun out_kn =>
-          flat_map (fun ip =>
-            let snoc_ip := n_idx - 1 - ip in
-            match nth_error idx_ctx snoc_ip with
-            | None => []
-            | Some d =>
-              flat_map (fun p => [(out_kn, (cur_mp, snd p))])
-              (filter (fun p => rfp_eqb_term (fst p) d.(decl_type)) arr_name_pairs)
-            end)
-          in_pos)
-        (get_sigma2_kn_at_pos idx_ctx n_idx op))
-      out_pos)
-    modes_with_idx in
-  (* Arrow→arrow edges from fn_app_infos and mode positions. *)
-  let arr_arr_fn :=
-    flat_map (fun fi =>
-      let arg_tps := snd (fst fi) in
-      let ret_tp  := snd fi in
-      match term_to_pkn ret_tp with
-      | None => []
-      | Some arr1_pkn =>
-        flat_map (fun arg_tp =>
-          match term_to_pkn arg_tp with
-          | Some arr2_pkn =>
-            if eq_kername arr1_pkn arr2_pkn then [] else [(arr1_pkn, arr2_pkn)]
-          | None => []
-          end) arg_tps
-      end) fn_app_infos
-  in
-  let arr_arr_mode :=
-    flat_map (fun mwi =>
-      let in_pos  := fst (snd (fst mwi)) in
-      let out_pos := snd (snd (fst mwi)) in
-      let idx_ctx := snd mwi in
-      let n_idx   := #|idx_ctx| in
-      flat_map (fun op =>
-        let snoc_op := n_idx - 1 - op in
-        match nth_error idx_ctx snoc_op with
-        | None => []
-        | Some d =>
-          match term_to_pkn d.(decl_type) with
-          | None => []
-          | Some arr1_pkn =>
-            flat_map (fun ip =>
-              let snoc_ip := n_idx - 1 - ip in
-              match nth_error idx_ctx snoc_ip with
-              | None => []
-              | Some d2 =>
-                match term_to_pkn d2.(decl_type) with
-                | Some arr2_pkn =>
-                  if eq_kername arr1_pkn arr2_pkn then []
-                  else [(arr1_pkn, arr2_pkn)]
-                | None => []
-                end
-              end) in_pos
-          end
-        end)
-      out_pos)
-    modes_with_idx in
-  let arr_arr_pkn := List.app arr_arr_fn arr_arr_mode in
   (* ── H: quote sigma2 type bodies ────────────────────────────────────── *)
   type_minds <- monad_map (fun kn =>
     mind <- tmQuoteInductive kn ;; tmReturn (kn, mind)) type_kns ;;
   type_minds <- tmEval all type_minds ;;
-  (* Structural sigma→arrow edges: B has constructor with arrow-typed field.
-     These ARE included in the topo-sort (hard structural dep). *)
-  let sigma_arr_structural :=
-    flat_map (fun tm_entry =>
-      let kn   := fst tm_entry in
-      let mind := snd tm_entry in
-      flat_map (fun oib =>
-        flat_map (fun c =>
-          flat_map (fun d =>
-            flat_map (fun p => [(kn, (cur_mp, snd p))])
-            (filter (fun p => rfp_eqb_term (fst p) d.(decl_type)) arr_name_pairs))
-          c.(cstr_args))
-        oib.(ind_ctors))
-      mind.(ind_bodies))
-    type_minds in
-  (* Structural sigma→sigma edges: B has a constructor field of type C where
-     both B and C are in the lifting set.  E.g. cmd has Assign : nat -> exp -> cmd,
-     so (cmd, nat) and (cmd, exp) are structural deps.  These ensure that when
-     a2i_edges pull nat (or exp) into type_kns, they are topo-sorted BEFORE cmd
-     so that natPushPlain is declared before cmdPushPlain references it. *)
-  let sigma_sigma_structural :=
-    flat_map (fun tm_entry =>
-      let kn   := fst tm_entry in
-      let mind := snd tm_entry in
-      flat_map (fun oib =>
-        flat_map (fun c =>
-          flat_map (fun d =>
-            match d.(decl_type) with
-            | tInd ind _ =>
-              let field_kn := inductive_mind ind in
-              if andb (negb (eq_kername field_kn kn))
-                      (existsb (eq_kername field_kn) type_kns)
-              then [(kn, field_kn)]
-              else []
-            | _ => []
-            end)
-          c.(cstr_args))
-        oib.(ind_ctors))
-      mind.(ind_bodies))
-    type_minds in
-  (* fn_app_infos-based cross-type topo edges: for each function, the lifted
-     return type must be declared after each of its lifted argument types. *)
-  let fn_i2a_pkn :=   (* sigma2 ret, arrow arg → sigma2 after arrow *)
-    flat_map (fun fi =>
-      let arg_tps := snd (fst fi) in
-      let ret_tp  := snd fi in
-      match term_to_sigma2_kn ret_tp with
-      | None => []
-      | Some ret_kn =>
-        flat_map (fun arg_tp =>
-          match term_to_pkn arg_tp with
-          | Some arr_pkn => [(ret_kn, arr_pkn)]
-          | None => []
-          end) arg_tps
-      end) fn_app_infos in
-  let fn_i2i_pkn :=   (* sigma2 ret, sigma2 arg → sigma2_ret after sigma2_arg *)
-    flat_map (fun fi =>
-      let arg_tps := snd (fst fi) in
-      let ret_tp  := snd fi in
-      match term_to_sigma2_kn ret_tp with
-      | None => []
-      | Some ret_kn =>
-        flat_map (fun arg_tp =>
-          match term_to_sigma2_kn arg_tp with
-          | Some arg_kn =>
-            if eq_kername ret_kn arg_kn then [] else [(ret_kn, arg_kn)]
-          | None => []
-          end) arg_tps
-      end) fn_app_infos in
-  let fn_a2i_pkn :=   (* arrow ret, sigma2 arg → arrow after sigma2 *)
-    flat_map (fun fi =>
-      let arg_tps := snd (fst fi) in
-      let ret_tp  := snd fi in
-      match term_to_pkn ret_tp with
-      | None => []
-      | Some arr_ret_pkn =>
-        flat_map (fun arg_tp =>
-          match term_to_sigma2_kn arg_tp with
-          | Some arg_kn => [(arr_ret_pkn, arg_kn)]
-          | None => []
-          end) arg_tps
-      end) fn_app_infos in
-  (* ── I: combined topo-sort ──────────────────────────────────────────── *)
-  (* Topo edges (X,Y) mean X depends on Y → Y declared first.
-     - spec_dep_edges:        parametric sigma2→sigma2 spec deps
-     - sigma_sigma_structural: structural sigma2→sigma2 field deps
-     - fn_i2i_pkn:            sigma2_ret → sigma2_arg (fn_app_infos: arg is sigma2, ret is sigma2)
-     - mode_a2i_pkn:          arrow_out → sigma2_in (arrow at mode-output, sigma2 at mode-input)
-     - arr_arr_pkn:           arrow → arrow (fn_app_infos + mode positions)
-     - sigma_arr_structural:  sigma2 → arrow (structural field dep)
-     - mode_i2a_pkn:          sigma2_out → arrow_in (sigma2 at mode-output, arrow at mode-input)
-     - fn_i2a_pkn:            sigma2_ret → arrow_arg (fn_app_infos: arg is arrow, ret is sigma2)
-     - fn_a2i_pkn:            arrow_ret → sigma2_arg (fn_app_infos: arg is sigma2, ret is arrow)
-     Note: the old a2i_pkn (arrow_arg → sigma2_ret, wrong direction for lifted_ctors) is
-     excluded. fn_i2a_pkn covers its correct counterpart.
-     If mode_i2a_pkn and mode_a2i_pkn create a bidirectional cycle (relation
-     with both arrow output and sigma2 output), topo_sort_kns handles it
-     gracefully by appending the cycle nodes as-is.
-     mode_dep_pairs excluded: it creates false sigma2→sigma2 cycle edges
-     when the output sigma2 type is structurally LESS dependent than the
-     input sigma2 type (e.g. nat at output, cmd at input → (nat,cmd) cycle
-     with sigma_sigma_structural's (cmd,nat)).  Structural ordering is
-     already handled by sigma_sigma_structural. *)
-  let all_topo_edges :=
-    List.app spec_dep_edges
-    (List.app sigma_sigma_structural
-    (List.app fn_i2i_pkn
-    (List.app mode_a2i_pkn
-    (List.app arr_arr_pkn
-    (List.app sigma_arr_structural
-    (List.app mode_i2a_pkn
-    (List.app fn_i2a_pkn fn_a2i_pkn))))))) in
-  let combined_kns := List.app type_kns arr_pseudo_kns in
-  let combined_sorted :=
-    topo_sort_kns combined_kns type_minds pre_mapping
-                  all_topo_edges [] (S #|combined_kns|) in
   (* ── J and K: dead code — SCC detection is no longer needed now that L
      declares all lifted types in a single combined block. Kept for reference.
 
@@ -9140,10 +9024,8 @@ Polymorphic Definition preprocess_all_lifting_types
   (* ── L: declare all lifted types in one combined mutual block ─────────── *)
   (* All sigma2 and arrow types are placed in a single tmMkInductive call,
      eliminating any ordering dependency between them. *)
-  let all_sigma2_sorted :=
-    filter (fun kn => existsb (eq_kername kn) type_kns) combined_sorted in
-  let all_arrow_sorted :=
-    filter (fun kn => existsb (eq_kername kn) arr_pseudo_kns) combined_sorted in
+  let all_sigma2_sorted := type_kns in
+  let all_arrow_sorted := arr_pseudo_kns in
   let n_sigma2       := #|all_sigma2_sorted| in
   let n_arrow        := #|all_arrow_sorted| in
   let block_n_bodies := n_sigma2 + n_arrow in
@@ -9304,6 +9186,64 @@ Polymorphic Definition preprocess_all_lifting_types
             modes_with_idx, fn_app_infos).
 Set Universe Checking.
 
+(* ------------------------------------------------------------------ *)
+(** ** Combined preprocessing + lift-function generation              *)
+(* ------------------------------------------------------------------ *)
+
+(** Run [preprocess_all_lifting_types] and then [generate_lift_fns] in one
+    call.  This is the entry point for testing: after it returns, the
+    environment contains all lifted inductives (declared by
+    [preprocess_all_lifting_types]) and a [<typeName>Lift] function for every
+    sigma2 type in the lifting set (declared by [generate_lift_fns]).
+
+    Parameters:
+    - [modes]: mode map, same format as [preprocess_all_lifting_types]
+    - [fuel]:  passed directly to [preprocess_all_lifting_types] for BFS
+               expansion, and also used as the iteration bound for
+               [compute_npi_fix] *)
+Unset Universe Checking.
+
+(** Declare [<name>Lift : arr_t -> <name>] for each arrow type.
+    The body is [fun f => <name>LiftCstr f] — a plain lambda (no fixpoint).
+    We use [tmLocate] on [<name>LiftCstr] to get the correct [inductive] and
+    constructor index, because the arrow inductive is part of the combined
+    sigma2+arrow mutual block — its kname is NOT [(cur_mp, name)]. *)
+Polymorphic Fixpoint generate_arrow_lift_fns
+    (arr_pairs : list (term * string))
+    (cur_mp    : modpath)
+    : TemplateMonad unit :=
+  match arr_pairs with
+  | [] => tmReturn tt
+  | (arr_t, name) :: rest =>
+    let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+    refs <- tmLocate (name ++ "LiftCstr") ;;
+    match refs with
+    | ConstructRef fn_ind cstr_idx :: _ =>
+      let lift_body := tLambda anon_b arr_t
+                        (tApp (tConstruct fn_ind cstr_idx []) [tRel 0]) in
+      lift_ev <- tmEval all lift_body ;;
+      tmMkDefinition (name ++ "Lift") lift_ev ;;
+      generate_arrow_lift_fns rest cur_mp
+    | _ =>
+      tmMsg ("generate_arrow_lift_fns: constructor " ++ name ++ "LiftCstr not found") ;;
+      generate_arrow_lift_fns rest cur_mp
+    end
+  end.
+
+Polymorphic Definition preprocess_and_generate_lifts
+    (modes : mode_map)
+    (fuel  : nat)
+    : TemplateMonad unit :=
+  cur_mp  <- tmCurrentModPath tt ;;
+  preproc <- preprocess_all_lifting_types modes fuel ;;
+  let '(((((type_mapping, app_kn_mapping), arr_name_pairs),
+           _lat_ind_mapping), _modes_with_idx), _fn_app_infos) := preproc in
+  npi_set <- compute_npi_fix type_mapping ([] : list kername) (List.length type_mapping + 1) ;;
+  npi_set <- tmEval all npi_set ;;
+  generate_lift_fns type_mapping type_mapping app_kn_mapping cur_mp true npi_set ;;
+  generate_arrow_lift_fns arr_name_pairs cur_mp.
+Set Universe Checking.
+
 
 Module ImpSem.
 
@@ -9341,9 +9281,12 @@ CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
     /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
     -> evalCmd vs1' (While e c) vs3'.
 
-MetaRocq Run (preprocess_all_lifting_types
+MetaRocq Run (preprocess_and_generate_lifts
   [("evalCmd", ([0;1], [2]))] 500).
-Print nat'.  
+
+ 
+Print fnType0Lift.
+Print cmdLift.  
 End ImpSem.  
   
 Module StackStep.
@@ -9380,10 +9323,14 @@ Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr
 | SS_Mult  : forall st stk n m p,
     stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
     
-MetaRocq Run (preprocess_all_lifting_types
+MetaRocq Run (preprocess_and_generate_lifts
   [("stack_step", ([0;1;2], [3;4]))] 500 ).
+  
+Print listsinstrLift.
+Print sinstrLift.
+Print fnType0Lift.  
 
-Print fnType0.
+
   
 End StackStep.
 
@@ -9457,10 +9404,10 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 | bigStep : forall t tr_lst t',
     step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst).
   
-MetaRocq Run (preprocess_all_lifting_types
+MetaRocq Run (preprocess_and_generate_lifts
   [("bigStepTr", ([0], [1]));("step", ([0], [1]))] 500). 
-Print tm'.
-Print coLst'.   
+Print tmLift.
+Print coLstLift.   
   
 End bigStepTr.
 
