@@ -5609,6 +5609,12 @@ Definition make_transparent_sigma_push_body_def
     (is_sigma2       : bool)
     (fn_name_kn_map  : list (string * kername))
     (arr_name_pairs  : list (term * string))
+    (* mutual-fix support: n_mutual=1 / self_fix_idx=0 / mutual_siblings=[] for standalone *)
+    (n_mutual        : nat)
+    (self_fix_idx    : nat)
+    (mutual_siblings : list (kername * nat))
+    (* arr_block_map: block-index -> arrow-type-name, for combined sigma2+arrow blocks *)
+    (arr_block_map   : list (nat * string))
     : def term :=
   (* sigma2: all lifted types are inductive, structural recursion on s for all types. *)
   let is_purely_ind := orb is_purely_ind is_sigma2 in
@@ -5648,10 +5654,17 @@ Definition make_transparent_sigma_push_body_def
   (* All hole refs [h_0; ...; h_{n-1}] inside S-branch ctor body. *)
   let all_s_hole_refs := fun (n_args : nat) =>
     List.map (fun k => s_hole_ref n_args k) (seq 0 n_holes) in
-  (* Fix self-ref inside S-branch ctor body. *)
+  (* Fix self-ref inside S-branch ctor body.
+     For a mutual fix of size n_mutual with this body at self_fix_idx:
+       pi  branch (depth = n_holes+1+n_args): self = tRel(n_args+n_holes+n_mutual-self_fix_idx)
+       npi branch (depth = n_holes+3+n_args): self = tRel(n_args+n_holes+n_mutual+2-self_fix_idx)
+     Sibling at sib_idx: replace self_fix_idx with sib_idx in the formula. *)
   let s_fix_ref := fun (n_args : nat) =>
-    if is_purely_ind then tRel (n_args + n_holes + 1)
-    else tRel (n_args + n_holes + 3) in
+    if is_purely_ind then tRel (n_args + n_holes + n_mutual - self_fix_idx)
+    else tRel (n_args + n_holes + n_mutual + 2 - self_fix_idx) in
+  let sib_fix_ref := fun (n_args sib_idx : nat) =>
+    if is_purely_ind then tRel (n_args + n_holes + n_mutual - sib_idx)
+    else tRel (n_args + n_holes + n_mutual + 2 - sib_idx) in
   (* Hole refs for kn's unique holes remapped to current type's positions. *)
   let kn_hole_refs_in_s := fun (n_args : nat) (kn : kername) =>
     let kn_hs := match find (fun e => eq_kername (fst e) kn) pi_set_holes with
@@ -5680,7 +5693,11 @@ Definition make_transparent_sigma_push_body_def
                              [tRel snoc_i]) in
                 tApp (s_fix_ref n_args) call_args
               | Some (Some kn) =>
-                let body_c := tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") [] in
+                let body_c :=
+                  match find (fun '(kn', _) => eq_kername kn kn') mutual_siblings with
+                  | Some (_, sib_idx) => sib_fix_ref n_args sib_idx
+                  | None => tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") []
+                  end in
                 let kn_h_list : list term := kn_hole_refs_in_s n_args kn in
                 let call_args :=
                   List.app kn_h_list
@@ -5695,10 +5712,33 @@ Definition make_transparent_sigma_push_body_def
                   | Some (_, arr_nm) =>
                     let arr_kn := (cur_mp, arr_nm) in
                     let kn_h_refs : list term := kn_hole_refs_in_s n_args arr_kn in
-                    tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
-                         (List.app kn_h_refs [tRel snoc_i])
+                    match find (fun '(kn', _) => eq_kername arr_kn kn') mutual_siblings with
+                    | Some (_, sib_idx) =>
+                      tApp (sib_fix_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+                    | None =>
+                      tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
+                           (List.app kn_h_refs [tRel snoc_i])
+                    end
                   | None => tRel snoc_i
                   end
+                | tRel n =>
+                  let depth := n_args - 1 - snoc_i in
+                  if andb (Nat.leb depth n) (Nat.ltb (n - depth) n_block) then
+                    let j := n_block - 1 - (n - depth) in
+                    match find (fun '(blk_idx, _) => Nat.eqb blk_idx j) arr_block_map with
+                    | Some (_, arr_nm) =>
+                      let arr_kn := (cur_mp, arr_nm) in
+                      let kn_h_refs := kn_hole_refs_in_s n_args arr_kn in
+                      match find (fun '(kn', _) => eq_kername arr_kn kn') mutual_siblings with
+                      | Some (_, sib_idx) =>
+                        tApp (sib_fix_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+                      | None =>
+                        tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
+                             (List.app kn_h_refs [tRel snoc_i])
+                      end
+                    | None => tRel snoc_i
+                    end
+                  else tRel snoc_i
                 | _ => tRel snoc_i
                 end
               end)
@@ -5735,26 +5775,58 @@ Definition make_transparent_sigma_push_body_def
                      [s_hole_ref n_args coind_idx; tRel snoc_i]
             | Some (Some kn) =>
               let kn_h_refs : list term := kn_hole_refs_in_s n_args kn in
-              if existsb (eq_kername kn) pi_set then
-                tApp (tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") [])
-                     (List.app kn_h_refs [tRel snoc_i])
-              else
-                let kn_coind_kn  := (cur_mp, snd kn ++ "coIndPushSymb") in
-                let kn_coind_idx := find_hole_idx_by_kn kn_coind_kn unique_ht_terms in
-                tApp (tConst (cur_mp, snd kn ++ "coIndPushSymb_unwrap") [])
-                     [s_hole_ref n_args kn_coind_idx; tRel snoc_i]
+              (* Check mutual siblings first: covers arrow-type siblings not in pi_set. *)
+              match find (fun '(kn', _) => eq_kername kn kn') mutual_siblings with
+              | Some (_, sib_idx) =>
+                tApp (sib_fix_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+              | None =>
+                if existsb (eq_kername kn) pi_set then
+                  tApp (tConst (cur_mp, snd kn ++ "TransparentSigmaPushBody") [])
+                       (List.app kn_h_refs [tRel snoc_i])
+                else
+                  let kn_coind_kn  := (cur_mp, snd kn ++ "coIndPushSymb") in
+                  let kn_coind_idx := find_hole_idx_by_kn kn_coind_kn unique_ht_terms in
+                  tApp (tConst (cur_mp, snd kn ++ "coIndPushSymb_unwrap") [])
+                       [s_hole_ref n_args kn_coind_idx; tRel snoc_i]
+              end
             | None =>
+              (* push_arg_class returned None: arg is an external/block arrow type.
+                 Route through the appropriate TransparentSigmaPushBody, using a
+                 sibling tRel when the arrow type is in the same mutual fix group. *)
               match arg_t with
               | tInd ind _ =>
                 let arg_kn := inductive_mind ind in
                 match find (fun e => eq_kername (cur_mp, snd e) arg_kn) arr_name_pairs with
                 | Some (_, arr_nm) =>
-                  let arr_kn := (cur_mp, arr_nm) in
-                  let kn_h_refs : list term := kn_hole_refs_in_s n_args arr_kn in
-                  tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
-                       (List.app kn_h_refs [tRel snoc_i])
+                  let arr_kn    := (cur_mp, arr_nm) in
+                  let kn_h_refs := kn_hole_refs_in_s n_args arr_kn in
+                  match find (fun '(kn', _) => eq_kername arr_kn kn') mutual_siblings with
+                  | Some (_, sib_idx) =>
+                    tApp (sib_fix_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+                  | None =>
+                    tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
+                         (List.app kn_h_refs [tRel snoc_i])
+                  end
                 | None => tRel snoc_i
                 end
+              | tRel n =>
+                let depth := n_args - 1 - snoc_i in
+                if andb (Nat.leb depth n) (Nat.ltb (n - depth) n_block) then
+                  let j := n_block - 1 - (n - depth) in
+                  match find (fun '(blk_idx, _) => Nat.eqb blk_idx j) arr_block_map with
+                  | Some (_, arr_nm) =>
+                    let arr_kn := (cur_mp, arr_nm) in
+                    let kn_h_refs := kn_hole_refs_in_s n_args arr_kn in
+                    match find (fun '(kn', _) => eq_kername arr_kn kn') mutual_siblings with
+                    | Some (_, sib_idx) =>
+                      tApp (sib_fix_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+                    | None =>
+                      tApp (tConst (cur_mp, arr_nm ++ "TransparentSigmaPushBody") [])
+                           (List.app kn_h_refs [tRel snoc_i])
+                    end
+                  | None => tRel snoc_i
+                  end
+                else tRel snoc_i
               | _ => tRel snoc_i
               end
             end in
@@ -5912,7 +5984,8 @@ Polymorphic Fixpoint generate_transparent_sigma_push_fns
               let d_body := make_transparent_sigma_push_body_def
                               old_kn new_ind n_block new_oib n_old_ctors
                               all_map app_kn_map pi_set is_purely_ind cur_mp
-                              unique_ht_terms pi_set_holes is_sigma2 fn_name_kn_map [] in
+                              unique_ht_terms pi_set_holes is_sigma2 fn_name_kn_map []
+                              1 0 [] [] in
               body_ev <- tmEval all (tFix [d_body] 0) ;;
               _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPushBody") body_ev ;;
               wrapper_ev <- tmEval all (make_transparent_sigma_push_wrapper_term
@@ -9684,6 +9757,7 @@ Definition compute_transp_push_deps
     (new_oib       : one_inductive_body)
     (type_map      : list (kername * inductive))
     (arr_name_pairs: list (term * string))
+    (arr_block_map : list (nat * string))
     (all_pi_set    : list kername)
     (cur_mp        : modpath)
     : list kername :=
@@ -9692,21 +9766,29 @@ Definition compute_transp_push_deps
     (List.flat_map (fun ctor =>
        let n_args := ctor.(cstr_arity) in
        List.flat_map (fun snoc_i =>
+         let depth := n_args - 1 - snoc_i in
          let arg_t := match nth_error ctor.(cstr_args) snoc_i with
                       | Some d => d.(decl_type) | None => tVar "?" end in
          match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
-         | Some (Some kn) =>
-           if existsb (eq_kername kn) all_pi_set then [kn] else []
+         | Some (Some kn) => [kn]
          | _ =>
            match arg_t with
            | tInd ind _ =>
              let arg_kn := inductive_mind ind in
              match find (fun e => eq_kername (cur_mp, snd e) arg_kn) arr_name_pairs with
-             | Some (_, nm) =>
-               let arr_kn := (cur_mp, nm) in
-               if existsb (eq_kername arr_kn) all_pi_set then [arr_kn] else []
+             | Some (_, nm) => [(cur_mp, nm)]
              | None => []
              end
+           | tRel n =>
+             (* Arrow-type sibling in the same mutual block: tRel n where
+                n-depth indexes into the block and the body is an arrow type. *)
+             if andb (Nat.leb depth n) (Nat.ltb (n - depth) n_block) then
+               let j := n_block - 1 - (n - depth) in
+               match find (fun '(blk_idx, _) => Nat.eqb blk_idx j) arr_block_map with
+               | Some (_, nm) => [(cur_mp, nm)]
+               | None => []
+               end
+             else []
            | _ => []
            end
          end)
@@ -9729,47 +9811,98 @@ Definition make_arrow_transparent_push_body_def
     (unique_ht_terms : list term)
     (pi_set_holes    : list (kername * list term))
     (cur_mp          : modpath)
+    (* mutual-fix support: n_mutual=1 / self_fix_idx=0 / mutual_siblings=[] for standalone *)
+    (n_mutual        : nat)
+    (self_fix_idx    : nat)
+    (mutual_siblings : list (kername * nat))
+    (* arr_block_map: block-body-index -> arrow-type-name, for routing tRel sibling args *)
+    (arr_block_map   : list (nat * string))
     : def term :=
   let fn_kn      := inductive_mind fn_ind in
+  let arr_kn     := (cur_mp, name) in
   let anon_b     := {| binder_name := nAnon; binder_relevance := Relevant |} in
   let new_type   := tInd fn_ind [] in
   let n_holes    := List.length unique_ht_terms in
   let s_hole_ref := fun (n_args k : nat) => tRel (n_args + n_holes - k) in
   let all_holes  := fun (n_args : nat) =>
     List.map (fun k => s_hole_ref n_args k) (seq 0 n_holes) in
-  let s_fix_ref  := fun (n_args : nat) => tRel (n_args + n_holes + 1) in
+  let s_fix_ref  := fun (n_args : nat) => tRel (n_args + n_holes + n_mutual - self_fix_idx) in
+  let sib_ref    := fun (n_args sib_idx : nat) => tRel (n_args + n_holes + n_mutual - sib_idx) in
   let lift_nm    := name ++ "LiftCstr" in
+  (* Look up hole refs for kn in pi_set_holes, remapped to current context. *)
+  let kn_hole_refs_in := fun (n_args : nat) (kn : kername) =>
+    let kn_hs := match find (fun e => eq_kername (fst e) kn) pi_set_holes with
+                 | Some (_, hs) => hs | None => [] end in
+    List.map (fun h_t =>
+      match h_t with
+      | tInd hind _ => s_hole_ref n_args (find_hole_idx_by_kn (inductive_mind hind) unique_ht_terms)
+      | _ => tVar "hole_not_found"
+      end) kn_hs in
   let push_one_arg := fun (n_args snoc_i : nat) (arg_t : term) =>
     let depth := n_args - 1 - snoc_i in
     match arg_t with
     | tRel n =>
-      if andb (Nat.leb depth n) (Nat.ltb (n - depth) 1)
-      then tApp (s_fix_ref n_args) (List.app (all_holes n_args) [tRel snoc_i])
+      if andb (Nat.leb depth n) (Nat.ltb (n - depth) n_block) then
+        let j := n_block - 1 - (n - depth) in
+        if Nat.eqb j (inductive_ind fn_ind) then
+          tApp (s_fix_ref n_args) (List.app (all_holes n_args) [tRel snoc_i])
+        else
+          match find (fun '(blk_idx, _) => Nat.eqb blk_idx j) arr_block_map with
+          | Some (_, arr_sib_nm) =>
+            let arr_sib_kn := (cur_mp, arr_sib_nm) in
+            let kn_h_refs  := kn_hole_refs_in n_args arr_sib_kn in
+            match find (fun '(kn', _) => eq_kername arr_sib_kn kn') mutual_siblings with
+            | Some (_, sib_idx) =>
+              tApp (sib_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+            | None =>
+              tApp (tConst (cur_mp, arr_sib_nm ++ "TransparentSigmaPushBody") [])
+                   (List.app kn_h_refs [tRel snoc_i])
+            end
+          | None =>
+            match find (fun '(_, new_ind) => Nat.eqb (inductive_ind new_ind) j) type_mapping with
+            | Some (old_kn, _) =>
+              let kn_h_refs := kn_hole_refs_in n_args old_kn in
+              match find (fun '(kn', _) => eq_kername old_kn kn') mutual_siblings with
+              | Some (_, sib_idx) =>
+                tApp (sib_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+              | None =>
+                tApp (tConst (cur_mp, snd old_kn ++ "TransparentSigmaPushBody") [])
+                     (List.app kn_h_refs [tRel snoc_i])
+              end
+            | None => tRel snoc_i
+            end
+          end
       else tRel snoc_i
     | tInd ind _ =>
       let arg_kn := inductive_mind ind in
+      (* Self-ref via inductive reference (can happen when block is named differently). *)
       if eq_kername arg_kn fn_kn then
         tApp (s_fix_ref n_args) (List.app (all_holes n_args) [tRel snoc_i])
       else
+        (* Check if this arg is another arrow-type sibling in the same mutual fix. *)
         match find (fun e => eq_kername (cur_mp, snd e) arg_kn) arr_name_pairs with
-        | Some _ =>
-          tApp (tConst (cur_mp, snd arg_kn ++ "TransparentSigmaPushBody") []) [tRel snoc_i]
+        | Some (_, arr_sib_nm) =>
+          let arr_sib_kn  := (cur_mp, arr_sib_nm) in
+          let kn_h_refs   := kn_hole_refs_in n_args arr_sib_kn in
+          match find (fun '(kn', _) => eq_kername arr_sib_kn kn') mutual_siblings with
+          | Some (_, sib_idx) =>
+            tApp (sib_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+          | None =>
+            tApp (tConst (cur_mp, arr_sib_nm ++ "TransparentSigmaPushBody") [])
+                 (List.app kn_h_refs [tRel snoc_i])
+          end
         | None =>
+          (* Check if this arg is a sigma2 type (possibly a sibling in the mutual fix). *)
           match find (fun e => eq_kername (inductive_mind (snd e)) arg_kn) type_mapping with
           | Some (old_kn, _) =>
-            let kn_hs :=
-              match find (fun e => eq_kername (fst e) old_kn) pi_set_holes with
-              | Some (_, hs) => hs | None => [] end in
-            let kn_h_refs :=
-              List.map (fun h_t =>
-                match h_t with
-                | tInd hind _ =>
-                  s_hole_ref n_args
-                    (find_hole_idx_by_kn (inductive_mind hind) unique_ht_terms)
-                | _ => tVar "hole_not_found"
-                end) kn_hs in
-            tApp (tConst (cur_mp, snd old_kn ++ "TransparentSigmaPushBody") [])
-                 (List.app kn_h_refs [tRel snoc_i])
+            let kn_h_refs := kn_hole_refs_in n_args old_kn in
+            match find (fun '(kn', _) => eq_kername old_kn kn') mutual_siblings with
+            | Some (_, sib_idx) =>
+              tApp (sib_ref n_args sib_idx) (List.app kn_h_refs [tRel snoc_i])
+            | None =>
+              tApp (tConst (cur_mp, snd old_kn ++ "TransparentSigmaPushBody") [])
+                   (List.app kn_h_refs [tRel snoc_i])
+            end
           | None => tRel snoc_i
           end
         end
@@ -9929,77 +10062,453 @@ Polymorphic Fixpoint generate_arrow_transp_symb_wrappers
     generate_arrow_transp_symb_wrappers rest arr_name_pairs ind_mapping cur_mp
   end.
 
+(** BFS helper: expand [worklist] along [edges], accumulating [visited]. *)
+Fixpoint kn_bfs_aux
+    (worklist : list kername)
+    (edges    : list (kername * list kername))
+    (visited  : list kername)
+    (fuel     : nat)
+    : list kername :=
+  match fuel with
+  | 0 => visited
+  | S f =>
+    match worklist with
+    | [] => visited
+    | kn :: rest =>
+      if existsb (eq_kername kn) visited then
+        kn_bfs_aux rest edges visited f
+      else
+        let succs :=
+          match find (fun e => eq_kername (fst e) kn) edges with
+          | Some (_, ds) => ds | None => [] end in
+        kn_bfs_aux (List.app rest succs) edges (kn :: visited) f
+    end
+  end.
+
+Definition kn_reachable
+    (start : kername) (edges : list (kername * list kername)) (fuel : nat)
+    : list kername :=
+  kn_bfs_aux [start] edges [] fuel.
+
+(** Kernames in the same SCC as [kn]: those mutually reachable with [kn]. *)
+Definition compute_scc_of
+    (kn    : kername)
+    (edges : list (kername * list kername))
+    (fuel  : nat)
+    : list kername :=
+  let forward := kn_reachable kn edges fuel in
+  filter (fun kn' =>
+    existsb (eq_kername kn) (kn_reachable kn' edges fuel)
+  ) forward.
+
+(** Group [entries] by SCC, returning one inner list per SCC.
+    Processes entries in the given order; the first unvisited member anchors
+    each SCC's group. *)
+Fixpoint group_by_scc_aux
+    (entries     : list (kername * inductive * list kername))
+    (all_edges   : list (kername * list kername))
+    (all_entries : list (kername * inductive * list kername))
+    (done        : list kername)
+    (fuel        : nat)
+    : list (list (kername * inductive)) :=
+  match entries with
+  | [] => []
+  | (kn, ind, _) :: rest =>
+    if existsb (eq_kername kn) done then
+      group_by_scc_aux rest all_edges all_entries done fuel
+    else
+      let scc_kns := compute_scc_of kn all_edges fuel in
+      let scc_members :=
+        flat_map (fun '(k, i, _) =>
+          if existsb (eq_kername k) scc_kns then [(k, i)] else []
+        ) all_entries in
+      let new_done := List.app done scc_kns in
+      scc_members :: group_by_scc_aux rest all_edges all_entries new_done fuel
+  end.
+
+(** Find the representative (first member) of the group containing [kn]. *)
+Definition find_group_rep
+    (kn     : kername)
+    (groups : list (list (kername * inductive)))
+    : option kername :=
+  match find (fun g => existsb (fun '(k, _) => eq_kername k kn) g) groups with
+  | Some ((rep, _) :: _) => Some rep
+  | _ => None
+  end.
+
+(** Build condensation sort inputs: one synthetic entry per SCC group mapping
+    the group's representative to its inter-group dep representatives. *)
+Definition build_condensation_inputs
+    (groups  : list (list (kername * inductive)))
+    (entries : list (kername * inductive * list kername))
+    : list (kername * inductive * list kername) :=
+  flat_map (fun g =>
+    match g with
+    | [] => []
+    | (rep_kn, rep_ind) :: _ =>
+      let group_kns := List.map fst g in
+      let ext_deps :=
+        flat_map (fun '(k, _, deps) =>
+          if existsb (eq_kername k) group_kns then
+            filter (fun d => negb (existsb (eq_kername d) group_kns)) deps
+          else []
+        ) entries in
+      let dep_reps :=
+        flat_map (fun d_kn =>
+          match find_group_rep d_kn groups with
+          | Some rep => [rep] | None => []
+          end
+        ) ext_deps in
+      let dep_reps_dedup :=
+        fold_left (fun acc k =>
+          if existsb (eq_kername k) acc then acc else List.app acc [k]
+        ) dep_reps [] in
+      [(rep_kn, rep_ind, dep_reps_dedup)]
+    end
+  ) groups.
+
+(** Group entries by SCC and return groups in topological order. *)
+Definition group_by_scc
+    (entries : list (kername * inductive * list kername))
+    (fuel    : nat)
+    : list (list (kername * inductive)) :=
+  let edges       := List.map (fun '(k, _, deps) => (k, deps)) entries in
+  let raw_groups  := group_by_scc_aux entries edges entries [] fuel in
+  let cond_in     := build_condensation_inputs raw_groups entries in
+  let sorted_reps := topo_sort_pi cond_in [] (S (List.length cond_in)) in
+  flat_map (fun '(rep_kn, _) =>
+    match find (fun g =>
+      match g with (k, _) :: _ => eq_kername k rep_kn | [] => false end
+    ) raw_groups with
+    | Some g => [g] | None => []
+    end
+  ) sorted_reps.
+
+(** Within a single SCC group, propagate unique_ht_terms until fixpoint so that
+    transitive hole dependencies (e.g., nat' calling fnType0Push which needs
+    evalCmdAn2Symb) are reflected before we build the mutual tFix bodies.
+    Runs [fuel] rounds of forward propagation over [group]. *)
+Definition propagate_group_ht_terms
+    (group        : list (kername * inductive))
+    (sigma2_data  : list (kername * inductive * one_inductive_body * nat * nat * nat))
+    (arr_data     : list (term * string * inductive * nat * one_inductive_body * nat * nat))
+    (type_mapping : list (kername * inductive))
+    (pi_set       : list kername)
+    (arr_name_pairs : list (term * string))
+    (cur_mp       : modpath)
+    (init_ph      : list (kername * list term))
+    (fuel         : nat)
+    : list (kername * list term) :=
+  let one_pass := fun (ph : list (kername * list term)) =>
+    List.fold_left (fun acc_ph kn_ind =>
+      let kn_i := fst kn_ind in
+      match find (fun e =>
+              let '(k, _, _, _, _, _) := e in eq_kername k kn_i) sigma2_data with
+      | Some e =>
+        let '(old_kn, new_ind, new_oib, n_old_ctors, n_block, _) := e in
+        let '(ht, _) :=
+          compute_push_unique_holes old_kn new_ind n_block new_oib n_old_ctors
+            type_mapping pi_set true true cur_mp acc_ph arr_name_pairs in
+        let rest := filter (fun p => negb (eq_kername (fst p) old_kn)) acc_ph in
+        List.app rest [(old_kn, ht)]
+      | None =>
+        match find (fun e =>
+                let '(_, nm, _, _, _, _, _) := e in
+                eq_kername (cur_mp, nm) kn_i) arr_data with
+        | Some e =>
+          let '(_, nm, fn_ind, _, new_oib, n_block, _) := e in
+          let ak := (cur_mp, nm) in
+          let '(ht, _) :=
+            compute_push_unique_holes ak fn_ind n_block new_oib 0
+              type_mapping pi_set true true cur_mp acc_ph arr_name_pairs in
+          let rest := filter (fun p => negb (eq_kername (fst p) ak)) acc_ph in
+          List.app rest [(ak, ht)]
+        | None => acc_ph
+        end
+      end)
+    group ph in
+  List.fold_left (fun ph _ => one_pass ph) (seq 0 fuel) init_ph.
+
 (** Generate [<Name>TransparentSigmaPushBody] and [<Name>TransparentSigmaPush]
     in topological order, accumulating [pi_set_holes] as each type is processed.
-    Dispatches on whether each sorted entry belongs to sigma2 or arrow data. *)
+    [sorted] is a list of SCC groups; multi-element sigma2 groups are generated
+    as a mutual [tFix]. Dispatches on sigma2 vs arrow data. *)
 Polymorphic Fixpoint generate_transp_push_in_order
-    (sorted         : list (kername * inductive))
+    (sorted         : list (list (kername * inductive)))
     (sigma2_data    : list (kername * inductive * one_inductive_body * nat * nat * nat))
     (arr_data       : list (term * string * inductive * nat * one_inductive_body * nat * nat))
     (type_mapping   : list (kername * inductive))
     (app_kn_mapping : list (kername * list term * inductive))
     (arr_name_pairs : list (term * string))
+    (arr_block_map  : list (nat * string))
     (pi_set         : list kername)
     (cur_mp         : modpath)
     (hr_hole_c hr_pure_c hr_ap_c : term)
-    (pi_set_holes   : list (kername * list term))
-    : TemplateMonad (list (kername * list term)) :=
+    (* global_ht: one hole type per output position of each relation in the mode list.
+       Used as unique_ht_terms for ALL push bodies.
+       global_ph: every type kn maps to global_ht, so kn_hole_refs_in_s for any kn
+       emits references to all global holes. *)
+    (global_ht : list term)
+    (global_ph : list (kername * list term))
+    : TemplateMonad unit :=
   match sorted with
-  | [] => tmReturn pi_set_holes
-  | (kn, _) :: rest =>
-    let recurse := fun new_ph =>
-      generate_transp_push_in_order rest sigma2_data arr_data
-        type_mapping app_kn_mapping arr_name_pairs pi_set cur_mp
-        hr_hole_c hr_pure_c hr_ap_c (pi_set_holes ++ [new_ph]) in
-    match find (fun e =>
-                  let '(old_kn, _, _, _, _, _) := e in eq_kername old_kn kn)
-               sigma2_data with
-    | Some entry =>
-      let '(old_kn, new_ind, new_oib, n_old_ctors, n_block, _) := entry in
-      let '(unique_ht_terms, _) :=
-        compute_push_unique_holes old_kn new_ind n_block new_oib n_old_ctors
-          type_mapping pi_set true true cur_mp pi_set_holes arr_name_pairs in
-      let d_body :=
-        make_transparent_sigma_push_body_def
-          old_kn new_ind n_block new_oib n_old_ctors
-          type_mapping app_kn_mapping pi_set true cur_mp
-          unique_ht_terms pi_set_holes true [] arr_name_pairs in
-      body_ev <- tmEval all (tFix [d_body] 0) ;;
-      _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPushBody") body_ev ;;
-      wrapper_ev <- tmEval all
-        (make_transparent_sigma_push_wrapper_term
-           old_kn new_ind type_mapping app_kn_mapping true cur_mp
-           unique_ht_terms hr_pure_c hr_ap_c hr_hole_c) ;;
-      _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPush") wrapper_ev ;;
-      recurse (old_kn, unique_ht_terms)
-    | None =>
-      match find (fun e =>
-                    let '(_, nm, _, _, _, _, _) := e in eq_kername (cur_mp, nm) kn)
-                 arr_data with
-      | Some entry =>
-        let '(arr_t, name, fn_ind, _, new_oib, n_block, _) := entry in
-        let arr_kn := (cur_mp, name) in
-        let '(unique_ht_terms, _) :=
-          compute_push_unique_holes arr_kn fn_ind n_block new_oib 0
-            type_mapping pi_set true true cur_mp pi_set_holes arr_name_pairs in
-        let d_body :=
-          make_arrow_transparent_push_body_def
-            arr_t name fn_ind new_oib n_block arr_name_pairs type_mapping
-            unique_ht_terms pi_set_holes cur_mp in
-        body_ev <- tmEval all (tFix [d_body] 0) ;;
-        _ <- tmMkDefinition (name ++ "TransparentSigmaPushBody") body_ev ;;
-        wrapper_ev <- tmEval all
-          (make_arrow_transp_push_wrapper name fn_ind arr_t
-             unique_ht_terms hr_pure_c hr_ap_c hr_hole_c cur_mp) ;;
-        _ <- tmMkDefinition (name ++ "TransparentSigmaPush") wrapper_ev ;;
-        recurse (arr_kn, unique_ht_terms)
-      | None =>
-        generate_transp_push_in_order rest sigma2_data arr_data
-          type_mapping app_kn_mapping arr_name_pairs pi_set cur_mp
-          hr_hole_c hr_pure_c hr_ap_c pi_set_holes
+  | [] => tmReturn tt
+  | group :: rest_groups =>
+    let recurse :=
+      generate_transp_push_in_order rest_groups sigma2_data arr_data
+        type_mapping app_kn_mapping arr_name_pairs arr_block_map pi_set cur_mp
+        hr_hole_c hr_pure_c hr_ap_c global_ht global_ph in
+    let all_sigma2 :=
+      forallb (fun '(kn, _) =>
+        existsb (fun '(k, _, _, _, _, _) => eq_kername k kn) sigma2_data
+      ) group in
+    if all_sigma2 then
+      let n_mutual := List.length group in
+      let all_d_bodies :=
+        mapi (fun self_fix_idx '(kn_i, ind_i) =>
+          match find (fun '(k, _, _, _, _, _) => eq_kername k kn_i) sigma2_data with
+          | None =>
+            let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+            {| dname := anon_b; dtype := tVar "?"; dbody := tVar "?"; rarg := 0 |}
+          | Some (old_kn, new_ind, new_oib, n_old_ctors, n_block, _) =>
+            let mutual_siblings :=
+              flat_map (fun j_e =>
+                let j    := fst j_e in
+                let kn_j := fst (snd j_e) in
+                if Nat.eqb j self_fix_idx then [] else [(kn_j, j)]
+              ) (mapi (fun j e => (j, e)) group) in
+            make_transparent_sigma_push_body_def
+              old_kn new_ind n_block new_oib n_old_ctors
+              type_mapping app_kn_mapping pi_set true cur_mp
+              global_ht global_ph true [] arr_name_pairs
+              n_mutual self_fix_idx mutual_siblings arr_block_map
+          end
+        ) group in
+      _ <- List.fold_left
+        (fun acc_m i_pair =>
+          tmBind acc_m (fun _ =>
+          let i     := fst i_pair in
+          let kn_i  := fst (snd i_pair) in
+          match find (fun '(k, _, _, _, _, _) => eq_kername k kn_i) sigma2_data with
+          | None => tmReturn tt
+          | Some (old_kn, new_ind, new_oib, n_old_ctors, n_block, _) =>
+            body_ev <- tmEval all (tFix all_d_bodies i) ;;
+            _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPushBody") body_ev ;;
+            wrapper_ev <- tmEval all
+              (make_transparent_sigma_push_wrapper_term
+                 old_kn new_ind type_mapping app_kn_mapping true cur_mp
+                 global_ht hr_pure_c hr_ap_c hr_hole_c) ;;
+            tmMkDefinition (snd old_kn ++ "TransparentSigmaPush") wrapper_ev
+          end))
+        (mapi (fun i e => (i, e)) group)
+        (tmReturn tt) ;;
+      recurse
+    else
+      match group with
+      | [(kn, _)] =>
+        match find (fun e =>
+                      let '(_, nm, _, _, _, _, _) := e in eq_kername (cur_mp, nm) kn)
+                   arr_data with
+        | Some entry =>
+          let '(arr_t, name, fn_ind, _, new_oib, n_block, _) := entry in
+          let d_body :=
+            make_arrow_transparent_push_body_def
+              arr_t name fn_ind new_oib n_block arr_name_pairs type_mapping
+              global_ht global_ph cur_mp 1 0 [] arr_block_map in
+          body_ev <- tmEval all (tFix [d_body] 0) ;;
+          _ <- tmMkDefinition (name ++ "TransparentSigmaPushBody") body_ev ;;
+          wrapper_ev <- tmEval all
+            (make_arrow_transp_push_wrapper name fn_ind arr_t
+               global_ht hr_pure_c hr_ap_c hr_hole_c cur_mp) ;;
+          _ <- tmMkDefinition (name ++ "TransparentSigmaPush") wrapper_ev ;;
+          recurse
+        | None => recurse
+        end
+      | _ =>
+        (* Mixed or multi-type SCC group: generate a combined mutual tFix covering
+           all sigma2 and arrow bodies.  Each body uses sibling tRel refs so no
+           forward-reference declarations are needed.
+           Pre-propagate unique_ht_terms within the group so that transitive hole
+           dependencies (e.g., nat' calling fnType0Push which needs its holes)
+           are reflected in each body's lambda prefix. *)
+        let n_mutual := List.length group in
+        let all_d_bodies :=
+          mapi (fun self_fix_idx '(kn_i, _) =>
+            let mutual_siblings :=
+              flat_map (fun j_e =>
+                let j    := fst j_e in
+                let kn_j := fst (snd j_e) in
+                if Nat.eqb j self_fix_idx then [] else [(kn_j, j)]
+              ) (mapi (fun j e => (j, e)) group) in
+            match find (fun '(k, _, _, _, _, _) => eq_kername k kn_i) sigma2_data with
+            | Some (old_kn, new_ind, new_oib, n_old_ctors, n_block, _) =>
+              make_transparent_sigma_push_body_def
+                old_kn new_ind n_block new_oib n_old_ctors
+                type_mapping app_kn_mapping pi_set true cur_mp
+                global_ht global_ph true [] arr_name_pairs
+                n_mutual self_fix_idx mutual_siblings arr_block_map
+            | None =>
+              match find (fun '(_, nm, _, _, _, _, _) => eq_kername (cur_mp, nm) kn_i) arr_data with
+              | Some (arr_t, nm, fn_ind, _, new_oib, n_block, _) =>
+                make_arrow_transparent_push_body_def
+                  arr_t nm fn_ind new_oib n_block arr_name_pairs type_mapping
+                  global_ht global_ph cur_mp n_mutual self_fix_idx mutual_siblings arr_block_map
+              | None =>
+                let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+                {| dname := anon_b; dtype := tVar "?"; dbody := tVar "?"; rarg := 0 |}
+              end
+            end
+          ) group in
+        _ <- List.fold_left
+          (fun acc_m i_pair =>
+            tmBind acc_m (fun _ =>
+            let i    := fst i_pair in
+            let kn_i := fst (snd i_pair) in
+            match find (fun '(k, _, _, _, _, _) => eq_kername k kn_i) sigma2_data with
+            | Some (old_kn, new_ind, new_oib, n_old_ctors, n_block, _) =>
+              body_ev <- tmEval all (tFix all_d_bodies i) ;;
+              _ <- tmMkDefinition (snd old_kn ++ "TransparentSigmaPushBody") body_ev ;;
+              wrapper_ev <- tmEval all
+                (make_transparent_sigma_push_wrapper_term
+                   old_kn new_ind type_mapping app_kn_mapping true cur_mp
+                   global_ht hr_pure_c hr_ap_c hr_hole_c) ;;
+              tmMkDefinition (snd old_kn ++ "TransparentSigmaPush") wrapper_ev
+            | None =>
+              match find (fun '(_, nm, _, _, _, _, _) => eq_kername (cur_mp, nm) kn_i) arr_data with
+              | Some (arr_t, nm, fn_ind, _, new_oib, n_block, _) =>
+                body_ev <- tmEval all (tFix all_d_bodies i) ;;
+                _ <- tmMkDefinition (nm ++ "TransparentSigmaPushBody") body_ev ;;
+                wrapper_ev <- tmEval all
+                  (make_arrow_transp_push_wrapper nm fn_ind arr_t
+                     global_ht hr_pure_c hr_ap_c hr_hole_c cur_mp) ;;
+                tmMkDefinition (nm ++ "TransparentSigmaPush") wrapper_ev
+              | None => tmReturn tt
+              end
+            end))
+          (mapi (fun i e => (i, e)) group)
+          (tmReturn tt) ;;
+        recurse
       end
-    end
   end.
+
+(** Generate [AnSymb] wrapper inductives and [AnSymb_unwrap] definitions for
+    sigma2-typed animation output positions (output type is NOT an arrow type),
+    derived directly from the mode list and the ORIGINAL (un-lifted) relation
+    types.  All input and output types in the wrapper are PLAIN (original) types:
+    e.g. [string->nat], not [fnType0].  The push body already converts lifted
+    inputs to plain before calling [AnSymb_unwrap] via [tConst], so the wrapper
+    must match those plain types. *)
+Polymorphic Definition generate_sigma2_anim_symb_from_modes
+    (modes          : mode_map)
+    (arr_name_pairs : list (term * string))
+    (cur_mp         : modpath)
+    : TemplateMonad unit :=
+  let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  _ <- monad_map (fun '(rel_name, (in_pos, out_pos)) =>
+    refs <- tmLocate rel_name ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) refs with
+    | None => tmReturn tt
+    | Some (IndRef rel_ind) =>
+      rel_mind <- tmQuoteInductive (inductive_mind rel_ind) ;;
+      match nth_error rel_mind.(ind_bodies) (inductive_ind rel_ind) with
+      | None => tmReturn tt
+      | Some oib =>
+        let n_idx := #|oib.(ind_indices)| in
+        let arg_types :=
+          extract_arg_types_early rel_mind.(ind_npars) n_idx oib.(ind_type) in
+        _ <- monad_map (fun op =>
+          match nth_error arg_types op with
+          | None => tmReturn tt
+          | Some op_type =>
+            (* Skip arrow-type outputs — handled by generate_arrow_anim_symb_from_modes. *)
+            match find (fun '(arr_t, _) => rfp_eqb_term arr_t op_type) arr_name_pairs with
+            | Some _ => tmReturn tt
+            | None =>
+              (* Sigma2 output: build fn_type with all plain types. *)
+              let input_types :=
+                flat_map (fun ip =>
+                  match nth_error arg_types ip with
+                  | None => [] | Some t => [t]
+                  end) in_pos in
+              let fn_type :=
+                List.fold_right (fun ty acc => tProd anon_b ty acc) op_type input_types in
+              fn_type_ev <- tmEval all fn_type ;;
+              let wrapper_nm := rel_name ++ "An" ++ string_of_nat op ++ "Symb" in
+              let body   := make_wrapper_inductive_body wrapper_nm fn_type_ev in
+              body_ev   <- tmEval all body ;;
+              let W_ind  := {| inductive_mind := (cur_mp, wrapper_nm); inductive_ind := 0 |} in
+              let unwrap := build_unwrap_fn W_ind fn_type_ev in
+              unwrap_ev <- tmEval all unwrap ;;
+              _ <- tmMkInductive' body_ev ;;
+              tmMkDefinition (wrapper_nm ++ "_unwrap") unwrap_ev
+            end
+          end)
+        out_pos ;;
+        tmReturn tt
+      end
+    | Some _ => tmReturn tt
+    end)
+  modes ;;
+  tmReturn tt.
+
+(** Generate [AnSymb] wrapper inductives and [AnSymb_unwrap] definitions for
+    arrow-typed animation output positions, derived directly from the mode list
+    and the ORIGINAL (un-lifted) relation types.
+    Uses [extract_arg_types_early] on [oib.(ind_type)] to get argument types in
+    unambiguous forward order (position 0 = leftmost argument), avoiding any
+    dependence on [ind_indices] list ordering. *)
+Polymorphic Definition generate_arrow_anim_symb_from_modes
+    (modes          : mode_map)
+    (arr_name_pairs : list (term * string))
+    (cur_mp         : modpath)
+    : TemplateMonad unit :=
+  let anon_b := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  _ <- monad_map (fun '(rel_name, (in_pos, out_pos)) =>
+    refs <- tmLocate rel_name ;;
+    match find (fun g => match g with IndRef _ => true | _ => false end) refs with
+    | None => tmReturn tt
+    | Some (IndRef rel_ind) =>
+      rel_mind <- tmQuoteInductive (inductive_mind rel_ind) ;;
+      match nth_error rel_mind.(ind_bodies) (inductive_ind rel_ind) with
+      | None => tmReturn tt
+      | Some oib =>
+        (* Extract argument types in forward order (position 0 = first/leftmost).
+           skip = ind_npars to jump past any tProd binders for parameters. *)
+        let n_idx := #|oib.(ind_indices)| in
+        let arg_types :=
+          extract_arg_types_early rel_mind.(ind_npars) n_idx oib.(ind_type) in
+        _ <- monad_map (fun op =>
+          match nth_error arg_types op with
+          | None => tmReturn tt
+          | Some op_type =>
+            match find (fun '(arr_t, _) => rfp_eqb_term arr_t op_type) arr_name_pairs with
+            | None => tmReturn tt   (* not an arrow-type output — skip *)
+            | Some (arr_t, _) =>
+              let input_types :=
+                flat_map (fun ip =>
+                  match nth_error arg_types ip with
+                  | None => [] | Some t => [t]
+                  end) in_pos in
+              let fn_type :=
+                List.fold_right (fun ty acc => tProd anon_b ty acc) arr_t input_types in
+              fn_type_ev <- tmEval all fn_type ;;
+              let wrapper_nm := rel_name ++ "An" ++ string_of_nat op ++ "Symb" in
+              let body   := make_wrapper_inductive_body wrapper_nm fn_type_ev in
+              body_ev   <- tmEval all body ;;
+              let W_ind  := {| inductive_mind := (cur_mp, wrapper_nm); inductive_ind := 0 |} in
+              let unwrap := build_unwrap_fn W_ind fn_type_ev in
+              unwrap_ev <- tmEval all unwrap ;;
+              _ <- tmMkInductive' body_ev ;;
+              tmMkDefinition (wrapper_nm ++ "_unwrap") unwrap_ev
+            end
+          end)
+        out_pos ;;
+        tmReturn tt
+      end
+    | Some _ => tmReturn tt
+    end)
+  modes ;;
+  tmReturn tt.
 
 (** Generate [TransparentSigmaPush] functions for all types in the testing
     pathway.  Declares [AnSymb] wrapper inductives for animation constructors,
@@ -10007,6 +10516,7 @@ Polymorphic Fixpoint generate_transp_push_in_order
     in topological order derived from ALL constructor args (original + animation).
     Handles both sigma2 and arrow types; no [PushPlain] calls anywhere. *)
 Polymorphic Definition generate_transparent_push_testing
+    (modes          : mode_map)
     (type_mapping   : list (kername * inductive))
     (app_kn_mapping : list (kername * list term * inductive))
     (arr_name_pairs : list (term * string))
@@ -10068,21 +10578,25 @@ Polymorphic Definition generate_transparent_push_testing
         end
       end)
     arr_raw in
-  _ <- generate_sigma2_transp_symb_wrappers sigma2_data type_mapping app_kn_mapping cur_mp ;;
-  let ind_mapping :=
-    List.map (fun '(old_kn, new_ind) => (old_kn, inductive_mind new_ind)) type_mapping in
-  _ <- generate_arrow_transp_symb_wrappers arr_data arr_name_pairs ind_mapping cur_mp ;;
+  _ <- generate_sigma2_anim_symb_from_modes modes arr_name_pairs cur_mp ;;
+  _ <- generate_arrow_anim_symb_from_modes modes arr_name_pairs cur_mp ;;
   (* Combined pi_set: sigma2 old-kernames + arrow pseudo-kernames (cur_mp, name). *)
   let arr_pseudo_kns :=
     List.map (fun '(_, name, _, _, _, _, _) => (cur_mp, name)) arr_data in
   let all_pi_set := List.app pi_set arr_pseudo_kns in
+  (* Build arr_block_map: (block-index → arrow-type-name) from arr_data.
+     Must be computed before sort inputs so compute_transp_push_deps can use it. *)
+  let arr_block_map :=
+    flat_map (fun '(_, name, fn_ind, _, _, n_block, _) =>
+      [(inductive_ind fn_ind, name)]
+    ) arr_data in
   let sigma2_sort_inputs :=
-    List.map (fun '(old_kn, new_ind, new_oib, _, n_block, _) =>
+    List.map (fun '(old_kn, new_ind, new_oib, n_old_ctors, n_block, _) =>
       let body_idx := inductive_ind new_ind in
       let new_kn   := inductive_mind new_ind in
       let deps :=
         compute_transp_push_deps new_kn n_block body_idx new_oib
-          type_mapping arr_name_pairs all_pi_set cur_mp in
+          type_mapping arr_name_pairs arr_block_map all_pi_set cur_mp in
       (old_kn, new_ind, deps))
     sigma2_data in
   let arr_sort_inputs :=
@@ -10091,15 +10605,59 @@ Polymorphic Definition generate_transparent_push_testing
       let new_kn   := inductive_mind fn_ind in
       let deps :=
         compute_transp_push_deps new_kn n_block body_idx new_oib
-          type_mapping arr_name_pairs all_pi_set cur_mp in
+          type_mapping arr_name_pairs arr_block_map all_pi_set cur_mp in
       ((cur_mp, name), fn_ind, deps))
     arr_data in
   let all_sort_inputs := List.app sigma2_sort_inputs arr_sort_inputs in
-  let sorted := topo_sort_pi all_sort_inputs [] (S (List.length all_sort_inputs)) in
-  _ <- generate_transp_push_in_order sorted sigma2_data arr_data
-    type_mapping app_kn_mapping arr_name_pairs pi_set cur_mp
-    hr_hole_tm hr_pure_tm hr_ap_tm [] ;;
-  tmReturn tt.
+  _ <- tmMsg "=== compute_transp_push_deps output ===" ;;
+  _ <- monad_map (fun '(kn, _, deps) =>
+    tmMsg ("[" ++ snd kn ++ "] -> [" ++
+      String.concat ", " (List.map snd deps) ++ "]"))
+    all_sort_inputs ;;
+  _ <- tmMsg "===================================" ;;
+  let n_nodes := List.length all_sort_inputs in
+  let total_edges := List.fold_left
+    (fun acc '(_, _, deps) => acc + List.length deps) all_sort_inputs 0 in
+  let bfs_fuel := n_nodes + total_edges + 1 in
+  let sorted_groups :=
+    group_by_scc all_sort_inputs bfs_fuel in
+  _ <- tmMsg "=== SCC groups (topo order) ===" ;;
+  _ <- monad_map (fun grp =>
+    tmMsg ("  [" ++ String.concat ", " (List.map (fun '(kn, _) => snd kn) grp) ++ "]"))
+    sorted_groups ;;
+  _ <- tmMsg "===============================" ;;
+  (* Sanity check: every input node must appear in exactly one SCC group.
+     A missing node means BFS fuel was exhausted before full reachability. *)
+  let all_group_kns := flat_map (List.map fst) sorted_groups in
+  let missing := filter (fun '(kn, _, _) =>
+    negb (existsb (eq_kername kn) all_group_kns)) all_sort_inputs in
+  _ <- (if negb (is_nil missing) then
+    tmFail ("generate_transparent_push_testing: SCC fuel exhausted — " ++
+            string_of_nat (List.length missing) ++ " node(s) missing from groups: [" ++
+            String.concat ", " (List.map (fun '(kn, _, _) => snd kn) missing) ++ "]. " ++
+            "Computed bfs_fuel=" ++ string_of_nat bfs_fuel ++
+            " (n=" ++ string_of_nat n_nodes ++
+            ", E=" ++ string_of_nat total_edges ++ ").")
+  else tmReturn tt) ;;
+  (* Global hole set: one tInd per output position of each relation in [modes].
+     Every push body uses this same set — no per-type or per-group computation. *)
+  let global_ht :=
+    fst (dedup_hole_types
+      (flat_map (fun '(rel_name, (_, out_pos)) =>
+         List.map (fun k =>
+           tInd {| inductive_mind := (cur_mp, rel_name ++ "An" ++ string_of_nat k ++ "Symb");
+                   inductive_ind := 0 |} [])
+         out_pos)
+       modes)) in
+  (* Map every type kn to global_ht so kn_hole_refs_in_s always finds all holes. *)
+  let all_kns :=
+    List.app
+      (List.map (fun '(old_kn, _, _, _, _, _) => old_kn) sigma2_data)
+      (List.map (fun '(_, nm, _, _, _, _, _) => (cur_mp, nm)) arr_data) in
+  let global_ph := List.map (fun kn => (kn, global_ht)) all_kns in
+  generate_transp_push_in_order sorted_groups sigma2_data arr_data
+    type_mapping app_kn_mapping arr_name_pairs arr_block_map pi_set cur_mp
+    hr_hole_tm hr_pure_tm hr_ap_tm global_ht global_ph.
 
 (** Full testing-pathway entry point: preprocesses, generates lifted types,
     Lift/ChkNoExtraCstrs/PushPlain/TransparentSigmaPush functions for all
@@ -10113,7 +10671,7 @@ Polymorphic Definition preprocess_and_generate_all_with_transparent_push
       preprocess_and_generate_lifts modes fuel ;;
   generate_chk_fns_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
   generate_push_fns_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
-  generate_transparent_push_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp.
+  generate_transparent_push_testing modes type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp.
 
 (** Like [preprocess_and_generate_all_with_transparent_push] but returns the
     intermediate data so that callers can use it for subsequent pipeline steps
@@ -10138,7 +10696,7 @@ Polymorphic Definition preprocess_and_generate_all_with_transparent_push_data
   generate_arrow_lift_fns arr_name_pairs cur_mp ;;
   generate_chk_fns_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
   generate_push_fns_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
-  generate_transparent_push_testing type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
+  generate_transparent_push_testing modes type_mapping app_kn_mapping arr_name_pairs npi_set cur_mp ;;
   tmReturn (type_mapping, app_kn_mapping, arr_name_pairs, npi_set, fn_app_infos,
             lat_ind_mapping, modes_with_idx).
 
@@ -10181,14 +10739,12 @@ CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
     /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
     -> evalCmd vs1' (While e c) vs3'.
 
-MetaRocq Run (preprocess_and_generate_all
+MetaRocq Run (preprocess_and_generate_all_with_transparent_push
   [("evalCmd", ([0;1], [2]))] 500).
-Print cmdPushPlain. 
 
- 
-Print natChkNoExtraCstrs.
-Print cmdLift.  
-End ImpSem.  
+Print nat'.
+Print fnType0TransparentSigmaPushBody.
+End ImpSem.
   
 Module StackStep.
 
@@ -10208,7 +10764,9 @@ Definition stack := list nat.
 Definition prog  := list sinstr.
 
 Definition appSt (st : string -> nat) (s : string) : nat := st s.
-
+Definition add (n1 n2 : nat) := n1 + n2.
+Definition minus (n1 n2 : nat) := n1 - n2.
+Definition mul (n1 n2 : nat) := n1 * n2.
 
 
 Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr -> list nat -> Prop :=
@@ -10218,20 +10776,25 @@ Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr
      
      stack_step (st) (SLoad i :: p)  stk p ((appSt st i) :: stk) 
    
-| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((m + n) :: stk)
+| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((add m  n) :: stk)
 | SS_Minus : forall st stk n m p,
-    stack_step st (SMinus :: p) (n :: m :: stk) p  ((m - n) :: stk)
+    stack_step st (SMinus :: p) (n :: m :: stk) p  ((minus m  n) :: stk)
 | SS_Mult  : forall st stk n m p,
-    stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
+    stack_step st (SMult :: p) (n :: m :: stk) p  ((mul m  n) :: stk).
     
-MetaRocq Run (preprocess_and_generate_all
+MetaRocq Run (preprocess_and_generate_all_with_transparent_push
   [("stack_step", ([0;1;2], [3;4]))] 500 ).
+Print fnType0.  
+Print listnat'.
   
 Print fnType0PushPlain.
 Print listnatPushPlain.  
   
 
-Print listsinstrChkNoExtraCstrs.  
+Print listsinstrChkNoExtraCstrs.
+Print listsinstrTransparentSigmaPushBody.
+Print fnType0TransparentSigmaPushBody.
+  
 
 
   
@@ -10307,10 +10870,13 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 | bigStep : forall t tr_lst t',
     step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst).
   
-MetaRocq Run (preprocess_and_generate_all
+MetaRocq Run (preprocess_and_generate_all_with_transparent_push
   [("bigStepTr", ([0], [1]));("step", ([0], [1]))] 500). 
 Print tmPushPlain.
-Print coLstLift.   
+Print coLstLift.
+Print tm'.
+
+Print coLstTransparentSigmaPushBody.   
   
 End bigStepTr.
 
@@ -10396,12 +10962,11 @@ Polymorphic Definition generate_arrow_type_fns
     | Some new_oib =>
       let arr_data :=
         [(arr_t, name, fn_ind, lift_cstr_idx, new_oib, n_block, n_params)] in
-      _ <- generate_arrow_transp_symb_wrappers
-             arr_data arr_name_pairs ind_mapping cur_mp ;;
+      let arr_block_map_local := [(inductive_ind fn_ind, name)] in
       _ <- generate_transp_push_in_order
-             [((cur_mp, name), fn_ind)] [] arr_data
-             type_mapping_approx [] arr_name_pairs pi_set cur_mp
-             hr_hole_c hr_pure_c hr_ap_c pi_set_holes_in ;;
+             [[((cur_mp, name), fn_ind)]] [] arr_data
+             type_mapping_approx [] arr_name_pairs arr_block_map_local pi_set cur_mp
+             hr_hole_c hr_pure_c hr_ap_c [] [] ;;
       tmReturn tt
     end)
   | _ =>
