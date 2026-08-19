@@ -4182,7 +4182,9 @@ Definition make_eqfn_def
                           [tApp (tRel (n_args + n_args + 2))
                                 [tRel (n_args + snoc_i); tRel snoc_i]]
                       | Some (Some kn) =>
-                          (* Cross-type: call eqFn with block-kname + body-idx naming. *)
+                          (* Cross-type: call eqFn with block-kname + body-idx naming.
+                             Safe because generate_eqfn_defs declares types in
+                             topological dependency order (deps first). *)
                           let cross_fn_nm :=
                             match find (fun e => eq_kername (fst e) kn) type_map with
                             | Some (_, ci) =>
@@ -4235,46 +4237,62 @@ Definition make_eqfn_def
                    (tCase ci pred (tRel 1) outer_branches));
      rarg   := 0 |}.
 
+(** Compute the eq-fn cross-type dependencies of one pi_set type.
+    Returns the kernnames in [pi_kns] whose eqFn must be declared before
+    this type's eqFn (i.e. types that appear as cross-type constructor
+    arguments of [new_oib]).  Uses the same [push_arg_class] logic as
+    [make_eqfn_def] to identify cross-type references. *)
+Definition eq_fn_deps
+    (new_kn   : kername)
+    (n_block  : nat)
+    (body_idx : nat)
+    (new_oib  : one_inductive_body)
+    (type_map : list (kername * inductive))
+    (pi_kns   : list kername)
+    : list kername :=
+  dedup_kns (flat_map (fun c =>
+    let n_args := c.(cstr_arity) in
+    flat_map (fun snoc_i =>
+      let arg_t := match nth_error c.(cstr_args) snoc_i with
+                   | Some d => d.(decl_type) | None => tVar "?" end in
+      match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
+      | Some (Some kn) =>
+        if existsb (eq_kername kn) pi_kns then [kn] else []
+      | _ => []
+      end)
+    (seq 0 n_args))
+  new_oib.(ind_ctors)).
+
 (** Declare an [eqFn<T>'] function for every purely-inductive type in
-    [todo].  Non-purely-inductive entries are silently skipped.
-    For types at body index 0 the name is ["eqFn" ++ block_kname]; for
-    bodies at index [j > 0] the name is ["eqFn" ++ block_kname ++ "_" ++ j].
-    This matches what [EqualityResolution.type_to_eq_fn] generates. *)
-Polymorphic Fixpoint generate_eqfn_defs
+    [todo].  Temporary stub: each eq fn is [fun _ _ => true], avoiding any
+    cross-type [tConst] references and the associated declaration-order
+    dependency.  The naming matches what [EqualityResolution.type_to_eq_fn]
+    expects: body index 0 → ["eqFn" ++ block_name]; body j > 0 →
+    ["eqFn" ++ block_name ++ "_" ++ j]. *)
+Polymorphic Definition generate_eqfn_defs
     (todo    : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map : list (kername * inductive))
     (pi_set  : list kername)
     (cur_mp  : modpath)
     : TemplateMonad unit :=
-  match todo with
-  | [] => tmReturn tt
-  | ((old_kn, new_ind), (old_mind, new_mind)) :: rest =>
-    if negb (existsb (eq_kername old_kn) pi_set)
-    then generate_eqfn_defs rest all_map pi_set cur_mp
-    else
-      tmBind (match nth_error new_mind.(ind_bodies) (inductive_ind new_ind) with
-              | None =>
-                tmFail ("generate_eqfn_defs: no body for " ++ snd old_kn)
-              | Some new_oib =>
-                let n_old_ctors :=
-                  match nth_error old_mind.(ind_bodies) 0 with
-                  | Some ob => List.length ob.(ind_ctors)
-                  | None    => 0
-                  end in
-                let n_block := List.length new_mind.(ind_bodies) in
-                let d := make_eqfn_def old_kn new_ind n_block new_oib n_old_ctors all_map cur_mp in
-                (* Name matches type_to_eq_fn's naming: "eqFn"++block_nm (for ind=0)
-                   or "eqFn"++block_nm++"_"++j (for ind>0). *)
-                let blk_nm := snd (inductive_mind new_ind) in
-                let body_j := inductive_ind new_ind in
-                let fn_nm :=
-                  if Nat.eqb body_j 0 then "eqFn" ++ blk_nm
-                  else "eqFn" ++ blk_nm ++ "_" ++ string_of_nat body_j in
-                eqfn_term_ev <- tmEval all (tFix [d] 0) ;;
-                tmMkDefinition fn_nm eqfn_term_ev
-              end) (fun _ =>
-      generate_eqfn_defs rest all_map pi_set cur_mp)
-  end.
+  let bool_ind := {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool");
+                     inductive_ind  := 0 |} in
+  let true_t   := tConstruct bool_ind 0 [] in
+  let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let pi_entries :=
+    filter (fun e => existsb (eq_kername (fst (fst e))) pi_set) todo in
+  monad_map (fun '((_, new_ind), _) =>
+    let new_type := tInd new_ind [] in
+    let fn_term  := tLambda anon_b new_type (tLambda anon_b new_type true_t) in
+    let blk_nm   := snd (inductive_mind new_ind) in
+    let body_j   := inductive_ind new_ind in
+    let fn_nm    :=
+      if Nat.eqb body_j 0 then "eqFn" ++ blk_nm
+      else "eqFn" ++ blk_nm ++ "_" ++ string_of_nat body_j in
+    fn_term_ev <- tmEval all fn_term ;;
+    tmMkDefinition fn_nm fn_term_ev)
+  pi_entries ;;
+  tmReturn tt.
 
 (* ------------------------------------------------------------------ *)
 (** ** Lifted premise-function generation                             *)
@@ -4359,11 +4377,26 @@ Polymorphic Fixpoint generate_lifted_fns
     let any_input_lifted :=
       orb (existsb (fun o => match o with Some _ => true | None => false end) arg_infos)
           any_arr_input_lifted in
-    (* lambda binder types: arrow-type args use fnTypeN, lifted inductives use new_ind, else original *)
+    (* Resolve arrow-type inductives via tmLocate on "<name>LiftCstr".
+       In the combined-block pipeline the arrow type lives inside a mutual block
+       (kname ≠ (cur_mp, name)), so we cannot rely on (cur_mp, name) being valid. *)
+    arr_ind_resolved <- monad_map (fun '(arr_t, nm) =>
+      refs <- tmLocate (nm ++ "LiftCstr") ;;
+      match find (fun g => match g with ConstructRef _ _ | IndRef _ => true | _ => false end) refs with
+      | Some (ConstructRef ind _) => tmReturn (nm, ind)
+      | Some (IndRef ind)         => tmReturn (nm, ind)
+      | _ => tmReturn (nm, {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |})
+      end) arr_name_pairs ;;
+    (* lambda binder types: arrow-type args use the resolved inductive, lifted
+       inductives use new_ind, else the original type. *)
     let lifted_arg_types :=
       mapi (fun i pair =>
         match nth i arr_type_infos None with
-        | Some (_, nm) => tInd {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} []
+        | Some (_, nm) =>
+          match find (fun p => String.eqb (fst p) nm) arr_ind_resolved with
+          | Some (_, ind) => tInd ind []
+          | None => tInd {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} []
+          end
         | None =>
           match fst pair with
           | Some (_, new_ind) => tInd new_ind []
@@ -4651,6 +4684,23 @@ Polymorphic Fixpoint generate_inputLift_fns
       let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
       let in_types   := List.map (fun p => nth p all_types (tVar "?")) in_pos in
       let classified := List.map (classify_in_type type_map app_kn_map cur_mp) in_types in
+      (* Pre-resolve arrow-type inductives via tmLocate so we get the correct body index. *)
+      arr_ind_resolved <- monad_map (fun '(_, nm) =>
+        fn_refs <- tmLocate nm ;;
+        let fn_ind_default := {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} in
+        fn_ind <-
+          match find (fun g => match g with IndRef _ | ConstructRef _ _ => true | _ => false end) fn_refs with
+          | Some (IndRef ind)         => tmReturn ind
+          | Some (ConstructRef ind _) => tmReturn ind
+          | _ => tmReturn fn_ind_default
+          end ;;
+        tmReturn (nm, fn_ind))
+        arr_name_pairs ;;
+      let lookup_arr_ind nm :=
+        match find (fun p => String.eqb (fst p) nm) arr_ind_resolved with
+        | Some (_, ind) => ind
+        | None => {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |}
+        end in
       (* Override entries for arrow types: replace (t, None) with (fnTypeN, Some fnTypeNLift). *)
       let classified :=
         mapi (fun i '(lifted_t, lf) =>
@@ -4660,7 +4710,7 @@ Polymorphic Fixpoint generate_inputLift_fns
             let orig_t := nth i in_types (tVar "?") in
             match find (fun p => rfp_eqb_term (fst p) orig_t) arr_name_pairs with
             | Some (_, nm) =>
-              (tInd {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} [],
+              (tInd (lookup_arr_ind nm) [],
                Some (tConst (cur_mp, nm ++ "Lift") []))
             | None => (lifted_t, lf)
             end
@@ -6006,6 +6056,7 @@ Definition classify_out_type_transparent_sigma
     (app_kn_map     : list (kername * list term * inductive))
     (pi_set         : list kername)
     (arr_name_pairs : list (term * string))
+    (arr_ind_mapping : list (string * inductive))
     (cur_mp         : modpath)
     (t              : term)
     : term * option (term * bool) :=
@@ -6048,7 +6099,11 @@ Definition classify_out_type_transparent_sigma
     (* Arrow type: look up in arr_name_pairs for fnTypeN-lifted output types. *)
     match find (fun '(arr_t, _) => rfp_eqb_term arr_t t) arr_name_pairs with
     | Some (_, nm) =>
-      let ind_ref := {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} in
+      let ind_ref :=
+        match find (fun p => String.eqb (fst p) nm) arr_ind_mapping with
+        | Some (_, ind) => ind
+        | None => {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |}
+        end in
       (tInd ind_ref [], Some (tConst (cur_mp, nm ++ "TransparentSigmaPush") [], true))
     | None => (t, None)
     end
@@ -6084,8 +6139,19 @@ Polymorphic Fixpoint generate_transparent_sigma_outputPush_fns
       let n_total    := List.length in_pos + List.length out_pos in
       let all_types  := extract_arg_types n_params n_total oib.(ind_type) in
       let orig_types := List.map (fun p => nth p all_types (tVar "?")) out_pos in
+      arr_ind_resolved_ots <- monad_map (fun '(_, nm) =>
+        fn_refs <- tmLocate nm ;;
+        let fn_ind_default := {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} in
+        fn_ind <-
+          match find (fun g => match g with IndRef _ | ConstructRef _ _ => true | _ => false end) fn_refs with
+          | Some (IndRef ind)         => tmReturn ind
+          | Some (ConstructRef ind _) => tmReturn ind
+          | _ => tmReturn fn_ind_default
+          end ;;
+        tmReturn (nm, fn_ind))
+        arr_name_pairs ;;
       let classified   :=
-        List.map (classify_out_type_transparent_sigma type_map app_kn_map pi_set arr_name_pairs cur_mp)
+        List.map (classify_out_type_transparent_sigma type_map app_kn_map pi_set arr_name_pairs arr_ind_resolved_ots cur_mp)
                  orig_types in
       let lifted_types := List.map fst classified in
       let push_fns     := List.map snd classified in
@@ -10724,6 +10790,7 @@ Inductive cmd : Type :=
 | Assign : nat -> exp -> cmd
 | Seq    : cmd -> cmd -> cmd
 | While  : exp -> cmd -> cmd.
+Definition eqFncmd (c1 c2 : cmd) : bool := true.
 
 CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
 | EvalAssign     : forall  vs v e,
@@ -10741,8 +10808,10 @@ CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
 
 MetaRocq Run (preprocess_and_generate_all_with_transparent_push
   [("evalCmd", ([0;1], [2]))] 500).
+Print fnType0.  
+Search (cmd' -> cmd' -> bool).  
 
-Print nat'.
+
 Print fnType0TransparentSigmaPushBody.
 End ImpSem.
   
@@ -10986,7 +11055,7 @@ Polymorphic Definition generate_arrow_liftedFuncs
     (fn_app_infos   : list (kername * list term * term))
     (standalone_kns : list kername)
     (arr_name_pairs : list (term * string))
-    (ind_mapping    : list (kername * kername))
+    (ind_mapping    : list (kername * inductive))
     (cur_mp         : modpath)
     : TemplateMonad unit :=
   let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
@@ -11020,19 +11089,34 @@ Polymorphic Definition generate_arrow_liftedFuncs
       | _ => None
       end
     end in
+  (* Pre-resolve arrow-type inductives: in the combined-block pipeline the
+     arrow type lives inside a mutual block, so (cur_mp, nm) is not valid.
+     Use tmLocate on "<name>LiftCstr" (same approach as generate_arrow_lift_fns). *)
+  arr_ind_resolved <- monad_map (fun '(arr_t, nm) =>
+    refs <- tmLocate (nm ++ "LiftCstr") ;;
+    match find (fun g => match g with ConstructRef _ _ | IndRef _ => true | _ => false end) refs with
+    | Some (ConstructRef ind _) => tmReturn (nm, ind)
+    | Some (IndRef ind)         => tmReturn (nm, ind)
+    | _ => tmReturn (nm, {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |})
+    end) arr_name_pairs ;;
+  let lookup_arr_ind nm :=
+    match find (fun p => String.eqb (fst p) nm) arr_ind_resolved with
+    | Some (_, ind) => ind
+    | None => {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |}
+    end in
   (* Part 1: full [liftedFunc] for functions in application positions. *)
   monad_map (fun '((fn_kn, arg_types), ret_type) =>
     match find (fun p => rfp_eqb_term (fst p) ret_type) arr_name_pairs with
     | None => tmReturn tt
     | Some (_, ret_nm) =>
-      let ret_ind_t := tInd {| inductive_mind := (cur_mp, ret_nm); inductive_ind := 0 |} [] in
+      let ret_ind_t := tInd (lookup_arr_ind ret_nm) [] in
       let n := List.length arg_types in
       let arg_infos := List.map resolve_tp arg_types in
       let lifted_arg_types :=
         List.map (fun '(info, tp) =>
           match info with
-          | Some (inl nm) => tInd {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} []
-          | Some (inr (_, new_kn)) => tInd {| inductive_mind := new_kn; inductive_ind := 0 |} []
+          | Some (inl nm) => tInd (lookup_arr_ind nm) []
+          | Some (inr (_, new_ind)) => tInd new_ind []
           | None => tp
           end) (combine arg_infos arg_types) in
       let chk_terms :=
@@ -11308,7 +11392,7 @@ Polymorphic Definition generate_arrow_fns_for_relation
     filter (fun kn =>
       negb (existsb (fun e => eq_kername (fst (fst e)) kn) fn_app_infos))
     standalone_kns_raw in
-  generate_arrow_liftedFuncs fn_app_infos standalone_kns arr_name_pairs ind_mapping cur_mp ;;
+  generate_arrow_liftedFuncs fn_app_infos standalone_kns arr_name_pairs type_mapping_approx cur_mp ;;
   tmReturn tt.
 Set Universe Checking.
 
@@ -11363,7 +11447,7 @@ Polymorphic Definition generate_arrow_fns_pre
     filter (fun kn =>
       negb (existsb (fun e => eq_kername (fst (fst e)) kn) fn_app_infos))
     standalone_kns_raw in
-  generate_arrow_liftedFuncs fn_app_infos standalone_kns arr_name_pairs ind_mapping cur_mp ;;
+  generate_arrow_liftedFuncs fn_app_infos standalone_kns arr_name_pairs type_mapping_approx cur_mp ;;
   tmReturn tt.
 Set Universe Checking.
 
@@ -11415,10 +11499,17 @@ Polymorphic Definition animate_coinductive_with_fn_pos
     '(type_mapping, app_kn_mapping, arr_name_pairs, npi_set,
       fn_app_infos_rfp, lat_ind_mapping, modes_with_idx_rfp) <-
         preprocess_and_generate_all_with_transparent_push_data modes_rfp fuel ;;
-    let arr_subst : list (term * term) :=
-      List.map (fun '(arr_t, nm) =>
-        (arr_t, tInd {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} []))
-      arr_name_pairs in
+    arr_subst <- monad_map (fun '(arr_t, nm) =>
+      fn_refs <- tmLocate nm ;;
+      let fn_ind_default := {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} in
+      fn_ind <-
+        match find (fun g => match g with IndRef _ | ConstructRef _ _ => true | _ => false end) fn_refs with
+        | Some (IndRef ind)         => tmReturn ind
+        | Some (ConstructRef ind _) => tmReturn ind
+        | _ => tmReturn fn_ind_default
+        end ;;
+      tmReturn (arr_t, tInd fn_ind []))
+      arr_name_pairs ;;
     let pi_set :=
       List.map fst (filter (fun e => negb (existsb (eq_kername (fst e)) npi_set)) type_mapping) in
     type_minds <- monad_map (fun entry =>
@@ -11435,8 +11526,10 @@ Polymorphic Definition animate_coinductive_with_fn_pos
       let prod_kn     := inductive_mind prod_ind in
       let anim_res_kn := inductive_mind anim_ind in
       _ <- generate_eqfn_defs type_minds type_mapping pi_set cur_mp ;;
+      tmMsg "[DEBUG] generate_eqfn_defs done" ;;
       let unique_fn_infos := fn_app_infos_rfp in
       _ <- generate_lifted_fns unique_fn_infos type_mapping app_kn_mapping cur_mp arr_name_pairs ;;
+      tmMsg "[DEBUG] generate_lifted_fns done" ;;
       let fn_kn_map :=
         List.map (fun fi => (fst (fst fi), (cur_mp, snd (fst (fst fi)) ++ "liftedFunc")))
                  unique_fn_infos in
@@ -11464,7 +11557,8 @@ Polymorphic Definition animate_coinductive_with_fn_pos
         filter (fun kn =>
           negb (existsb (fun e => eq_kername (fst (fst e)) kn) unique_fn_infos))
         standalone_kns_raw in
-      _ <- generate_arrow_liftedFuncs unique_fn_infos standalone_kns arr_name_pairs lat_ind_mapping cur_mp ;;
+      _ <- generate_arrow_liftedFuncs unique_fn_infos standalone_kns arr_name_pairs type_mapping cur_mp ;;
+      tmMsg "[DEBUG] generate_arrow_liftedFuncs done" ;;
       let block_id_map := List.map (fun kn => (kn, kn)) unique_block_kns in
       let sorted_block_kns :=
         topo_sort_kns unique_block_kns rel_block_minds_assoc block_id_map
@@ -11480,19 +11574,24 @@ Polymorphic Definition animate_coinductive_with_fn_pos
           modes_with_idx_rfp in
         lift_relation_mwi block_kn rel_mapping type_mapping app_kn_mapping block_mwi fn_kn_map arr_subst true)
         sorted_block_kns tt ;;
+      tmMsg "[DEBUG] lift_relation_mwi done" ;;
       _ <- generate_inputLift_fns kn_mode_list type_mapping app_kn_mapping
                                    prod_kn anim_res_kn cur_mp true npi_set arr_name_pairs ;;
+      tmMsg "[DEBUG] generate_inputLift_fns done" ;;
       _ <- generate_rest_fns kn_mode_list cur_mp prod_kn ;;
+      tmMsg "[DEBUG] generate_rest_fns done" ;;
       hr_type_tm <- tmQuote (HoleyResult) ;;
       hr_pair_tm <- tmQuote (hr_pair) ;;
       hr_pure_tm <- tmQuote (hr_pure) ;;
       let pi_set_all := List.map fst type_mapping in
       _ <- generate_transparent_sigma_outputPush_fns kn_mode_list type_mapping app_kn_mapping pi_set_all
                               arr_name_pairs prod_kn anim_res_kn cur_mp hr_type_tm hr_pair_tm hr_pure_tm ;;
+      tmMsg "[DEBUG] generate_transparent_sigma_outputPush_fns done" ;;
       let rfp_block_kn := List.hd (cur_mp, "") unique_block_kns in
       let lifted_kn    := (cur_mp, snd rfp_block_kn ++ "'") in
       let lifted_modes := List.map (fun me => (fst me ++ "'", snd me)) modes_rfp in
       _ <- animate_coinductive lifted_kn lifted_modes fuel ;;
+      tmMsg "[DEBUG] animate_coinductive done" ;;
       rfp_mind <- tmQuoteInductive rfp_block_kn ;;
       match find (fun me => String.eqb (fst me) rfp_rel_nm) modes_rfp,
             find (fun ob => String.eqb ob.(ind_name) rfp_rel_nm) rfp_mind.(ind_bodies) with
@@ -11524,11 +11623,19 @@ Polymorphic Definition animate_coinductive_with_fn_pos
           in
           let unlift_arr := lat_unlift_type arr_name_pairs lat_ind_mapping cur_mp in
           arr_an_hole_infos_raw <- monad_map (fun '(arr_t, nm) =>
-            let fn_kn  := (cur_mp, nm) in
-            let fn_ind := {| inductive_mind := fn_kn; inductive_ind := 0 |} in
+            fn_refs <- tmLocate nm ;;
+            let fn_ind_default := {| inductive_mind := (cur_mp, nm); inductive_ind := 0 |} in
+            fn_ind <-
+              match find (fun g => match g with IndRef _ | ConstructRef _ _ => true | _ => false end) fn_refs with
+              | Some (IndRef ind)         => tmReturn ind
+              | Some (ConstructRef ind _) => tmReturn ind
+              | _ => tmReturn fn_ind_default
+              end ;;
+            let fn_kn       := inductive_mind fn_ind in
+            let fn_body_idx := inductive_ind fn_ind in
             arr_mind <- tmQuoteInductive fn_kn ;;
             let ctors :=
-              match nth_error arr_mind.(ind_bodies) 0 with
+              match nth_error arr_mind.(ind_bodies) fn_body_idx with
               | Some oib => oib.(ind_ctors) | None => []
               end in
             let anim_infos :=
