@@ -47,7 +47,7 @@ Inductive cmd : Type :=
 
 CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
 | EvalAssign     : forall  vs v e,
-     evalCmd vs (Assign v e) (set vs v (evalExp vs e))
+     evalCmd vs (Assign v e) ((set vs v (evalExp vs e)))
 | EvalSeq        : forall vs1 vs2 vs3 c1 c2,
     evalCmd vs1 c1 vs2 /\ evalCmd vs2 c2 vs3
     -> evalCmd vs1 (Seq c1 c2) vs3
@@ -59,12 +59,13 @@ CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
     /\ evalCmd vs1' c vs2' /\ evalCmd vs2' (While e c) vs3'
     -> evalCmd vs1' (While e c) vs3'.
 
-MetaRocq Run (preprocess_all_lifting_types
-  [("evalCmd", ([0;1], [2]))] 500).
-  
+MetaRocq Run (animate_coinductive_with_fn_pos
+  <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+ 
 Print fnType0.
 Print cmd'.
 Print nat'.  
+
 End ImpSem.
 
 Module bigStepTr.
@@ -137,8 +138,12 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 | bigStep : forall t tr_lst t',
     step t t' /\ bigStepTr t' tr_lst -> bigStepTr t (coSeq t' tr_lst).
   
-MetaRocq Run (preprocess_all_lifting_types
+MetaRocq Run (animate_coinductive_with_fn_pos <? bigStepTr ?>
   [("bigStepTr", ([0], [1]));("step", ([0], [1]))] 500). 
+
+Search (tm' -> tm' -> bool).
+
+Print eqFncoLst'_1.
 Print tm'.
 Print coLst'.   
   
@@ -151,21 +156,23 @@ Inductive sinstr : Type :=
 | SPlus
 | SMinus
 | SMult.
-
+(*
 Fixpoint decEqsinstr : forall (t1 t2 : sinstr), {t1 = t2} + {t1 <> t2}.
 Proof.
   decide equality. decide equality. decide equality. decide equality.
 Defined.
-
+*)
 Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
-  if decEqsinstr t1 t2 then true else false.
+  true.
 
 Definition stack := list nat.
 Definition prog  := list sinstr.
 
 Definition appSt (st : string -> nat) (s : string) : nat := st s.
 
-
+Definition add (n1 n2 : nat) := n1 + n2.
+Definition minus (n1 n2 : nat) := n1 - n2.
+Definition mul (n1 n2 : nat) := n1 * n2.
 
 Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr -> list nat -> Prop :=
 | SS_Push  : forall st stk n p,
@@ -174,13 +181,13 @@ Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr
      
      stack_step (st) (SLoad i :: p)  stk p ((appSt st i) :: stk) 
    
-| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((m + n) :: stk)
+| SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((add m  n) :: stk)
 | SS_Minus : forall st stk n m p,
-    stack_step st (SMinus :: p) (n :: m :: stk) p  ((m - n) :: stk)
+    stack_step st (SMinus :: p) (n :: m :: stk) p  ((minus m  n) :: stk)
 | SS_Mult  : forall st stk n m p,
-    stack_step st (SMult :: p) (n :: m :: stk) p  ((m * n) :: stk).
+    stack_step st (SMult :: p) (n :: m :: stk) p  ((mul m  n) :: stk).
     
-MetaRocq Run (preprocess_all_lifting_types
+MetaRocq Run (animate_coinductive_with_fn_pos <? stack_step ?>
   [("stack_step", ([0;1;2], [3;4]))] 500 ).
 
 Print fnType0.
@@ -307,7 +314,7 @@ End SpecPairsTest.
 *)
 
 (* ------------------------------------------------------------------ *)
-
+(*
 Module FnAppInfosTest.
 
 Inductive myList : Type :=
@@ -389,3 +396,4 @@ Example cfai_sii_a2i_count_test : cfai_sii_a2i_count = 0 := eq_refl.
 *)
 
 End FnAppInfosTest.
+*)

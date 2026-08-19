@@ -5161,6 +5161,59 @@ Fixpoint string_len (s : string) : nat :=
   | String.String _ rest => S (string_len rest)
   end.
 
+(** True if [c] is an ASCII decimal digit byte ('0'–'9'). *)
+Definition is_digit_byte (c : Byte.byte) : bool :=
+  match c with
+  | Byte.x30 | Byte.x31 | Byte.x32 | Byte.x33 | Byte.x34
+  | Byte.x35 | Byte.x36 | Byte.x37 | Byte.x38 | Byte.x39 => true
+  | _ => false
+  end.
+
+(** Digit value of a digit byte (0–9; returns 0 for non-digits). *)
+Definition digit_byte_val (c : Byte.byte) : nat :=
+  match c with
+  | Byte.x30 => 0 | Byte.x31 => 1 | Byte.x32 => 2 | Byte.x33 => 3 | Byte.x34 => 4
+  | Byte.x35 => 5 | Byte.x36 => 6 | Byte.x37 => 7 | Byte.x38 => 8 | Byte.x39 => 9
+  | _ => 0
+  end.
+
+(** Reverse a bytestring using a tail-recursive accumulator. *)
+Fixpoint string_rev_acc (s acc : string) : string :=
+  match s with
+  | String.EmptyString => acc
+  | String.String c r  => string_rev_acc r (String.String c acc)
+  end.
+
+(** Collect leading digit bytes of [r] into [acc] in original order.
+    Intended to be called with [r] = reversed string, so this extracts
+    the trailing digits of the original string in their original order. *)
+Fixpoint take_leading_digits_rev (r acc : string) : string :=
+  match r with
+  | String.EmptyString => acc
+  | String.String c rest =>
+    if is_digit_byte c
+    then take_leading_digits_rev rest (String.String c acc)
+    else acc
+  end.
+
+(** Parse a string of digit bytes left-to-right as a decimal natural number. *)
+Fixpoint parse_digit_str (s : string) (acc : nat) : nat :=
+  match s with
+  | String.EmptyString => acc
+  | String.String c r  =>
+    if is_digit_byte c
+    then parse_digit_str r (acc * 10 + digit_byte_val c)
+    else acc
+  end.
+
+(** Parse the natural number formed by the trailing decimal digits of [s].
+    E.g., [parse_An_trailing_nat "evalCmdAn2"] = 2, [..."An10"] = 10.
+    Returns 0 when [s] has no trailing digits. *)
+Definition parse_An_trailing_nat (s : string) : nat :=
+  let rev_s   := string_rev_acc s String.EmptyString in
+  let digit_s := take_leading_digits_rev rev_s String.EmptyString in
+  parse_digit_str digit_s 0.
+
 (** For each extra constructor in each lifted type, declare a wrapper inductive
     [Inductive ctorNameSymb := mk_ctorNameSymb : fnSymb_type -> ctorNameSymb] and a
     corresponding [ctorNameSymb_unwrap : ctorNameSymb -> fnSymb_type] definition.
@@ -6270,23 +6323,43 @@ Fixpoint subst_new_block_at_depth
     it is lifted by [n_args] before use so outer hole tRels survive the binders.
     [fnSymb_ty] = result of [make_fnSymb_type] (product of original-type arg types). *)
 Definition build_an_hole_prop
-    (old_ind   : inductive)
-    (new_ind   : inductive)
-    (fn_tm     : term)
-    (fnSymb_ty : term)
+    (old_ind    : inductive)
+    (fn_tm      : term)
+    (fnSymb_ty  : term)
+    (an_pos     : nat)
+    (n_rel      : nat)
+    (extra_outs : list (nat * aname * term))
     : term :=
+  (* [arg_pairs]: input binders from fnSymb_ty (in_pos arguments of the relation). *)
   let old_rel_ind := old_ind in
   let '(arg_pairs, _) := extract_prod_args fnSymb_ty in
-  let n_args    := List.length arg_pairs in
-  let fn_tm_in  := lift n_args 0 fn_tm in
-  let rel_args  := mapi (fun i _ => tRel (n_args - 1 - i)) arg_pairs in
+  let n_in      := List.length arg_pairs in
+  (* Append extra output binders (non-An outputs, in position order). *)
+  let extra_out_pairs := List.map (fun '((_, nm), T) => (nm, T)) extra_outs in
+  let all_binder_pairs := List.app arg_pairs extra_out_pairs in
+  let n_binders := List.length all_binder_pairs in
+  let fn_tm_in  := lift n_binders 0 fn_tm in
+  (* tRel for each input (first n_in binders). *)
+  let input_rels := mapi (fun i _ => tRel (n_binders - 1 - i)) arg_pairs in
   let fnSymb_app :=
     match arg_pairs with
     | [] => fn_tm_in
-    | _  => tApp fn_tm_in rel_args
+    | _  => tApp fn_tm_in input_rels
     end in
-  let rel_app := tApp (tInd old_rel_ind []) (rel_args ++ [fnSymb_app]) in
-  List.fold_right (fun '(nm, T) acc => tProd nm T acc) rel_app arg_pairs.
+  (* tRel for each extra output binder, tagged by its relation position. *)
+  let extra_out_rels :=
+    mapi (fun i '((p, _), _) => (p, tRel (n_binders - 1 - (n_in + i)))) extra_outs in
+  (* Build the full argument list for the relation, inserting fnSymb_app at an_pos. *)
+  let pos_to_arg (j : nat) : term :=
+    if Nat.eqb j an_pos then fnSymb_app
+    else if Nat.ltb j n_in then tRel (n_binders - 1 - j)
+    else match find (fun '(p, _) => Nat.eqb p j) extra_out_rels with
+         | Some (_, r) => r
+         | None        => tVar "rel_pos_not_found"
+         end in
+  let rel_full_args := List.map pos_to_arg (seq 0 n_rel) in
+  let rel_app := tApp (tInd old_rel_ind []) rel_full_args in
+  List.fold_right (fun '(nm, T) acc => tProd nm T acc) rel_app all_binder_pairs.
 
 (** Build [forall new_ctor_args, (push_tm_lifted) (new_ctor ...) = old_ctor ((sub_push_tm_lifted) ...)].
     [push_tm] is the unwrapped push-hole function at depth 0; it is lifted by [n_args]
@@ -6550,6 +6623,25 @@ Polymorphic Fixpoint declare_coIndPush_fn_axioms
     than a global axiom: e.g. [{cstrNm}Symb_unwrap h] instead of [{cstrNm}fnSymb].
     Hole types are deduplicated by wrapper inductive kername so that each unique
     wrapper inductive appears at most once as a forall binder. *)
+
+(** Recursively substitute [tInd si []] → replacement term for any inductive in [subst].
+    Used to replace arrow-type combined-block references (tInd {block_kn; fn_body_idx})
+    with their original arrow type terms in fnSymb_ty values from collect_an_hole_infos. *)
+Fixpoint subst_arr_tInd (subst : list (inductive * term)) (t : term) : term :=
+  match t with
+  | tInd ind _ =>
+    match find (fun '(si, _) =>
+      andb (eq_kername (inductive_mind si) (inductive_mind ind))
+           (Nat.eqb (inductive_ind si) (inductive_ind ind))) subst with
+    | Some (_, r) => r
+    | None => t
+    end
+  | tProd nm ty b    => tProd nm (subst_arr_tInd subst ty) (subst_arr_tInd subst b)
+  | tLambda nm ty b  => tLambda nm (subst_arr_tInd subst ty) (subst_arr_tInd subst b)
+  | tApp f args      => tApp (subst_arr_tInd subst f) (List.map (subst_arr_tInd subst) args)
+  | _ => t
+  end.
+
 Polymorphic Definition generate_animated_top_fn_prop
     (rel_nm              : ident)
     (type_minds          : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
@@ -6561,6 +6653,7 @@ Polymorphic Definition generate_animated_top_fn_prop
     (fn_infos            : list (kername * list term * term))
     (sigma2              : bool)
     (extra_an_hole_infos : list (inductive * inductive * string * term))
+    (arr_type_subst      : list (inductive * term))
     : TemplateMonad unit :=
   eq_sample   <- tmQuote (0 = 0) ;;
   and_sample  <- tmQuote (True /\ True) ;;
@@ -6575,9 +6668,17 @@ Polymorphic Definition generate_animated_top_fn_prop
     | tApp f _ => f
     | _         => tVar "and_not_found"
     end in
-  (* Step 1: collect hole metadata in fixed order. *)
-  let an_hole_infos      := List.app extra_an_hole_infos
-                              (collect_an_hole_infos type_minds type_map app_kn_map kn_mode_list) in
+  (* Step 1: collect hole metadata in fixed order.
+     Post-process fnSymb_ty from collect_an_hole_infos to replace arrow-type
+     combined-block references (tInd {block_kn; fn_body_idx}) with original arrow terms. *)
+  let sigma2_an_hole_infos_raw :=
+    collect_an_hole_infos type_minds type_map app_kn_map kn_mode_list in
+  let sigma2_an_hole_infos :=
+    if is_nil arr_type_subst then sigma2_an_hole_infos_raw
+    else List.map (fun '(rel_ind, new_ind, cstr_nm, fnSymb_ty) =>
+      (rel_ind, new_ind, cstr_nm, subst_arr_tInd arr_type_subst fnSymb_ty))
+      sigma2_an_hole_infos_raw in
+  let an_hole_infos      := List.app extra_an_hole_infos sigma2_an_hole_infos in
   let push_hole_infos    := if sigma2 then [] else collect_coind_push_hole_infos type_minds pi_set in
   let pi_push_hole_infos := if sigma2 then [] else collect_pi_push_hole_infos type_minds pi_set in
   let n_an      := List.length an_hole_infos in
@@ -6632,12 +6733,68 @@ Polymorphic Definition generate_animated_top_fn_prop
       (old_kn, tApp unwrap_c [tRel (canon_rel (n_an + n_push + j))]))
     pi_push_hole_infos in
   let pi_push_tms := List.map snd pi_push_map in
-  (* Step 5: build An-hole props. *)
+  (* Step 5: build An-hole props.
+     Multi-output relations need extra forall-binders for non-An output positions so
+     the relation application is fully-applied.
+     For extra_an_hole_infos (arrow-type holes): single output at an_pos = n_in.
+     For sigma2_an_hole_infos: determine an_pos by parsing the trailing digit N from
+     cstr_nm and looking up out_pos[N-n_in] from kn_mode_list; cross-reference other
+     An-holes of the same rel_ind to obtain the extra output binders. *)
+  let n_extra := List.length extra_an_hole_infos in
+  (* Build (rel_ind, an_pos, n_rel, out_pos, ret_ty) for each sigma2 An-hole. *)
+  let sigma2_an_info :=
+    List.map (fun x =>
+      let '(((rel_ind, _), cstr_nm), fnSymb_ty) := x in
+      let '(_, ret_ty) := extract_prod_args fnSymb_ty in
+      let an_n := parse_An_trailing_nat cstr_nm in
+      match find (fun e =>
+        andb (eq_kername (inductive_mind (fst e)) (inductive_mind rel_ind))
+             (Nat.eqb (inductive_ind (fst e)) (inductive_ind rel_ind)))
+        kn_mode_list with
+      | Some (_, (_, (in_pos, out_pos))) =>
+        let n_in_r := List.length in_pos in
+        (rel_ind, nth (Nat.sub an_n n_in_r) out_pos an_n,
+         n_in_r + List.length out_pos, out_pos, ret_ty)
+      | None => (rel_ind, an_n, an_n + 1, [an_n], ret_ty)
+      end)
+    sigma2_an_hole_infos in
+  (* For each sigma2 An-hole j, build extra_outs by iterating out_pos_j in order,
+     skipping an_pos_j, and looking up the ret_ty from the other An-hole with the
+     same rel_ind and an_pos = op. *)
+  let anon_nm_local := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let sigma2_extra_outs :=
+    mapi (fun j info_j =>
+      let '((((ri_j, ap_j), _), op_j), _) := info_j in
+      List.concat (List.map (fun op =>
+        if Nat.eqb op ap_j then []
+        else match find (fun info_k =>
+          let '((((ri_k, ap_k), _), _), _) := info_k in
+          andb (eq_kername (inductive_mind ri_k) (inductive_mind ri_j))
+               (andb (Nat.eqb (inductive_ind ri_k) (inductive_ind ri_j))
+                     (Nat.eqb ap_k op)))
+          sigma2_an_info with
+        | Some info_k =>
+          let '((((_, _), _), _), ret_ty_k) := info_k in
+          [(op, anon_nm_local, ret_ty_k)]
+        | None => []
+        end)
+      op_j))
+    sigma2_an_info in
   let an_props :=
     mapi (fun i x =>
-      let '(((rel_ind, new_ind), _), fnSymb_ty) := x in
+      let '(((rel_ind, _), _), fnSymb_ty) := x in
       let fn_tm := nth i an_fn_tms (tVar "an_fn_not_found") in
-      build_an_hole_prop rel_ind new_ind fn_tm fnSymb_ty)
+      if Nat.ltb i n_extra then
+        (* Arrow-type An-hole: single output at an_pos = n_in, n_rel = n_in + 1. *)
+        let '(aps, _) := extract_prod_args fnSymb_ty in
+        let n_in_a := List.length aps in
+        build_an_hole_prop rel_ind fn_tm fnSymb_ty n_in_a (S n_in_a) []
+      else
+        let sj := Nat.sub i n_extra in
+        let '((((_, an_pos), n_rel), _), _) :=
+          nth sj sigma2_an_info (rel_ind, 0, 1, [], tVar "no_ret") in
+        let extra_outs := nth sj sigma2_extra_outs [] in
+        build_an_hole_prop rel_ind fn_tm fnSymb_ty an_pos n_rel extra_outs)
     an_hole_infos in
   (* Map from LiftedCstr ctor name -> original function kername.
      LiftedCstr ctors are named [snd fn_kn ++ "LiftedCstr"], so stripping that
@@ -6924,7 +7081,7 @@ Polymorphic Definition animate_coinductive_transparent_sigma
           in
           _ <- generate_animated_top_fn_prop
                   rel_nm type_minds type_mapping app_kn_mapping pi_set cur_mp
-                  kn_mode_list unique_fn_infos false [] ;;
+                  kn_mode_list unique_fn_infos false [] [] ;;
           tmMkDefinition (rel_nm ++ "TransparentSigmaAnimatedTopFn") composite
         | _, _ =>
           tmFail "animate_coinductive_transparent_sigma: cannot locate prod or animation_result (2)"
@@ -7125,7 +7282,7 @@ Polymorphic Definition animate_coinductive_transparent_sigma2
           in
           _ <- generate_animated_top_fn_prop
                   rel_nm type_minds type_mapping app_kn_mapping pi_set cur_mp
-                  kn_mode_list unique_fn_infos true [] ;;
+                  kn_mode_list unique_fn_infos true [] [] ;;
           tmMkDefinition (rel_nm ++ "TransparentSigma2AnimatedTopFn") composite
         | _, _ =>
           tmFail "animate_coinductive_transparent_sigma2: cannot locate prod or animation_result (2)"
@@ -11642,10 +11799,32 @@ Polymorphic Definition animate_coinductive_with_fn_pos
               flat_map (fun '(rel_ind, (rel_nm, _)) =>
                 let matching := filter (fun c => string_is_prefix rel_nm c.(cstr_name)) ctors in
                 List.map (fun c =>
+                  let n_cstr_args    := #|c.(cstr_args)| in
+                  let n_block_bodies := #|arr_mind.(ind_bodies)| in
                   let orig_arg_types :=
-                    List.rev (List.map (fun d =>
+                    List.rev (mapi (fun snoc_i d =>
+                      let depth := n_cstr_args - 1 - snoc_i in
                       let t := unlift_arr d.(decl_type) in
-                      match t with tRel _ => arr_t | _ => t end) c.(cstr_args)) in
+                      match t with
+                      | tRel n =>
+                        if andb (Nat.leb depth n)
+                                (Nat.leb n (depth + n_block_bodies - 1))
+                        then
+                          let j := depth + n_block_bodies - 1 - n in
+                          if Nat.eqb j fn_body_idx
+                          then arr_t
+                          else
+                            match find (fun '(_, ind) =>
+                              andb (eq_kername (inductive_mind ind) fn_kn)
+                                   (Nat.eqb (inductive_ind ind) j))
+                              type_mapping with
+                            | Some (old_kn, _) =>
+                              tInd {| inductive_mind := old_kn; inductive_ind := 0 |} []
+                            | None => t
+                            end
+                        else t
+                      | _ => t
+                      end) c.(cstr_args)) in
                   let fnSymb_ty :=
                     List.fold_right (fun ty acc => tProd anon_b ty acc) (tInd fn_ind []) orig_arg_types in
                   (rel_ind, fn_ind, c.(cstr_name), fnSymb_ty))
@@ -11654,9 +11833,15 @@ Polymorphic Definition animate_coinductive_with_fn_pos
             tmReturn anim_infos)
             arr_name_pairs ;;
           arr_an_hole_infos <- tmEval all (List.concat arr_an_hole_infos_raw) ;;
+          let arr_type_subst :=
+            flat_map (fun '(arr_t, fn_tInd) =>
+              match fn_tInd with
+              | tInd fn_ind _ => [(fn_ind, arr_t)]
+              | _ => []
+              end) arr_subst in
           _ <- generate_animated_top_fn_prop
                   top_rel_nm type_minds type_mapping app_kn_mapping pi_set cur_mp
-                  kn_mode_list unique_fn_infos true arr_an_hole_infos ;;
+                  kn_mode_list unique_fn_infos true arr_an_hole_infos arr_type_subst ;;
           tmMkDefinition (top_rel_nm ++ "TransparentSigma2AnimatedTopFn") composite
         | _, _ =>
           tmFail "animate_coinductive_with_fn_pos: cannot locate prod or animation_result (2)"
