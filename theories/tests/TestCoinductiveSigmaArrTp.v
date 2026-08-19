@@ -179,7 +179,7 @@ Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr
      stack_step st (SPush n :: p) stk p (n :: stk) 
 | SS_Load  : forall st stk i p,
      
-     stack_step (st) (SLoad i :: p)  stk p ((appSt st i) :: stk) 
+     stack_step (st) (SLoad i :: p)  stk p ((st i) :: stk) 
    
 | SS_Plus  : forall st stk n m p, stack_step st (SPlus :: p) (n :: m :: stk) p ((add m  n) :: stk)
 | SS_Minus : forall st stk n m p,
@@ -192,6 +192,51 @@ MetaRocq Run (animate_coinductive_with_fn_pos <? stack_step ?>
 
 Print fnType0.
 Print nat'.  
+
+Module zip.
+
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
+
+CoInductive zipSt : stream -> stream -> stream -> Prop :=
+| zip : forall n m s1 s2 s3 s4 s5 s6,
+    s1 = Seq n s2 /\ s3 = Seq m s4 /\ zipSt s2 s4 s5 /\ s6 = Seq n (Seq m s5)
+    -> zipSt s1 s3 s6.
+
+MetaRocq Run (animate_coinductive_with_fn_pos <? zipSt ?>
+  [("zipSt", ([0;1], [2]))] 100).
+End zip.
+
+Module integrateStreams.
+(** A stream of naturals, with explicit undefined and nil sentinels. *)
+Definition add (n1 n2 : nat) := n1 + n2.
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+
+
+
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
+
+
+
+(* ------------------------------------------------------------------ *)
+(** ** Integrate *)
+
+CoInductive Integrate : stream -> stream -> Prop :=
+| integNil : Integrate nil nil
+| integ : forall s2 s3 n s5, Integrate s2 s3 /\ addStm n s3 s5 -> Integrate (Seq n s2) (Seq n s5)
+
+with addStm : nat -> stream -> stream -> Prop :=
+| addStmNil : forall m, addStm m nil nil
+| plusm : forall m s1 n s2, addStm m s1 s2 -> addStm m (Seq n s1) (Seq (add m n) s2).
+MetaRocq Run (animate_coinductive_with_fn_pos <? Integrate ?>
+  [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
+End integrateStreams.
 
 (*
 (** ** Chunk 1 unit tests: build_rel_context on evalCmd *)
