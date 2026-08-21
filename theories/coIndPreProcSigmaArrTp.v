@@ -4117,31 +4117,30 @@ Polymorphic Fixpoint generate_chk_fns
 (* ------------------------------------------------------------------ *)
 
 (** Build the [def term] for the structural equality fixpoint of
-    lifted type [new_ind].  The function has type [T' -> T' -> bool]:
-    - Matching original (primed) constructors: AND together per-arg
-      comparisons (recursive call for self-refs, cross-type eqFn for
-      other tracked types, ignored for untracked args).
-    - Mismatched original constructors → [false].
-    - Any extra or UndefinedCstr constructor → [false].
-    De Bruijn inside outer match branch with [n_args] binders:
-      tRel 0..n_args-1    = a's ctor args (snoc)
-      tRel n_args         = b (outer λ, shifted)
-      tRel n_args+1       = a (outer λ, shifted)
-      tRel n_args+2       = fix
-    Inside inner match (same ctor, [n_args] more binders):
-      tRel 0..n_args-1    = b's ctor args (snoc)
-      tRel n_args+snoc_i  = a's ctor arg [snoc_i]
-      tRel 2*n_args+2     = fix *)
+    lifted type [new_ind].  The function has type [T' -> T' -> bool].
+    For a mutual tFix with [n_block] bodies, body [body_idx]'s fix binder
+    at array position [body_idx] is at de Bruijn index
+    [n_block - 1 - body_idx] inside dbody.  Under 2 λ-binders for a, b
+    and inside a match branch with [n_args] arg-binders, the fix body at
+    array position [k] is at [tRel (n_block - 1 - k + 2 + n_args)].
+    In the inner match (n_args more binders) it is at
+    [tRel (n_block - 1 - k + 2 + 2*n_args)].
+    [eqfn_nm_map] maps original knames to their eqFn declaration names
+    (used for cross-block tConst references).
+    [fn_nm] is the name under which this def will be declared
+    (used as the fix-binder name). *)
 Definition make_eqfn_def
-    (old_kn      : kername)
-    (new_ind     : inductive)
-    (n_block     : nat)
-    (new_oib     : one_inductive_body)
-    (n_old_ctors : nat)
-    (type_map    : list (kername * inductive))
-    (cur_mp      : modpath)
+    (old_kn       : kername)
+    (new_ind      : inductive)
+    (n_block      : nat)
+    (n_block_lift : nat)
+    (new_oib      : one_inductive_body)
+    (n_old_ctors  : nat)
+    (type_map     : list (kername * inductive))
+    (eqfn_nm_map  : list (kername * string))
+    (fn_nm        : string)
+    (cur_mp       : modpath)
     : def term :=
-  let type_nm  := snd old_kn in
   let new_type := tInd new_ind [] in
   let new_kn   := inductive_mind new_ind in
   let body_idx := inductive_ind new_ind in
@@ -4160,46 +4159,57 @@ Definition make_eqfn_def
     end in
   let ci   := {| ci_ind := new_ind; ci_npar := 0; ci_relevance := Relevant |} in
   let pred := {| puinst := []; pparams := []; pcontext := [anon_b]; preturn := bool_t |} in
-  (* Outer match branches on [a]. *)
   let outer_branches :=
     mapi (fun ctor_idx ctor =>
       let n_args := ctor.(cstr_arity) in
       let bbody :=
         if Nat.ltb ctor_idx n_old_ctors then
-          (* Inner match on [b = tRel n_args]. *)
           let inner_branches :=
             mapi (fun inner_idx inner_ctor =>
               let inner_body :=
                 if Nat.eqb inner_idx ctor_idx then
-                  (* Same constructor: compare args pairwise. *)
                   let cmp_terms :=
                     List.concat (List.map (fun snoc_i =>
                       let arg_t := match nth_error ctor.(cstr_args) snoc_i with
                                    | Some d => d.(decl_type) | None => tVar "?" end in
-                      match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
-                      | Some None      =>
-                          (* Self-ref: recursive eqFn call. *)
-                          [tApp (tRel (n_args + n_args + 2))
+                      match push_arg_class new_kn n_block_lift body_idx type_map n_args snoc_i arg_t with
+                      | Some None =>
+                          (* Self-ref: fix binder for body [body_idx] in inner match. *)
+                          [tApp (tRel (n_block - 1 - body_idx + 2 + n_args + n_args))
                                 [tRel (n_args + snoc_i); tRel snoc_i]]
                       | Some (Some kn) =>
-                          (* Cross-type: call eqFn with block-kname + body-idx naming.
-                             Safe because generate_eqfn_defs declares types in
-                             topological dependency order (deps first). *)
-                          let cross_fn_nm :=
+                          let ref :=
                             match find (fun e => eq_kername (fst e) kn) type_map with
-                            | Some (_, ci) =>
-                              let blk := snd (inductive_mind ci) in
-                              let cj  := inductive_ind ci in
-                              if Nat.eqb cj 0 then "eqFn" ++ blk
-                              else "eqFn" ++ blk ++ "_" ++ string_of_nat cj
-                            | None => "eqFn" ++ snd kn ++ "'"
+                            | Some (_, ci_cross) =>
+                              if eq_kername (inductive_mind ci_cross) new_kn then
+                                (* Same mutual block: sibling body k, use tRel into fix. *)
+                                let k := inductive_ind ci_cross in
+                                inl k
+                              else
+                                (* Cross-block: use tConst via eqfn_nm_map. *)
+                                let nm :=
+                                  match find (fun e => eq_kername (fst e) kn) eqfn_nm_map with
+                                  | Some (_, s) => s
+                                  | None        => "eqFn" ++ snd kn ++ "'"
+                                  end in
+                                inr nm
+                            | None =>
+                                let nm :=
+                                  match find (fun e => eq_kername (fst e) kn) eqfn_nm_map with
+                                  | Some (_, s) => s
+                                  | None        => "eqFn" ++ snd kn ++ "'"
+                                  end in
+                                inr nm
                             end in
-                          [tApp (tConst (cur_mp, cross_fn_nm) [])
-                                [tRel (n_args + snoc_i); tRel snoc_i]]
-                      | None           =>
-                          (* Not a self-ref or cross-lifted-type.  Ask type_to_eq_fn;
-                             it returns the tConstruct for [false] when the type is
-                             unsupported, and a usable function otherwise. *)
+                          match ref with
+                          | inl k  =>
+                              [tApp (tRel (n_block - 1 - k + 2 + n_args + n_args))
+                                    [tRel (n_args + snoc_i); tRel snoc_i]]
+                          | inr nm =>
+                              [tApp (tConst (cur_mp, nm) [])
+                                    [tRel (n_args + snoc_i); tRel snoc_i]]
+                          end
+                      | None =>
                           let eq_fn := type_to_eq_fn arg_t in
                           match eq_fn with
                           | tConstruct _ _ _ => [false_t]
@@ -4221,15 +4231,8 @@ Definition make_eqfn_def
       {| bcontext := List.rev (List.map (fun d => d.(decl_name)) ctor.(cstr_args));
          bbody    := bbody |})
     new_oib.(ind_ctors) in
-  (* Name the fix binder to match [type_to_eq_fn]'s naming scheme:
-     "eqFn" ++ block_kname for ind=0, "eqFn" ++ block_kname ++ "_" ++ j for ind>0. *)
-  let fix_nm :=
-    let blk := snd new_kn in
-    if Nat.eqb body_idx 0 then "eqFn" ++ blk
-    else "eqFn" ++ blk ++ "_" ++ string_of_nat body_idx in
-  let dname := {| binder_name    := nNamed fix_nm;
+  let dname := {| binder_name    := nNamed fn_nm;
                   binder_relevance := Relevant |} in
-  (* Outer fix has rarg=0 (decreases on first arg [a]). *)
   {| dname := dname;
      dtype  := tProd anon_b new_type (tProd anon_b new_type bool_t);
      dbody  := tLambda anon_b new_type
@@ -4237,11 +4240,11 @@ Definition make_eqfn_def
                    (tCase ci pred (tRel 1) outer_branches));
      rarg   := 0 |}.
 
-(** Compute the eq-fn cross-type dependencies of one pi_set type.
-    Returns the kernnames in [pi_kns] whose eqFn must be declared before
-    this type's eqFn (i.e. types that appear as cross-type constructor
-    arguments of [new_oib]).  Uses the same [push_arg_class] logic as
-    [make_eqfn_def] to identify cross-type references. *)
+(** Compute the cross-BLOCK eq-fn dependencies of one pi_set type.
+    Returns original knames in [pi_kns] whose eqFn block must be declared
+    before this type's eqFn block (i.e. cross-block tConst references).
+    Same-block siblings are handled by tRel in the mutual fix body and are
+    excluded here. *)
 Definition eq_fn_deps
     (new_kn   : kername)
     (n_block  : nat)
@@ -4257,41 +4260,133 @@ Definition eq_fn_deps
                    | Some d => d.(decl_type) | None => tVar "?" end in
       match push_arg_class new_kn n_block body_idx type_map n_args snoc_i arg_t with
       | Some (Some kn) =>
-        if existsb (eq_kername kn) pi_kns then [kn] else []
+        match find (fun e => eq_kername (fst e) kn) type_map with
+        | Some (_, ci) =>
+          if eq_kername (inductive_mind ci) new_kn then []  (* same block: tRel, no dep *)
+          else if existsb (eq_kername kn) pi_kns then [kn] else []
+        | None =>
+          if existsb (eq_kername kn) pi_kns then [kn] else []
+        end
       | _ => []
       end)
     (seq 0 n_args))
   new_oib.(ind_ctors)).
 
-(** Declare an [eqFn<T>'] function for every purely-inductive type in
-    [todo].  Temporary stub: each eq fn is [fun _ _ => true], avoiding any
-    cross-type [tConst] references and the associated declaration-order
-    dependency.  The naming matches what [EqualityResolution.type_to_eq_fn]
-    expects: body index 0 → ["eqFn" ++ block_name]; body j > 0 →
-    ["eqFn" ++ block_name ++ "_" ++ j]. *)
+(** Declare structural eqFn definitions for every purely-inductive type in
+    [pi_set].  Each lifted type T' gets "eqFn" ++ T'.ind_name declared as a
+    mutual tFix with all sibling bodies in its mutual block.  Same-block
+    cross-refs use tRel; cross-block refs use tConst.  Blocks are declared in
+    topological dependency order so all cross-block tConst refs are resolved. *)
 Polymorphic Definition generate_eqfn_defs
     (todo    : list ((kername * inductive) * (mutual_inductive_body * mutual_inductive_body)))
     (all_map : list (kername * inductive))
     (pi_set  : list kername)
     (cur_mp  : modpath)
     : TemplateMonad unit :=
-  let bool_ind := {| inductive_mind := (MPfile ["Datatypes"; "Init"; "Corelib"], "bool");
-                     inductive_ind  := 0 |} in
-  let true_t   := tConstruct bool_ind 0 [] in
-  let anon_b   := {| binder_name := nAnon; binder_relevance := Relevant |} in
+  let empty_oib :=
+    {| ind_name      := "";
+       ind_indices   := [];
+       ind_sort      := Sort.type0;
+       ind_type      := tSort Sort.type0;
+       ind_kelim     := IntoAny;
+       ind_ctors     := [];
+       ind_projs     := [];
+       ind_relevance := Relevant |} in
+  (* eqfn_nm_map: old_kn → "eqFn" ++ blk_str ++ ("_" ++ j if j>0).
+     Matches type_to_eq_fn convention in EqualityResolution. *)
+  let eqfn_nm_map :=
+    List.map (fun '((old_kn, new_ind), (_, _)) =>
+      let j       := inductive_ind new_ind in
+      let blk_str := snd (inductive_mind new_ind) in
+      (old_kn, "eqFn" ++ blk_str ++ (if Nat.eqb j 0 then "" else "_" ++ string_of_nat j)))
+    todo in
   let pi_entries :=
     filter (fun e => existsb (eq_kername (fst (fst e))) pi_set) todo in
-  monad_map (fun '((_, new_ind), _) =>
-    let new_type := tInd new_ind [] in
-    let fn_term  := tLambda anon_b new_type (tLambda anon_b new_type true_t) in
-    let blk_nm   := snd (inductive_mind new_ind) in
-    let body_j   := inductive_ind new_ind in
-    let fn_nm    :=
-      if Nat.eqb body_j 0 then "eqFn" ++ blk_nm
-      else "eqFn" ++ blk_nm ++ "_" ++ string_of_nat body_j in
-    fn_term_ev <- tmEval all fn_term ;;
-    tmMkDefinition fn_nm fn_term_ev)
-  pi_entries ;;
+  let pi_kns := List.map (fun e => fst (fst e)) pi_entries in
+  (* Compute cross-block deps for topo sort. *)
+  let pi_sort_inputs :=
+    List.map (fun '((old_kn, new_ind), (_, new_mind)) =>
+      let j       := inductive_ind new_ind in
+      let new_kn  := inductive_mind new_ind in
+      let n_block := List.length new_mind.(ind_bodies) in
+      let new_oib := match nth_error new_mind.(ind_bodies) j with
+                     | Some o => o | None => empty_oib end in
+      (old_kn, new_ind, eq_fn_deps new_kn n_block j new_oib all_map pi_kns))
+    pi_entries in
+  let sorted_pi :=
+    topo_sort_pi pi_sort_inputs [] (S (List.length pi_entries)) in
+  (* Unique block knames in topo order (first appearance in sorted_pi). *)
+  let blk_kns_ordered :=
+    fold_left (fun acc '(_, new_ind) =>
+      let blk := inductive_mind new_ind in
+      if existsb (eq_kername blk) acc then acc
+      else List.app acc [blk])
+    sorted_pi [] in
+  monad_map (fun blk_kn =>
+    (* All todo entries for this block (pi and non-pi), sorted by body_idx. *)
+    let blk_todo :=
+      filter (fun '((_, new_ind), _) =>
+        eq_kername (inductive_mind new_ind) blk_kn) todo in
+    let blk_sorted :=
+      fold_left (fun acc entry =>
+        let j_e := inductive_ind (snd (fst entry)) in
+        let '(before, after) :=
+          List.partition (fun e' =>
+            Nat.ltb (inductive_ind (snd (fst e'))) j_e) acc in
+        List.app (List.app before [entry]) after)
+      blk_todo [] in
+    let n_block := List.length blk_sorted in
+    (* n_block_lift: actual number of bodies in the combined block as used during sigma2 lifting.
+       May exceed n_block when the block contains extra bodies (e.g. arrow-type bodies)
+       not present in blk_sorted.  push_arg_class must use this to decode tRels correctly. *)
+    let n_block_lift :=
+      match blk_sorted with
+      | [] => n_block
+      | entry0 :: _ =>
+        let '((_, _), (_, new_mind0)) := entry0 in
+        List.length new_mind0.(ind_bodies)
+      end in
+    (* Build one def term per body. *)
+    let all_defs :=
+      mapi (fun arr_idx entry =>
+        let '((old_kn_j, new_ind_j), (old_mind_j, new_mind_j)) := entry in
+        let new_ind_j_arr := {| inductive_mind := inductive_mind new_ind_j;
+                                inductive_ind  := arr_idx |} in
+        let new_oib_j :=
+          match nth_error new_mind_j.(ind_bodies) arr_idx with
+          | Some o => o | None => empty_oib end in
+        let n_old_ctors_j :=
+          match nth_error old_mind_j.(ind_bodies) (inductive_ind new_ind_j) with
+          | Some ob => List.length ob.(ind_ctors)
+          | None    => match nth_error old_mind_j.(ind_bodies) 0 with
+                       | Some ob => List.length ob.(ind_ctors)
+                       | None    => 0
+                       end
+          end in
+        let fn_nm_j :=
+          match find (fun e => eq_kername (fst e) old_kn_j) eqfn_nm_map with
+          | Some (_, nm) => nm
+          | None         => "eqFn" ++ snd old_kn_j ++ "'"
+          end in
+        make_eqfn_def old_kn_j new_ind_j_arr n_block n_block_lift new_oib_j n_old_ctors_j
+                      all_map eqfn_nm_map fn_nm_j cur_mp)
+      blk_sorted in
+    (* Declare tFix[all_defs, arr_idx] for each pi-set body. *)
+    monad_map (fun '(arr_idx, entry) =>
+      let '((old_kn_j, _), _) := entry in
+      if negb (existsb (eq_kername old_kn_j) pi_set)
+      then tmReturn tt
+      else
+        let fn_nm_j :=
+          match find (fun e => eq_kername (fst e) old_kn_j) eqfn_nm_map with
+          | Some (_, nm) => nm
+          | None         => "eqFn" ++ snd old_kn_j ++ "'"
+          end in
+        fn_term_ev <- tmEval all (tFix all_defs arr_idx) ;;
+        tmMkDefinition fn_nm_j fn_term_ev)
+    (mapi (fun i e => (i, e)) blk_sorted) ;;
+    tmReturn tt)
+  blk_kns_ordered ;;
   tmReturn tt.
 
 (* ------------------------------------------------------------------ *)

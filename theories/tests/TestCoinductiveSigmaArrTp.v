@@ -61,10 +61,120 @@ CoInductive evalCmd : (nat -> nat) -> cmd -> (nat -> nat) -> Prop :=
 
 MetaRocq Run (animate_coinductive_with_fn_pos
   <? evalCmd ?> [("evalCmd", ([0;1], [2]))] 500).
+Definition prog  := While (Var 4) (Assign 8 (Const 8)).
+Definition initFn : (nat -> nat) :=  (fun m : nat => m + 1). 
+
+Eval cbv -[HoleyResult.hlist_head evalCmdremoveFnPosAn2Symb_unwrap] in
+  (evalCmdTransparentSigma2AnimatedTopFn 35 (Success (((nat -> nat)) * cmd) (initFn, prog))).
+
+Definition prog''   :=
+  While (Var 4) (Seq (Assign 4 (Var 3)) (Seq (Assign 3 (Var 2))
+    (Seq (Assign 2 (Var 1)) (Assign 1 (Var 0))))).
+Definition initFn'' := (fun m : nat => m).
+
+Eval cbv -[HoleyResult.hlist_head evalCmdremoveFnPosAn2Symb_unwrap] in
+  (evalCmdTransparentSigma2AnimatedTopFn 50 (Success ((nat -> nat) * cmd) (initFn'', prog''))).
+  
+Definition result :=
+(fun  (v' : nat) =>
+         if match v' with
+            | 1 => true
+            | _ => false
+            end
+         then 0
+         else
+          if match v' with
+             | 2 => true
+             | _ => false
+             end
+          then 0
+          else
+           if match v' with
+              | 3 => true
+              | _ => false
+              end
+           then 0
+           else
+            if match v' with
+               | 4 => true
+               | _ => false
+               end
+            then 0
+            else
+             if match v' with
+                | 1 => true
+                | _ => false
+                end
+             then 0
+             else
+              if match v' with
+                 | 2 => true
+                 | _ => false
+                 end
+              then 0
+              else
+               if match v' with
+                  | 3 => true
+                  | _ => false
+                  end
+               then 0
+               else
+                if match v' with
+                   | 4 => true
+                   | _ => false
+                   end
+                then 1
+                else
+                 if match v' with
+                    | 1 => true
+                    | _ => false
+                    end
+                 then 0
+                 else
+                  if match v' with
+                     | 2 => true
+                     | _ => false
+                     end
+                  then 0
+                  else
+                   if match v' with
+                      | 3 => true
+                      | _ => false
+                      end
+                   then 1
+                   else
+                    if match v' with
+                       | 4 => true
+                       | _ => false
+                       end
+                    then 2
+                    else
+                     if match v' with
+                        | 1 => true
+                        | _ => false
+                        end
+                     then 0
+                     else
+                      if match v' with
+                         | 2 => true
+                         | _ => false
+                         end
+                      then 1
+                      else
+                       if match v' with
+                          | 3 => true
+                          | _ => false
+                          end
+                       then 2
+                       else if match v' with
+                               | 4 => true
+                               | _ => false
+                               end then 3 else v').
+                               
+Compute result 5.                               
+Compute result 4.                                 
+Compute result 3.  
  
-Print fnType0.
-Print cmd'.
-Print nat'.  
 
 End ImpSem.
 
@@ -141,11 +251,11 @@ CoInductive bigStepTr : tm -> coLst -> Prop :=
 MetaRocq Run (animate_coinductive_with_fn_pos <? bigStepTr ?>
   [("bigStepTr", ([0], [1]));("step", ([0], [1]))] 500). 
 
-Search (tm' -> tm' -> bool).
-
-Print eqFncoLst'_1.
-Print tm'.
-Print coLst'.   
+ 
+Definition omega : tm :=
+  tapp (tabs "x" TBool (tapp (tvar "x") (tvar "x")))
+       (tabs "x" TBool (tapp (tvar "x") (tvar "x"))).
+Eval cbv -[HoleyResult.hlist_head bigStepTrremoveFnPosAn1Symb_unwrap] in bigStepTrTransparentSigma2AnimatedTopFn 25 (Success tm omega).
   
 End bigStepTr.
 Module StackStep.
@@ -168,7 +278,7 @@ Definition eqFnsinstr (t1 t2 : sinstr) : bool :=
 Definition stack := list nat.
 Definition prog  := list sinstr.
 
-Definition appSt (st : string -> nat) (s : string) : nat := st s.
+
 
 Definition add (n1 n2 : nat) := n1 + n2.
 Definition minus (n1 n2 : nat) := n1 - n2.
@@ -190,9 +300,8 @@ Inductive stack_step : (string -> nat) -> list sinstr -> list nat -> list sinstr
 MetaRocq Run (animate_coinductive_with_fn_pos <? stack_step ?>
   [("stack_step", ([0;1;2], [3;4]))] 500 ).
 
-Print fnType0.
-Print nat'.  
 
+End StackStep.
 Module zip.
 
 CoInductive stream : Type :=
@@ -238,6 +347,34 @@ MetaRocq Run (animate_coinductive_with_fn_pos <? Integrate ?>
   [("Integrate", ([0], [1])); ("addStm", ([0;1], [2]))] 100).
 End integrateStreams.
 
+
+Module isEven.
+
+Fixpoint isEven (n : nat) : bool :=
+  match n with
+  | 0     => true
+  | 1     => false
+  | S (S m) => isEven m
+  end.
+
+CoInductive stream : Type :=
+| nil : stream
+| Seq : nat -> stream -> stream.
+
+CoFixpoint from (n : nat) : stream := Seq n (from (S n)).
+
+CoInductive filterEven : stream -> stream -> Prop :=
+| filtNil : filterEven nil nil
+| filtE   : forall n s1 s2, true  = isEven n /\ filterEven s1 s2 -> filterEven (Seq n s1) (Seq n s2)
+| filtOdd : forall n s1 s2, false = isEven n /\ filterEven s1 s2 -> filterEven (Seq n s1) s2.
+
+MetaRocq Run (animate_coinductive_with_fn_pos <? filterEven ?>
+  [("filterEven", ([0], [1]))] 100).
+
+Eval cbv -[HoleyResult.hlist_head] in
+  (filterEvenTransparentSigma2AnimatedTopFn 24 (Success stream (from 0))).
+
+End isEven.
 (*
 (** ** Chunk 1 unit tests: build_rel_context on evalCmd *)
 MetaRocq Run (
