@@ -262,10 +262,209 @@ Inductive bigstop : tm -> tm -> Prop :=
     bigstop (subst f (tfix f T t) t) e' ->
     bigstop (tfix f T t) e'.
 
-Theorem correspondence : forall (n : nat) (inputTm outputTm : tm), 
-(evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm <-> bigstop inputTm outputTm.        
-    
-    
+(* ------------------------------------------------------------------ *)
+(** ** CBV Small-Step Reduction                                        *)
+(* ------------------------------------------------------------------ *)
+
+Inductive step : tm -> tm -> Prop :=
+| ST_AppAbs : forall x T t v2,
+    is_value v2 ->
+    step (tapp (tabs x T t) v2) (subst x v2 t)
+| ST_App1 : forall t1 t1' t2,
+    step t1 t1' ->
+    step (tapp t1 t2) (tapp t1' t2)
+| ST_App2 : forall v1 t2 t2',
+    is_value v1 ->
+    step t2 t2' ->
+    step (tapp v1 t2) (tapp v1 t2')
+| ST_Succ : forall t t',
+    step t t' ->
+    step (tsucc t) (tsucc t')
+| ST_PredZero :
+    step (tpred tzero) tzero
+| ST_PredSucc : forall v,
+    is_value v ->
+    step (tpred (tsucc v)) v
+| ST_Pred : forall t t',
+    step t t' ->
+    step (tpred t) (tpred t')
+| ST_IfzZero : forall t1 t2,
+    step (tifz tzero t1 t2) t1
+| ST_IfzSucc : forall vn t1 t2,
+    is_value vn ->
+    step (tifz (tsucc vn) t1 t2) t2
+| ST_IfzDisc : forall t t' t1 t2,
+    step t t' ->
+    step (tifz t t1 t2) (tifz t' t1 t2)
+| ST_Fix : forall f T t,
+    step (tfix f T t) (subst f (tfix f T t) t).
+
+Inductive stepRTC : tm -> tm -> Prop :=
+| RTC_refl : forall t,
+    stepRTC t t
+| RTC_step : forall t t' t'',
+    step t t' ->
+    stepRTC t' t'' ->
+    stepRTC t t''.
+
+
+
+(** Key completeness auxiliary: if [stepRTC inputTm middleTm] holds,
+    [step middleTm outputTm] takes one more small step, and the animation
+    at fuel [n] already yields [middleTm], then there exists [k <= 3]
+    such that the animation at fuel [n + k] yields [outputTm].
+    The bound [3] reflects the worst-case PCF constructor ([ST_AppAbs],
+    which nests evaluation of operator, argument, and body). *)
+Lemma animate_step_shift : forall (inputTm middleTm outputTm : tm) (n : nat),
+  stepRTC inputTm middleTm ->
+  step middleTm outputTm ->
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm middleTm ->
+  exists (k : nat), 1 <= k <= 3 /\
+    (evalTransparentSigma2AnimatedTopFn (n + k) (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
+Proof.
+Admitted.
+
+(** --- Main correspondence theorems --------------------------------------- *)
+
+(** Soundness: the animation only produces terms reachable from the input
+    by zero or more CBV small steps.
+    Proof sketch: by induction on [n]; base case is [animate_zero] +
+    [RTC_refl]; inductive step uses [animate_step_shift] or
+    [bigstop_iff_stepRTC] composed with [correspondence_soundness_bigstop]. *)
+Theorem correspondence_soundness : forall (n : nat) (inputTm outputTm : tm),
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm ->
+  stepRTC inputTm outputTm.
+Proof.
+Admitted.
+
+(** Completeness: every term reachable from the input by finitely many
+    CBV small steps can be produced by the animation at some fuel level.
+    Proof sketch: induction on [stepRTC inputTm outputTm].
+    - [RTC_refl]: [n = 0] by [animate_zero].
+    - [RTC_step] ([step* inputTm middleTm] then [step middleTm outputTm]):
+      IH gives fuel [n] with [animate n inputTm id = Success middleTm];
+      [animate_step_shift] yields [k <= 3] and fuel [n + k] for [outputTm]. *)
+Theorem correspondence_completeness : forall (inputTm outputTm : tm),
+  stepRTC inputTm outputTm ->
+  exists (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
+Proof.
+Admitted.
+
+
+(* Connect to bigStop via Thm7 of paper *)
+
+(** Theorem 7 of Kahn, Hoffmann, Li (POPL 2026): bigstop coincides with
+    the reflexive-transitive closure of the CBV small-step relation. *)
+Theorem bigstop_iff_stepRTC : forall e e',
+  bigstop e e' <-> stepRTC e e'.
+Proof.
+Admitted.
+Lemma correspondence_soundness_bigstop : forall (n : nat) (inputTm outputTm : tm),
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm ->
+  bigstop inputTm outputTm.
+Proof.
+Admitted.
+
+Lemma correspondence_completeness_bigstop : forall (inputTm outputTm : tm),
+  bigstop inputTm outputTm ->
+  exists (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
+Proof.
+Admitted.
+
+
+
+
+(*    
+
+(** The purely progressing fragment of [bigstop]: the six constructors that
+    advance the computation.  Sub-derivations still use full [bigstop] (stops
+    are allowed inside), but the top-level step must be a progressing rule.
+    Stopping/congruence rules ([BS_Stop], [BS_Succ], [BS_Pred], [BS_App1],
+    [BS_App2], [BS_IfzDisc]) are excluded. *)
+Inductive bigstop_prog_step : tm -> tm -> Prop :=
+| BSP_PredZero : forall e,
+    bigstop e tzero ->
+    bigstop_prog_step (tpred e) tzero
+| BSP_PredSucc : forall e v,
+    bigstop e (tsucc v) /\ is_value v ->
+    bigstop_prog_step (tpred e) v
+| BSP_IfzZero  : forall e t1 t1' t2,
+    bigstop e tzero /\ bigstop t1 t1' ->
+    bigstop_prog_step (tifz e t1 t2) t1'
+| BSP_IfzSucc  : forall e vn t1 t2 t2',
+    bigstop e (tsucc vn) /\ is_value vn /\ bigstop t2 t2' ->
+    bigstop_prog_step (tifz e t1 t2) t2'
+| BSP_App      : forall t1 x T t3 t2 v2 e',
+    bigstop t1 (tabs x T t3) /\ bigstop t2 v2 /\ is_value v2 /\
+    bigstop (subst x v2 t3) e' ->
+    bigstop_prog_step (tapp t1 t2) e'
+| BSP_Fix      : forall f T t e',
+    bigstop (subst f (tfix f T t) t) e' ->
+    bigstop_prog_step (tfix f T t) e'.
+
+(** --- Auxiliary lemmas ---------------------------------------------------- *)
+
+(** At fuel 0 the animation falls back to the identity oracle and returns the
+    input unchanged. *)
+Lemma animate_zero : forall (inputTm : tm),
+  (evalTransparentSigma2AnimatedTopFn 0 (Success tm inputTm)) (fun t' : tm => t') = Success tm inputTm.
+Proof.
+Admitted.
+
+(** More fuel evaluates further via a progressing step: if [outputN] is not
+    already a value, and the animation at fuel [n] returns [outputN] and at
+    fuel [m >= n] returns [outputM], then [bigstop_prog_step outputN outputM].
+    The [~ is_value outputN] guard is necessary: values are fixed points of the
+    animation, so increasing fuel on a value leaves [outputM = outputN] with no
+    progressing step available.
+    Used for soundness: applying from [n=0] (via [animate_zero]) yields a chain
+    of [bigstop_prog_step]s from [inputTm] to [outputTm]. *)
+Lemma animate_mono_bigstop : forall (n m : nat) (inputTm outputN outputM : tm),
+  n <= m ->
+  
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputN ->
+  (evalTransparentSigma2AnimatedTopFn m (Success tm inputTm)) (fun t' : tm => t') = Success tm outputM ->
+  bigstop outputN outputM.
+Proof.
+Admitted.
+
+(** One progressing bigstop step corresponds to a bounded fuel increment.
+    If the animation at exact fuel [n] gives [outputN], then there exists
+    [k] in [[1, C]] such that at fuel [n + k] it gives [outputM] where
+    [bigstop_prog_step outputN outputM].
+    [C] is a small constant determined by the worst-case eval constructor
+    (for PCF, at most the cost of [E_App] with three sub-evaluations). *)
+Lemma animate_one_bigstop_step : forall (C n : nat) (inputTm outputN : tm),
+   ~ is_value outputN -> (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputN ->
+  exists (k : nat) (outputM : tm),
+    1 <= k <= C /\
+    (evalTransparentSigma2AnimatedTopFn (n + k) (Success tm inputTm)) (fun t' : tm => t') = Success tm outputM /\
+    bigstop_prog_step outputN outputM.
+Proof.
+Admitted.
+
+(** Every progressing step is also a [bigstop] step.  Bridges the chain of
+    [bigstop_prog_step]s produced by [animate_mono_bigstop] into the full
+    [bigstop] relation needed for soundness. *)
+Lemma bigstop_prog_step_to_bigstop : forall (e e' : tm),
+  bigstop_prog_step e e' ->
+  bigstop e e'.
+Proof.
+  intros e e' H. destruct H.
+  - apply BS_PredZero. assumption.
+  - apply BS_PredSucc. assumption.
+  - apply BS_IfzZero. assumption.
+  - eapply BS_IfzSucc. eassumption.
+  - eapply BS_App. eassumption.
+  - apply BS_Fix. assumption.
+Qed.
+*)
+(** --- Correspondence via bigstop (intermediate) --------------------------- *)
+
+
+
 
 End PCFBigStep.
 
@@ -281,202 +480,3 @@ End PCFBigStep.
 
 
 
-
-(*
-(** pred(zero) = zero *)
-Example test_eval_pred_zero :
-  evalTransparentSigma2AnimatedTopFn 50 (Success tm (tpred tzero))
-  = fun evalAn1 : tm -> tm => Success tm tzero.
-Proof. reflexivity. Qed.
-
-(** pred(succ(succ(zero))) = succ(zero) *)
-Example test_eval_pred_succ :
-  evalTransparentAnimatedTopFn 50 (Success tm (tpred (num 2)))
-  = Success tm (num 1).
-Proof. reflexivity. Qed.
-
-(** lambda is a value *)
-Example test_eval_lam :
-  evalTransparentAnimatedTopFn 50 (Success tm (tabs "x" TNat (tvar "x")))
-  = Success tm (tabs "x" TNat (tvar "x")).
-Proof. reflexivity. Qed.
-
-(** identity function applied to zero: (λx.x) 0 → 0 *)
-Example test_eval_app_id_zero :
-  evalTransparentAnimatedTopFn 100 (Success tm (tapp (tabs "x" TNat (tvar "x")) tzero))
-  = Success tm tzero.
-Proof. reflexivity. Qed.
-
-(** (λx. succ x) 0 → succ 0 *)
-Example test_eval_app_succ_body :
-  evalTransparentAnimatedTopFn 100
-    (Success tm (tapp (tabs "x" TNat (tsucc (tvar "x"))) tzero))
-  = Success tm (num 1).
-Proof. reflexivity. Qed.
-
-(** ifz 0 1 2 → 1  (zero branch) *)
-Example test_eval_ifz_zero :
-  evalTransparentAnimatedTopFn 100 (Success tm (tifz tzero (num 1) (num 2)))
-  = Success tm (num 1).
-Proof. reflexivity. Qed.
-
-(** ifz 1 1 2 → 2  (successor branch) *)
-Example test_eval_ifz_succ :
-  evalTransparentAnimatedTopFn 100 (Success tm (tifz (num 1) (num 1) (num 2)))
-  = Success tm (num 2).
-Proof. reflexivity. Qed.
-
-(** Constant fixpoint: (fix f:nat→nat. λx. 0) 1 → 0
-    The body never references f, so it terminates in one unrolling. *)
-Example test_eval_fix_const :
-  evalTransparentAnimatedTopFn 200
-    (Success tm (tapp
-      (tfix "f" (TArrow TNat TNat) (tabs "x" TNat tzero))
-      (num 1)))
-  = Success tm tzero.
-Proof. reflexivity. Qed.
-
-(** double 0 = 0 *)
-Example test_eval_double_zero :
-  evalTransparentAnimatedTopFn 500 (Success tm (tapp double tzero))
-  = Success tm tzero.
-Proof. reflexivity. Qed.
-
-(** double 1 = 2 *)
-Example test_eval_double_one :
-  evalTransparentAnimatedTopFn 500 (Success tm (tapp double (num 1)))
-  = Success tm (num 2).
-Proof. reflexivity. Qed.
-
-(* ------------------------------------------------------------------ *)
-(** ** Non-terminating terms                                           *)
-(*                                                                     *)
-(*  Each term diverges because E_Fix unrolls indefinitely.             *)
-(*  With finite fuel the animator exhausts its steps; the Compute      *)
-(*  shows the partial result (typically an fnSymb sentinel).           *)
-(* ------------------------------------------------------------------ *)
-
-(** omega_nat = fix f:nat. f
-    E_Fix: eval(f[omega_nat/f]) = eval(omega_nat) → forever *)
-Definition omega_nat : tm :=
-  tfix "f" TNat (tvar "f").
-
-Compute (evalTransparentAnimatedTopFn 10 (Success tm omega_nat)).
-
-(** omega_fn = fix f:nat→nat. f
-    Evaluating (omega_fn applied to 0) first evaluates the operator, which diverges. *)
-Definition omega_fn : tm :=
-  tfix "f" (TArrow TNat TNat) (tvar "f").
-
-Compute (evalTransparentAnimatedTopFn 20 (Success tm (tapp omega_fn tzero))).
-
-(** omega_succ = fix f:nat→nat. λx. f (succ x)
-    Applied to 0: each unrolling increments the argument, never reaching a base case. *)
-Definition omega_succ : tm :=
-  tfix "f" (TArrow TNat TNat)
-    (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))).
-
-Compute (evalTransparentAnimatedTopFn 40 (Success tm (tapp omega_succ tzero))).
-
-(* ------------------------------------------------------------------ *)
-(** ** CBV small-step semantics                                        *)
-(*                                                                     *)
-(*  Values: lambda abstractions, zero, and succ applied to a value.   *)
-(*  step t t'  means t reduces to t' in one step.                     *)
-(* ------------------------------------------------------------------ *)
-
-Inductive is_value : tm -> Prop :=
-| V_Lam  : forall x T t,  is_value (tabs x T t)
-| V_Zero :                 is_value tzero
-| V_Succ : forall v,       is_value v -> is_value (tsucc v).
-
-Inductive step : tm -> tm -> Prop :=
-(** Beta reduction: operator is a lambda, argument is a value. *)
-| ST_AppAbs  : forall x T t v,
-    is_value v ->
-    step (tapp (tabs x T t) v) (subst x v t)
-(** Reduce the operator first. *)
-| ST_App1    : forall t1 t1' t2,
-    step t1 t1' ->
-    step (tapp t1 t2) (tapp t1' t2)
-(** Operator is a value; reduce the argument. *)
-| ST_App2    : forall v t2 t2',
-    is_value v /\ step t2 t2' ->
-    step (tapp v t2) (tapp v t2')
-(** Reduce under succ. *)
-| ST_Succ    : forall t t',
-    step t t' ->
-    step (tsucc t) (tsucc t')
-(** pred zero → zero *)
-| ST_PredZero :
-    step (tpred tzero) tzero
-(** pred (succ v) → v *)
-| ST_PredSucc : forall v,
-    is_value v ->
-    step (tpred (tsucc v)) v
-(** Reduce under pred. *)
-| ST_Pred    : forall t t',
-    step t t' ->
-    step (tpred t) (tpred t')
-(** ifz zero t1 t2 → t1 *)
-| ST_IfzZero : forall t1 t2,
-    step (tifz tzero t1 t2) t1
-(** ifz (succ v) t1 t2 → t2 *)
-| ST_IfzSucc : forall v t1 t2,
-    is_value v ->
-    step (tifz (tsucc v) t1 t2) t2
-(** Reduce the discriminant of ifz. *)
-| ST_Ifz     : forall t t' t1 t2,
-    step t t' ->
-    step (tifz t t1 t2) (tifz t' t1 t2)
-(** Unroll fixpoint by one step. *)
-| ST_Fix     : forall f T t,
-    step (tfix f T t) (subst f (tfix f T t) t).
-    
-Inductive stepRTCBounded : tm -> nat -> tm -> Prop :=
-| RTCVal : forall t m, is_value t -> stepRTCBounded t m t
-| RTC0 : forall t, stepRTCBounded t 0 t
-| RTCSuccVal : forall t m t', stepRTCBounded t m t' /\ is_value t'-> stepRTCBounded t (S m) t'  
-| RTCSuccValst : forall t m t' t'', stepRTCBounded t m t' /\ step t' t''-> stepRTCBounded t (S m) t''.
-
-MetaRocq Run (animate_inductive <?stepRTCBounded?> [("stepRTCBounded", ([0;1], [2])); ("step", ([0],[1])); ("is_value", ([0],[]))] 800).
-
-
-Compute (evalTransparentAnimatedTopFn 55 (Success tm (tapp omega_succ tzero))).  
-
-(*
-Compute (stepRTCBoundedAnimatedTopFn 200 (Success (tm * nat) (tapp omega_succ tzero, 14))).
-*)  
-Compute  (subst "x"
-               (tsucc (tsucc (tsucc (tsucc ((tsucc (tsucc tzero)))))))
-               (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
-                  (tsucc (tvar "x")))). 
-                  
-                  
-(*
-StepRTC bounded inductive animation with input : (tapp omega_succ tzero, 14)  
-Success tm
-         (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
-            (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc tzero))))))))
-     : animation_result tm
-     
-eval coinductive animation input (tapp omega_succ tzero) fuel : 55
-
-(evalAn1fnSymb
-            (substLiftedCstrfnSymb "x"
-               (tsucc (tsucc (tsucc (tsucc (evalAn1fnSymb (tsucc (tsucc tzero)))))))
-               (tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
-                  (tsucc (tvar "x")))))
- 
-using evalAn1fnSymb t = t' => eval t t' 
-substLiftCsstrfnSymb = subst
-the result evaluates to 
-eval1An1fnSymb 
-(tapp (tfix "f" (TArrow TNat TNat) (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))))
-         (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc (tsucc tzero))))))))
-                       
-
-In bigStop paper : bigStop = smallstepRTCBounded
-Aim : Demonstrate that bigStep animated using coinductive animation = evalAn1fnSymb (smallstepRTCBounded)
-=> bigStep-coind animation = evalAn1fnSymb (bigStop)     
-*) 
