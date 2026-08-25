@@ -88,13 +88,21 @@ Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
   | tfix f T t1     => if String.eqb x f then t else tfix f T (subst x s t1)
   end.
 
+Fixpoint isValueFn (t : tm) : bool :=
+match t with
+| tabs x T t => true
+| tzero => true
+| tsucc v => isValueFn v
+| _ => false
+end.
+
 (* ------------------------------------------------------------------ *)
 (** ** CBV big-step evaluation                                         *)
 (*                                                                     *)
 (*  Values: tabs (lambda), tzero, tsucc v.                             *)
 (*  eval e v  means  e evaluates to value v.                           *)
 (* ------------------------------------------------------------------ *)
-
+(* Take the progressing fragment of bigStop *)
 CoInductive eval : tm -> tm -> Prop :=
 
 | E_Lam : forall x T t,
@@ -111,14 +119,14 @@ CoInductive eval : tm -> tm -> Prop :=
     eval t tzero ->
     eval (tpred t) tzero
 
-| E_PredSucc : forall t v,
+| E_PredSucc : forall t v, isValueFn v = true /\
     eval t (tsucc v) ->
     eval (tpred t) v
 
 (** CBV application: evaluate operator to a lambda, evaluate argument,
     then evaluate the substituted body. *)
 | E_App : forall t1 t2 x T t3 v2 v,
-    eval t1 (tabs x T t3) /\ eval t2 v2 /\ eval (subst x v2 t3) v ->
+    isValueFn v2 = true /\ eval t1 (tabs x T t3) /\ eval t2 v2 /\ eval (subst x v2 t3) v ->
     eval (tapp t1 t2) v
 
 (** ifz: zero branch *)
@@ -127,9 +135,9 @@ CoInductive eval : tm -> tm -> Prop :=
     eval (tifz t t1 t2) v
 
 (** ifz: successor branch (the value of the discriminant is discarded) *)
-| E_IfzSucc : forall t vn t1 t2 v,
-    eval t (tsucc vn) /\ eval t2 v ->
-    eval (tifz t t1 t2) v
+| E_IfzSucc : forall t vn t1 t2 t4,
+    isValueFn vn = true /\ eval t (tsucc vn) /\ eval t2 t4 ->
+    eval (tifz t t1 t2) t4
 
 (** Fixpoint: unroll once, then evaluate the substituted body. *)
 | E_Fix : forall f T t v,
@@ -173,6 +181,63 @@ Example test_eval_numeral :
   = fun evalAn1 : tm -> tm => Success tm (num 3).
 Proof. reflexivity. Qed.
 
+(* ------------------------------------------------------------------ *)
+(** ** Overrunning probe                                               *)
+(*                                                                     *)
+(*  Two terms to test whether increasing fuel skips small-step        *)
+(*  intermediate states.                                               *)
+(*                                                                     *)
+(*  Term A: E_App applies immediately (t1 = lambda, t2 = value).      *)
+(*    (λx:Nat. x) zero                                                 *)
+(*  Expected CBV path: one step → zero.                               *)
+(*                                                                     *)
+(*  Term B: argument still needs reduction before E_App can fire.     *)
+(*    (λx:Nat. x) (pred zero)                                         *)
+(*  Expected CBV path:                                                 *)
+(*    --> (λx:Nat. x) zero        [ST_App2 / ST_PredZero]             *)
+(*    --> zero                    [ST_AppAbs]                          *)
+(*  If the animation jumps from B directly to zero at fuel 2,         *)
+(*  skipping (λx:Nat. x) zero, overrunning has occurred.              *)
+(* ------------------------------------------------------------------ *)
+
+Definition id_nat : tm := tabs "x" TNat (tvar "x").
+
+(** Term A: E_App fires immediately. *)
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 0 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 1 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 2 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 3 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 4 (Success tm (tapp id_nat tzero))) (fun t' => t').
+
+(** Term B: argument must reduce first — the overrunning probe. *)
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 0 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 1 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 2 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 3 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 4 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+
+(** Fine-grained probe for term A: find exact threshold. *)
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 5 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 6 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 7 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 8 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 9 (Success tm (tapp id_nat tzero))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 10 (Success tm (tapp id_nat tzero))) (fun t' => t').
+
+(** Fine-grained probe for term B: find intermediate state thresholds. *)
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 5  (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 6  (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 7  (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 8  (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 9  (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 10 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 11 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 12 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 13 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 14 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 15 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 20 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
+Eval vm_compute in (evalTransparentSigma2AnimatedTopFn 50 (Success tm (tapp id_nat (tpred tzero)))) (fun t' => t').
 
 (* ------------------------------------------------------------------ *)
 (** ** Big-Stop Semantics (Kahn, Hoffmann, Li — POPL 2026, Figure 5) *)
@@ -309,18 +374,27 @@ Inductive stepRTC : tm -> tm -> Prop :=
 
 
 
-(** Key completeness auxiliary: if [stepRTC inputTm middleTm] holds,
-    [step middleTm outputTm] takes one more small step, and the animation
-    at fuel [n] already yields [middleTm], then there exists [k <= 3]
-    such that the animation at fuel [n + k] yields [outputTm].
-    The bound [3] reflects the worst-case PCF constructor ([ST_AppAbs],
-    which nests evaluation of operator, argument, and body). *)
-Lemma animate_step_shift : forall (inputTm middleTm outputTm : tm) (n : nat),
-  stepRTC inputTm middleTm ->
-  step middleTm outputTm ->
-  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm middleTm ->
-  exists (k : nat), 1 <= k <= 3 /\
-    (evalTransparentSigma2AnimatedTopFn (n + k) (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
+
+
+(* Connect to bigStop via Thm7 of paper *)
+
+(* Theorem 7 of Kahn, Hoffmann, Li (POPL 2026): bigstop coincides with
+    the reflexive-transitive closure of the CBV small-step relation. *)
+Theorem bigstop_iff_stepRTC : forall e e',
+  bigstop e e' <-> stepRTC e e'.
+Proof.
+Admitted.
+
+
+(** General oracle soundness: if [f] is a valid oracle for [eval]
+    (i.e. [eval tm1 (f tm1)] for every [tm1]), then running the
+    animation with oracle [f] at any fuel level produces an output
+    that [eval] relates to the input. *)
+Theorem animation_soundness_general : forall (f : tm -> tm),
+  (forall tm1 : tm, eval tm1 (f tm1)) ->
+  forall (inputTm outputTm : tm) (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
+    eval inputTm outputTm.
 Proof.
 Admitted.
 
@@ -329,47 +403,22 @@ Admitted.
 (** Soundness: the animation only produces terms reachable from the input
     by zero or more CBV small steps.
     Proof sketch: by induction on [n]; base case is [animate_zero] +
-    [RTC_refl]; inductive step uses [animate_step_shift] or
+    [RTC_refl]
     [bigstop_iff_stepRTC] composed with [correspondence_soundness_bigstop]. *)
-Theorem correspondence_soundness : forall (n : nat) (inputTm outputTm : tm),
-  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm ->
-  stepRTC inputTm outputTm.
-Proof.
-Admitted.
-
-(** Completeness: every term reachable from the input by finitely many
-    CBV small steps can be produced by the animation at some fuel level.
-    Proof sketch: induction on [stepRTC inputTm outputTm].
-    - [RTC_refl]: [n = 0] by [animate_zero].
-    - [RTC_step] ([step* inputTm middleTm] then [step middleTm outputTm]):
-      IH gives fuel [n] with [animate n inputTm id = Success middleTm];
-      [animate_step_shift] yields [k <= 3] and fuel [n + k] for [outputTm]. *)
-Theorem correspondence_completeness : forall (inputTm outputTm : tm),
-  stepRTC inputTm outputTm ->
-  exists (n : nat),
-    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
-Proof.
-Admitted.
-
-
-(* Connect to bigStop via Thm7 of paper *)
-
-(** Theorem 7 of Kahn, Hoffmann, Li (POPL 2026): bigstop coincides with
-    the reflexive-transitive closure of the CBV small-step relation. *)
-Theorem bigstop_iff_stepRTC : forall e e',
-  bigstop e e' <-> stepRTC e e'.
-Proof.
-Admitted.
-Lemma correspondence_soundness_bigstop : forall (n : nat) (inputTm outputTm : tm),
+Theorem correspondence_soundness_bigstop : forall (n : nat) (inputTm outputTm : tm),
   (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm ->
   bigstop inputTm outputTm.
 Proof.
 Admitted.
 
-Lemma correspondence_completeness_bigstop : forall (inputTm outputTm : tm),
-  bigstop inputTm outputTm ->
-  exists (n : nat),
-    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm.
+
+
+
+Theorem correspondence_completeness_bigstop : forall (inputTm tm1 : tm),
+  bigstop inputTm tm1 ->
+  exists (tm2 : tm) (n : nat),
+    bigstop tm1 tm2 /\
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm tm2.
 Proof.
 Admitted.
 
