@@ -517,6 +517,387 @@ Qed.
 
 End PCFBigStep.
 
+(* ================================================================== *)
+(** * Effectful CBV PCF Big-Stop Semantics (Section 5)                *)
+(*                                                                     *)
+(*  Extends pure PCF with [teff act e]: emit effect [act] then        *)
+(*  evaluate [e].  The bigstop judgment tracks the sequence of        *)
+(*  effects emitted: [bigstop e e' a] means e partially evaluates     *)
+(*  to e' while emitting effects a : list string.                      *)
+(* ================================================================== *)
+
+Module EffectfulPCFBigStop.
+
+Inductive ty : Type :=
+| TNat   : ty
+| TArrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+| tvar  : string -> tm
+| tabs  : string -> ty -> tm -> tm
+| tapp  : tm -> tm -> tm
+| tzero : tm
+| tsucc : tm -> tm
+| tpred : tm -> tm
+| tifz  : tm -> tm -> tm -> tm
+| tfix  : string -> ty -> tm -> tm
+| teff  : string -> tm -> tm.        (** emit effect then evaluate *)
+
+Fixpoint eqFnty (t1 t2 : ty) : bool :=
+  match t1, t2 with
+  | TNat, TNat => true
+  | TArrow a1 b1, TArrow a2 b2 => andb (eqFnty a1 a2) (eqFnty b1 b2)
+  | _, _ => false
+  end.
+
+Fixpoint eqFntm (t1 t2 : tm) : bool :=
+  match t1, t2 with
+  | tvar x, tvar y => String.eqb x y
+  | tabs x T1 e1, tabs y T2 e2 =>
+      andb (String.eqb x y) (andb (eqFnty T1 T2) (eqFntm e1 e2))
+  | tapp e1 e2, tapp e3 e4 => andb (eqFntm e1 e3) (eqFntm e2 e4)
+  | tzero, tzero => true
+  | tsucc e1, tsucc e2 => eqFntm e1 e2
+  | tpred e1, tpred e2 => eqFntm e1 e2
+  | tifz e1 e2 e3, tifz e4 e5 e6 =>
+      andb (eqFntm e1 e4) (andb (eqFntm e2 e5) (eqFntm e3 e6))
+  | tfix f T1 e1, tfix g T2 e2 =>
+      andb (String.eqb f g) (andb (eqFnty T1 T2) (eqFntm e1 e2))
+  | teff a1 e1, teff a2 e2 => andb (String.eqb a1 a2) (eqFntm e1 e2)
+  | _, _ => false
+  end.
+
+Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
+  match t with
+  | tvar y          => if String.eqb x y then s else t
+  | tabs y T t1     => if String.eqb x y then t else tabs y T (subst x s t1)
+  | tapp t1 t2      => tapp (subst x s t1) (subst x s t2)
+  | tzero           => tzero
+  | tsucc t1        => tsucc (subst x s t1)
+  | tpred t1        => tpred (subst x s t1)
+  | tifz t1 t2 t3   => tifz (subst x s t1) (subst x s t2) (subst x s t3)
+  | tfix f T t1     => if String.eqb x f then t else tfix f T (subst x s t1)
+  | teff a t1       => teff a (subst x s t1)
+  end.
+
+Fixpoint isValueFn (t : tm) : bool :=
+  match t with
+  | tabs _ _ _ => true
+  | tzero      => true
+  | tsucc v    => isValueFn v
+  | _          => false
+  end.
+
+Definition effects := list string.
+
+Fixpoint eqFnEff (a b : effects) : bool :=
+  match a, b with
+  | [], []           => true
+  | x :: xs, y :: ys => andb (String.eqb x y) (eqFnEff xs ys)
+  | _, _             => false
+  end.
+
+Inductive is_value : tm -> Prop :=
+| V_Lam  : forall x T t, is_value (tabs x T t)
+| V_Zero :                is_value tzero
+| V_Succ : forall v,      is_value v -> is_value (tsucc v).
+
+(* ------------------------------------------------------------------ *)
+(** ** Effectful Big-Stop (Figure 8 of Kahn, Hoffmann, Li)            *)
+(* ------------------------------------------------------------------ *)
+
+Inductive bigstop : tm -> tm -> effects -> Prop :=
+
+(** -- Stopping rules (STE-Stop schema, expanded) ------------------- *)
+
+| BS_Stop : forall e,
+    bigstop e e []
+| BS_Succ : forall e e' a,
+    bigstop e e' a ->
+    bigstop (tsucc e) (tsucc e') a
+| BS_Pred : forall e e' a,
+    bigstop e e' a ->
+    bigstop (tpred e) (tpred e') a
+| BS_IfzDisc : forall e e' t1 t2 a,
+    bigstop e e' a ->
+    bigstop (tifz e t1 t2) (tifz e' t1 t2) a
+| BS_App1 : forall t1 t1' t2 a,
+    bigstop t1 t1' a ->
+    bigstop (tapp t1 t2) (tapp t1' t2) a
+| BS_App2 : forall t1 v1 t2 t2' a1 a2,
+    bigstop t1 v1 a1 /\ is_value v1 /\ bigstop t2 t2' a2 ->
+    bigstop (tapp t1 t2) (tapp v1 t2') (List.app a1 a2)
+
+(** -- Progressing rules (STE-App / STE-CaseZ / STE-CaseS etc.) ---- *)
+
+| BS_PredZero : forall e a,
+    bigstop e tzero a ->
+    bigstop (tpred e) tzero a
+| BS_PredSucc : forall e v a,
+    bigstop e (tsucc v) a /\ is_value v ->
+    bigstop (tpred e) v a
+| BS_IfzZero : forall e t1 t1' t2 a1 a2,
+    bigstop e tzero a1 /\ bigstop t1 t1' a2 ->
+    bigstop (tifz e t1 t2) t1' (List.app a1 a2)
+| BS_IfzSucc : forall e vn t1 t2 t2' a1 a2,
+    bigstop e (tsucc vn) a1 /\ is_value vn /\ bigstop t2 t2' a2 ->
+    bigstop (tifz e t1 t2) t2' (List.app a1 a2)
+| BS_App : forall t1 x T t3 t2 v2 e' a1 a2 a3,
+    bigstop t1 (tabs x T t3) a1 /\ bigstop t2 v2 a2 /\ is_value v2 /\
+    bigstop (subst x v2 t3) e' a3 ->
+    bigstop (tapp t1 t2) e' (List.app a1 (List.app a2 a3))
+| BS_Fix : forall f T t e' a,
+    bigstop (subst f (tfix f T t) t) e' a ->
+    bigstop (tfix f T t) e' a
+| BS_Eff : forall act e e' a,
+    bigstop e e' a ->
+    bigstop (teff act e) e' (act :: a).
+
+(* ------------------------------------------------------------------ *)
+(** ** Effectful Coinductive Eval (progressing rules + value bases)   *)
+(* ------------------------------------------------------------------ *)
+
+Definition listAppEf := @List.app string.
+
+
+CoInductive eval : tm -> tm -> list string -> Prop :=
+| E_Lam : forall x T t,
+    eval (tabs x T t) (tabs x T t) []
+| E_Zero :
+    eval tzero tzero []
+| E_Succ : forall t v a,
+    eval t v a ->
+    eval (tsucc t) (tsucc v) a
+| E_PredZero : forall t a,
+    eval t tzero a ->
+    eval (tpred t) tzero a
+| E_PredSucc : forall t v a,
+    isValueFn v = true /\ eval t (tsucc v) a ->
+    eval (tpred t) v a
+| E_App : forall t1 t2 x T t3 v2 v a1 a2 a3,
+    isValueFn v2 = true /\
+    eval t1 (tabs x T t3) a1 /\ eval t2 v2 a2 /\ eval (subst x v2 t3) v a3 ->
+    eval (tapp t1 t2) v (listAppEf a1 (listAppEf a2 a3))
+| E_IfzZero : forall t t1 t2 v a1 a2,
+    eval t tzero a1 /\ eval t1 v a2 ->
+    eval (tifz t t1 t2) v (listAppEf a1 a2)
+| E_IfzSucc : forall t vn t1 t2 t4 a1 a2,
+    isValueFn vn = true /\ eval t (tsucc vn) a1 /\ eval t2 t4 a2 ->
+    eval (tifz t t1 t2) t4 (listAppEf a1 a2)
+| E_Fix : forall f T t v a,
+    eval (subst f (tfix f T t) t) v a ->
+    eval (tfix f T t) v a
+| E_Eff : forall act t v a,
+    eval t v a ->
+    eval (teff act t) v (act :: a).
+
+
+MetaRocq Run (animate_coinductive_with_fn_pos <?eval?> [("eval", ([0], [1;2]))] 500).
+
+Print evalTransparentSigma2AnimatedTopFn.
+
+(* ------------------------------------------------------------------ *)
+(** ** Correspondence Theorems for Effectful PCF                       *)
+(* ------------------------------------------------------------------ *)
+
+Theorem animation_soundness_general : forall (f1 : tm -> tm) (f2 : tm -> list string) ,
+  (forall tm1 : tm, eval tm1 (f1 tm1) (f2 tm1)) ->
+  forall (inputTm outputTm : tm) (outputEff : list string) (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f1 f2 = Success (tm * list string) (outputTm, outputEff) ->
+    eval inputTm outputTm outputEff.
+Proof. Admitted.
+
+Theorem correspondence_soundness : forall (n : nat) (inputTm outputTm : tm) (outputEff : list string),
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') (fun t' : tm => @nil string)  = Success (tm * list string) (outputTm, outputEff) ->
+  bigstop inputTm outputTm outputEff.
+Proof. Admitted.
+
+Fixpoint isSubLst (a1 : list string) (a2 : list string) :=
+match a1 with
+| [] => true
+| h :: t => match a2 with
+            | h2 :: t2 => andb (String.eqb h h2) (isSubLst t t2)
+            | _ => false
+            end
+end.             
+
+Lemma correspondence_completeness_bigstop : forall (inputTm tm1 : tm) (outputEff1 : list string),
+  bigstop inputTm tm1 outputEff1 ->
+  exists (tm2 : tm) (outputEff2 : list string) (n : nat),
+    bigstop tm1 tm2 outputEff2 /\
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') (fun t' : tm => @nil string) = Success (tm * list string) (tm2, outputEff2) /\ isSubLst outputEff1 outputEff2.
+Proof. Admitted.
+
+End EffectfulPCFBigStop.
+
+(* ================================================================== *)
+(** * MNF CBV PCF Big-Stop Semantics (Section 7.1)                    *)
+(*                                                                     *)
+(*  Monadic Normal Form requires all arguments to [app] and [case]    *)
+(*  to be values; computation is sequenced via [let].  This yields    *)
+(*  a bigstop with only TWO stopping rules: St-Stop and St-Let1.      *)
+(*  Syntax: fun{f,x.e} combines lambda and fixpoint (self-reference   *)
+(*  f); case[disc]{x.e1;e2} binds the predecessor x in the succ      *)
+(*  branch; let x = e1 in e2 sequences evaluation.                    *)
+(* ================================================================== *)
+
+Module MNFBigStop.
+
+Inductive ty : Type :=
+| TNat   : ty
+| TArrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+| tvar  : string -> tm
+| tfun  : string -> string -> ty -> tm -> tm  (** fun{f,x.e}: f is self-ref, x is param *)
+| tapp  : tm -> tm -> tm
+| tzero : tm
+| tsucc : tm -> tm
+| tcase : tm -> string -> tm -> tm -> tm      (** case[disc]{x . e_zero ; e_succ} *)
+| tlet  : string -> tm -> tm -> tm.
+
+Fixpoint eqFnty (t1 t2 : ty) : bool :=
+  match t1, t2 with
+  | TNat, TNat => true
+  | TArrow a1 b1, TArrow a2 b2 => andb (eqFnty a1 a2) (eqFnty b1 b2)
+  | _, _ => false
+  end.
+
+Fixpoint eqFntm (t1 t2 : tm) : bool :=
+  match t1, t2 with
+  | tvar x, tvar y => String.eqb x y
+  | tfun f1 x1 T1 e1, tfun f2 x2 T2 e2 =>
+      andb (String.eqb f1 f2)
+        (andb (String.eqb x1 x2) (andb (eqFnty T1 T2) (eqFntm e1 e2)))
+  | tapp e1 e2, tapp e3 e4 => andb (eqFntm e1 e3) (eqFntm e2 e4)
+  | tzero, tzero => true
+  | tsucc e1, tsucc e2 => eqFntm e1 e2
+  | tcase d1 x1 e1 f1, tcase d2 x2 e2 f2 =>
+      andb (eqFntm d1 d2)
+        (andb (String.eqb x1 x2) (andb (eqFntm e1 e2) (eqFntm f1 f2)))
+  | tlet x1 e1 f1, tlet x2 e2 f2 =>
+      andb (String.eqb x1 x2) (andb (eqFntm e1 e2) (eqFntm f1 f2))
+  | _, _ => false
+  end.
+
+(** Substitution: [tfun] binds both f (self-ref) and x (param);
+    [tcase] binds x in the succ branch; [tlet] binds x in e2. *)
+Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
+  match t with
+  | tvar y             => if String.eqb x y then s else t
+  | tfun f p T body    =>
+      if orb (String.eqb x f) (String.eqb x p) then t
+      else tfun f p T (subst x s body)
+  | tapp t1 t2         => tapp (subst x s t1) (subst x s t2)
+  | tzero              => tzero
+  | tsucc t1           => tsucc (subst x s t1)
+  | tcase disc y e1 e2 =>
+      tcase (subst x s disc) y
+            (subst x s e1)
+            (if String.eqb x y then e2 else subst x s e2)
+  | tlet y e1 e2       =>
+      tlet y (subst x s e1)
+             (if String.eqb x y then e2 else subst x s e2)
+  end.
+
+(** In MNF, variables are values (they are bound to values in a
+    well-typed program). *)
+Fixpoint isValueFn (t : tm) : bool :=
+  match t with
+  | tvar _        => true
+  | tfun _ _ _ _  => true
+  | tzero         => true
+  | tsucc v       => isValueFn v
+  | _             => false
+  end.
+
+Inductive is_value : tm -> Prop :=
+| V_Var  : forall x,       is_value (tvar x)
+| V_Fun  : forall f x T t, is_value (tfun f x T t)
+| V_Zero :                  is_value tzero
+| V_Succ : forall v,        is_value v -> is_value (tsucc v).
+
+(* ------------------------------------------------------------------ *)
+(** ** MNF Big-Stop (Figure 14 of Kahn, Hoffmann, Li)                 *)
+(*                                                                     *)
+(*  Only two stopping rules: BS_Stop and BS_Let1.                      *)
+(* ------------------------------------------------------------------ *)
+
+Inductive bigstop : tm -> tm -> Prop :=
+
+(** -- Stopping rules (StM-Stop and StM-Let1 only) ------------------ *)
+
+| BS_Stop : forall e,
+    bigstop e e
+| BS_Let1 : forall x e1 e1' e2,
+    bigstop e1 e1' ->
+    bigstop (tlet x e1 e2) (tlet x e1' e2)
+
+(** -- Progressing rules (StM-Let2 / StM-CaseZ / StM-CaseS / StM-App) *)
+
+| BS_Let2 : forall x e1 v1 e2 e2',
+    isValueFn v1 = true /\ bigstop e1 v1 /\ bigstop (subst x v1 e2) e2' ->
+    bigstop (tlet x e1 e2) e2'
+| BS_CaseZ : forall x e1 e1' e2body,
+    bigstop e1 e1' ->
+    bigstop (tcase tzero x e1 e2body) e1'
+| BS_CaseS : forall v x e1 e2 e2',
+    isValueFn v = true /\ bigstop (subst x v e2) e2' ->
+    bigstop (tcase (tsucc v) x e1 e2) e2'
+| BS_App : forall f p T body v2 e',
+    isValueFn v2 = true /\
+    bigstop (subst p v2 (subst f (tfun f p T body) body)) e' ->
+    bigstop (tapp (tfun f p T body) v2) e'.
+
+(* ------------------------------------------------------------------ *)
+(** ** MNF Coinductive Eval (progressing rules + value base case)     *)
+(* ------------------------------------------------------------------ *)
+
+CoInductive eval : tm -> tm -> Prop :=
+| E_Val : forall t,
+    isValueFn t = true ->
+    eval t t
+| E_Let : forall x e1 e2 v1 e2',
+    isValueFn v1 = true /\ eval e1 v1 /\ eval (subst x v1 e2) e2' ->
+    eval (tlet x e1 e2) e2'
+| E_CaseZ : forall x e1 e1' e2body,
+    eval e1 e1' ->
+    eval (tcase tzero x e1 e2body) e1'
+| E_CaseS : forall v x e1 e2 e2',
+    isValueFn v = true /\ eval (subst x v e2) e2' ->
+    eval (tcase (tsucc v) x e1 e2) e2'
+| E_App : forall f p T body v2 e',
+    isValueFn v2 = true /\
+    eval (subst p v2 (subst f (tfun f p T body) body)) e' ->
+    eval (tapp (tfun f p T body) v2) e'.
+
+MetaRocq Run (animate_coinductive_with_fn_pos <?eval?> [("eval", ([0], [1]))] 500).
+
+(* ------------------------------------------------------------------ *)
+(** ** Correspondence Theorems for MNF PCF                             *)
+(* ------------------------------------------------------------------ *)
+
+Theorem animation_soundness_general : forall (f : tm -> tm),
+  (forall tm1 : tm, eval tm1 (f tm1)) ->
+  forall (inputTm outputTm : tm) (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
+    eval inputTm outputTm.
+Proof. Admitted.
+
+Theorem correspondence_soundness : forall (n : nat) (inputTm outputTm : tm),
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputTm ->
+  bigstop inputTm outputTm.
+Proof. Admitted.
+
+Lemma correspondence_completeness_bigstop : forall (inputTm tm1 : tm),
+  bigstop inputTm tm1 ->
+  exists (tm2 : tm) (n : nat),
+    bigstop tm1 tm2 /\
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm tm2.
+Proof. Admitted.
+
+End MNFBigStop.
+
 
 
 
