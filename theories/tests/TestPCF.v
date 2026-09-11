@@ -827,68 +827,9 @@ Qed.
     Use instead of [cbn [evalremoveFnPos'AnimatedTopFn]] to avoid the latter
     also delta-reducing instances of [evalremoveFnPos'AnimatedTopFn] that
     appear inside the handler list, which would break dispatch rewrite patterns. *)
-Lemma evalTop_stepHelper0 : forall n (x' y' : tm'), E_LamremoveFnPos'Animated n (Success tm' x') = Success tm' y' ->   
-  evalremoveFnPos'AnimatedTopFn (S n) (Success tm' x') =
-  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
-    [E_LamremoveFnPos'Animated;
-     E_ZeroremoveFnPos'Animated;
-     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     evalremoveFnPos'UndefinedAnimated]
-    n (Success tm' x').
-    
-Proof. intros. unfold evalremoveFnPos'AnimatedTopFn. destruct n.
--- simpl. reflexivity.
--- rewrite H. unfold dispatch_coind_ext. simpl. rewrite H. reflexivity. Qed.
-Lemma evalTop_stepHelper1 : forall n (x' y' : tm'), E_LamremoveFnPos'Animated (S n) (Success tm' x') = NoMatch tm' 
-      -> E_ZeroremoveFnPos'Animated (n) (Success tm' x') = Success tm' y' -> 
-  evalremoveFnPos'AnimatedTopFn (S  (S (n))) (Success tm' x') =
-  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
-    [E_LamremoveFnPos'Animated;
-     E_ZeroremoveFnPos'Animated;
-     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     evalremoveFnPos'UndefinedAnimated]
-    (S n) (Success tm' x').  
-Proof. intros. unfold evalremoveFnPos'AnimatedTopFn. remember n. destruct n0.
--- simpl. reflexivity.
--- rewrite H. unfold dispatch_coind_ext. simpl. rewrite H. destruct n0. 
---- reflexivity.
---- rewrite H0. reflexivity. Qed. 
-(*
-Lemma evalTop_stepHelper2 : forall n (x' y' : tm'), E_LamremoveFnPos'Animated (S (S n)) (Success tm' x') = NoMatch tm' 
-      -> E_ZeroremoveFnPos'Animated (S n) (Success tm' x') = NoMatch tm' -> 
-  evalremoveFnPos'AnimatedTopFn (S  (S (n))) (Success tm' x') = (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn) n;
-  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
-    [E_LamremoveFnPos'Animated;
-     E_ZeroremoveFnPos'Animated;
-     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-     evalremoveFnPos'UndefinedAnimated]
-    (S n) (Success tm' x').  
-Proof. intros. unfold evalremoveFnPos'AnimatedTopFn. remember n. destruct n0.
--- simpl. reflexivity.
--- rewrite H. unfold dispatch_coind_ext. simpl. rewrite H. destruct n0. 
---- reflexivity.
---- rewrite H0. reflexivity. Qed. 
-*)
+
    
-Lemma evalTop_step : forall n (x : tm'),
+Lemma evalTop_stepSuccess : forall n (x : tm'),
   evalremoveFnPos'AnimatedTopFn (S n) (Success tm' x) =
   dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
     [E_LamremoveFnPos'Animated;
@@ -924,10 +865,105 @@ rewrite <- Heqr0.
 ** fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr0. rewrite <- Heqr2. reflexivity.
 ** fold evalremoveFnPos'AnimatedTopFn. rewrite <- Heqr2. destruct n0.
 *** rewrite <- Heqr0. reflexivity.
+*** remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0.
+**** simpl. auto.
+**** rewrite <- Heqr0. auto.
+**** fold evalremoveFnPos'AnimatedTopFn. destruct n0.
+***** rewrite <- Heqr0. auto.
+***** remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+****** rewrite <- Heqr0. simpl. auto.
+****** destruct n0. 
+******* rewrite <- Heqr0. auto.
+******* remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** destruct n0. 
+********* rewrite <- Heqr0. auto.
+********* remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+**********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** destruct n0. 
+*********** rewrite <- Heqr0. auto.
+*********** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ destruct n0. 
+************* rewrite <- Heqr0. auto.
+************* remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+**************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** destruct n0. 
+*************** rewrite <- Heqr0. auto.
+*************** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+****************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** remember (evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)) as r0. destruct r0. 
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** assert (H_undefined_Succ : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+****************** simpl. reflexivity.
+****************** exfalso. rewrite <- Heqr10 in H_undefined_Succ. discriminate H_undefined_Succ. Qed.
+
+Lemma evalTop_stepNoMatch : forall n,
+  evalremoveFnPos'AnimatedTopFn (S n) (NoMatch tm') =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    n (NoMatch tm').
 
 
-Admitted.
+Proof. Admitted. 
 
+Lemma evalTop_step : forall n x,
+  evalremoveFnPos'AnimatedTopFn (S n) (x) =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    n (x).
+Proof. intros. destruct x; (try eapply evalTop_stepSuccess; try eapply evalTop_stepNoMatch).
+* assert (H0 : evalremoveFnPos'AnimatedTopFn (S n) (FuelError tm') =  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated] n (FuelError tm')).
+** destruct n.
+*** simpl. reflexivity.
+*** unfold evalremoveFnPos'AnimatedTopFn. remember (E_LamremoveFnPos'Animated (S n) (FuelError tm')) as r0. destruct r0. 
+**** reflexivity.
+**** assert (H1 : E_LamremoveFnPos'Animated (S n) (FuelError tm') = (FuelError tm')).
+***** auto.
+***** rewrite -> H1 in Heqr0. auto.
+**** assert (H1 : E_LamremoveFnPos'Animated (S n) (FuelError tm') = (FuelError tm')).
+***** auto.
+***** rewrite -> H1 in Heqr0. discriminate Heqr0.
+** auto. Qed. 
+
+
+  
 Lemma anim_S_tabs : forall n x T t f,
   evalTransparentSigma2AnimatedTopFn (S (S n)) (Success tm (tabs x T t)) f =
   Success tm (tabs x T t).
