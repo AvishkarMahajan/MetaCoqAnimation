@@ -922,8 +922,174 @@ Lemma evalTop_stepNoMatch : forall n,
     n (NoMatch tm').
 
 
-Proof. Admitted. 
+Proof. intros. unfold evalremoveFnPos'AnimatedTopFn.
+remember n. destruct n0.
+-- simpl. reflexivity.
+-- remember (E_LamremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+--- simpl. reflexivity.
+--- simpl. assert (H0 : E_LamremoveFnPos'Animated (S n0) (NoMatch tm') = (NoMatch tm')).
+---- auto.
+---- rewrite H0 in Heqr0. discriminate Heqr0.
+--- destruct n0.
+---- reflexivity.
+---- remember (E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr1.
+{ simpl. reflexivity. }
+{ simpl. assert (H0 : E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+  rewrite H0 in Heqr1. discriminate Heqr1. }
+{ destruct n0.
+  { reflexivity. }
+  { remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+    fold evalremoveFnPos'AnimatedTopFn.
+    rewrite <- Heqr2.
+    { simpl. reflexivity. }
+    { simpl. assert (H0 : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+      rewrite H0 in Heqr2. discriminate Heqr2. }
+    { destruct n0.
+      { reflexivity. }
+      { remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+        fold evalremoveFnPos'AnimatedTopFn.
+        rewrite <- Heqr3.
+        { simpl. reflexivity. }
+        { simpl. assert (H0 : E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+          rewrite H0 in Heqr3. discriminate Heqr3. }
+        { destruct n0.
+          { reflexivity. }
+          { remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+            fold evalremoveFnPos'AnimatedTopFn.
+            rewrite <- Heqr4.
+            { simpl. reflexivity. }
+            { simpl. assert (H0 : E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+              rewrite H0 in Heqr4. discriminate Heqr4. }
+            { destruct n0.
+              { reflexivity. }
+              { remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                fold evalremoveFnPos'AnimatedTopFn.
+                rewrite <- Heqr5.
+                { simpl. reflexivity. }
+                { simpl. assert (H0 : E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                  rewrite H0 in Heqr5. discriminate Heqr5. }
+                { destruct n0.
+                  { reflexivity. }
+                  { remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                    fold evalremoveFnPos'AnimatedTopFn.
+                    rewrite <- Heqr6.
+                    { simpl. reflexivity. }
+                    { simpl. assert (H0 : E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                      rewrite H0 in Heqr6. discriminate Heqr6. }
+                    { destruct n0.
+                      { reflexivity. }
+                      { remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                        fold evalremoveFnPos'AnimatedTopFn.
+                        rewrite <- Heqr7.
+                        { simpl. reflexivity. }
+                        { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                          rewrite H0 in Heqr7. discriminate Heqr7. }
+                        { destruct n0.
+                          { reflexivity. }
+                          { remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                            fold evalremoveFnPos'AnimatedTopFn.
+                            rewrite <- Heqr8.
+                            { simpl. reflexivity. }
+                            { simpl. assert (H0 : E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                              rewrite H0 in Heqr8. discriminate Heqr8. }
+                            { destruct n0.
+                              { reflexivity. }
+                              { remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+                                { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                  rewrite H0 in Heqr9. discriminate Heqr9. }
+                                { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                  rewrite H0 in Heqr9. discriminate Heqr9. }
+                                { destruct n0.
+                                  { reflexivity. }
+                                  { remember (evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm')) as r0. destruct r0.
+                                    { simpl. assert (H0 : evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                      rewrite H0 in Heqr10. discriminate Heqr10. }
+                                    { simpl. assert (H0 : evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                      rewrite H0 in Heqr10. discriminate Heqr10. }
+                                    { auto. }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+Qed.
 
+(*
+
+
+
+
+rewrite <- Heqr0. simpl. reflexivity. unfold dispatch_coind_ext. destruct n0.
+----- auto.
+----- rewrite <- Heqr0. simpl. reflexivity.
+--- simpl. unfold dispatch_coind_ext. destruct n0.
+---- rewrite <- Heqr0. reflexivity.
+---- remember (E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+----- simpl. reflexivity.
+----- simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity.
+----- unfold dispatch_coind_ext. destruct n0.
+* rewrite <- Heqr0. auto.
+* remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+** simpl. fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr0. rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn. rewrite <- Heqr2. destruct n0.
+*** rewrite <- Heqr0. reflexivity.
+*** remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+**** simpl. auto.
+**** rewrite <- Heqr0. auto.
+**** fold evalremoveFnPos'AnimatedTopFn. destruct n0.
+***** rewrite <- Heqr0. auto.
+***** remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+****** rewrite <- Heqr0. simpl. auto.
+****** destruct n0.
+******* rewrite <- Heqr0. auto.
+******* remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** destruct n0.
+********* rewrite <- Heqr0. auto.
+********* remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+**********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** destruct n0.
+*********** rewrite <- Heqr0. auto.
+*********** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ destruct n0.
+************* rewrite <- Heqr0. auto.
+************* remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+**************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** destruct n0.
+*************** rewrite <- Heqr0. auto.
+*************** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+****************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** remember (evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm')) as r0. destruct r0.
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** auto. Qed.
+*)
 Lemma evalTop_step : forall n x,
   evalremoveFnPos'AnimatedTopFn (S n) (x) =
   dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
