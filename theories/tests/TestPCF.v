@@ -4158,7 +4158,9 @@ Theorem correspondence_soundness_productive : forall (n : nat) (inputTm outputTm
   stepTC outputTm outputTm2))).
 Proof. Admitted.
 
-
+(*
+When eval is equipped with extra value guards, same results can be instantiated with CBV small step we recover the correspondence with
+BigStop. but basic connection is with full-beta-red small step *)
 
 End PCFNoGuardEval.
 
