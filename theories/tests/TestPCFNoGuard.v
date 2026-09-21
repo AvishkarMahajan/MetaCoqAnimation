@@ -194,8 +194,11 @@ Inductive bigstop : tm -> tm -> Prop :=
     bigstop e e' ->
     bigstop (tpred e) (tpred e')
 
-(** St-IfzDisc (k=1): stop inside the discriminant of ifz. *)
-| BS_IfStop : forall e e' t1 t2,
+(** St-If (k=1): stop independently in any/all of the discriminant, the
+    zero-branch, and the succ-branch. Stopping in a single position is
+    recovered as a special case by letting the other two positions
+    [BS_Stop] at themselves. *)
+| BS_IfStop : forall e e' t1 t1' t2 t2',
     bigstop e e' /\ bigstop t1 t1' /\ bigstop t2 t2' ->
     bigstop (tifz e t1 t2) (tifz e' t1' t2')
 
@@ -203,13 +206,15 @@ Inductive bigstop : tm -> tm -> Prop :=
 | BS_AppStop : forall t1 t1' t2,
     bigstop t1 t1' ->
     bigstop (tapp t1 t2) (tapp t1' t2)
- 
+
+(** St-Abs (k=1): stop inside the body of an abstraction. *)
 | BS_AbsStop : forall s T t t',
-    bigstop t t' -> bigstop (tabs s T t) bigstop (tabs s T t')    
-    
-| BS_FixStop : forall f T t e',
+    bigstop t t' -> bigstop (tabs s T t) (tabs s T t')
+
+(** St-FixBody (k=1): stop inside the body of a fix, without unrolling. *)
+| BS_FixStop : forall f T t t',
     bigstop t t' ->
-    bigstop (tfix f T t) (tfix f T t').
+    bigstop (tfix f T t) (tfix f T t')
     
 
 
@@ -3193,9 +3198,12 @@ Qed.
 
 
 Theorem correspondence_soundness_productive : forall (n : nat) (inputTm outputTm : tm), (exists m : nat, (exists outputTm2 : tm,
-  m > n /\ 
-  ((evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm) -> 
-  isValueFn outputTm = false -> (evalTransparentSigma2AnimatedTopFn m (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm2) /\
+  m > n /\
+  ((evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm) ->
+  (exists outputTm1' : tm, step outputTm outputTm1') ->
+  (* [outputTm1'] above only witnesses that [outputTm] is not stuck; it need
+     not be (and in general is not) what the fuel-[m] animation returns. *)
+  (evalTransparentSigma2AnimatedTopFn m (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm2) /\
   stepTC outputTm outputTm2))).
 Proof. Admitted.
 
