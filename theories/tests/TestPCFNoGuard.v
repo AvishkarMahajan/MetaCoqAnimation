@@ -185,29 +185,33 @@ Inductive bigstop : tm -> tm -> Prop :=
     bigstop e e
 
 (** St-Succ (k=1): stop inside the argument of succ. *)
-| BS_Succ : forall e e',
+| BS_SuccStop : forall e e',
     bigstop e e' ->
     bigstop (tsucc e) (tsucc e')
 
 (** St-Pred (k=1): stop inside the argument of pred. *)
-| BS_Pred : forall e e',
+| BS_PredStop : forall e e',
     bigstop e e' ->
     bigstop (tpred e) (tpred e')
 
 (** St-IfzDisc (k=1): stop inside the discriminant of ifz. *)
-| BS_IfzDisc : forall e e' t1 t2,
-    bigstop e e' ->
-    bigstop (tifz e t1 t2) (tifz e' t1 t2)
+| BS_IfStop : forall e e' t1 t2,
+    bigstop e e' /\ bigstop t1 t1' /\ bigstop t2 t2' ->
+    bigstop (tifz e t1 t2) (tifz e' t1' t2')
 
 (** St-App1 (k=1): stop inside the operator of an application. *)
-| BS_App1 : forall t1 t1' t2,
+| BS_AppStop : forall t1 t1' t2,
     bigstop t1 t1' ->
     bigstop (tapp t1 t2) (tapp t1' t2)
+ 
+| BS_AbsStop : forall s T t t',
+    bigstop t t' -> bigstop (tabs s T t) bigstop (tabs s T t')    
+    
+| BS_FixStop : forall f T t e',
+    bigstop t t' ->
+    bigstop (tfix f T t) (tfix f T t').
+    
 
-(** St-App2 (k=2): operator has reached a value; stop inside the operand. *)
-| BS_App2 : forall t1 v1 t2 t2',
-    bigstop t1 v1 /\ bigstop t2 t2' ->
-    bigstop (tapp t1 t2) (tapp v1 t2')
 
 (** -- Progressing rules (St-CaseZ / St-CaseS / St-App analogues) --- *)
 
