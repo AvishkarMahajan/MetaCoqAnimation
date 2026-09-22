@@ -370,6 +370,8 @@ Inductive stepTC : tm -> tm -> Prop :=
         (b) congruence lemmas for the animation function
       Both are non-trivial given the conjunction-packaged premises in
       bigstop constructors; admitted pending that infrastructure. *)
+      
+(* Unnecessary     
 Lemma animate_mono_bigstop : forall (n m : nat) (inputTm outputN outputM : tm),
   n <= m ->
 
@@ -378,7 +380,7 @@ Lemma animate_mono_bigstop : forall (n m : nat) (inputTm outputN outputM : tm),
   bigstop outputN outputM.
 Proof.
 Admitted.
-
+*)
 (** Helper: isValueFn b = true implies is_value. *)
 Lemma isValueFn_to_is_value : forall v, isValueFn v = true -> is_value v.
 Proof.
@@ -1277,9 +1279,7 @@ Lemma dispatch_tpred_from_pred : forall n t f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' v') =>
-          if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-          then Success tm (tmTransparentSigmaPushBody f v')
-          else Success tm (f (tpred t))
+          Success tm (tmTransparentSigmaPushBody f v')
       | _ => Success tm (f (tpred t))
       end
   end.
@@ -1307,17 +1307,13 @@ Proof.
     - reflexivity.
     - destruct w; reflexivity.
     - reflexivity. }
-  (* Spec lemma for E_PredSucc's own reduction. The isValueFn check is decided by
-     isValueFnliftedFunc: definite (via tmChkNoExtraCstrs + isValueFn/tmPushPlain) when the
-     predecessor carries no oracle marker, deferred (hence NoMatch overall) otherwise. *)
+  (* Spec lemma for E_PredSucc's own reduction (no guard in the source relation). *)
   assert (E_PredSucc_result :
     forall (evalFn : nat -> animation_result tm' -> animation_result tm') m v,
     E_PredSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tpred' v)) =
     match evalFn (S m) (Success tm' v) with
     | Success (tsucc' v') =>
-        if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-        then Success tm' v'
-        else NoMatch tm'
+        Success tm' v'
     | Success _ => NoMatch tm'
     | FuelError => FuelError tm'
     | NoMatch => NoMatch tm'
@@ -1326,14 +1322,11 @@ Proof.
     unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
            AnimationResult.option_to_result, AnimationResult.join_pair,
            TermUtils.with_default, TermUtils.dispatch_clauses,
-           AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+           AnimationResult.fuel_error_fn.
     simpl.
     destruct (evalFn (S m) (Success tm' v)) as [| w |] eqn:E.
     - reflexivity.
-    - destruct w; simpl; try reflexivity.
-      destruct (tmChkNoExtraCstrs w); simpl.
-      + destruct (isValueFn (tmPushPlain w)); reflexivity.
-      + reflexivity.
+    - destruct w; simpl; reflexivity.
     - reflexivity. }
   (* If neither E_PredZero nor E_PredSucc fires, every remaining handler
      (E_App/E_IfzZero/E_IfzSucc/E_Fix) also fails to match a [tpred'] input, so the
@@ -1406,9 +1399,7 @@ Proof.
      end) =
     match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
     | Success (tsucc' v') =>
-        if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-        then Success tm (tmTransparentSigmaPushBody f v')
-        else Success tm (f (tpred t))
+        Success tm (tmTransparentSigmaPushBody f v')
     | _ => Success tm (f (tpred t))
     end).
   { cbn [dispatch_coind_ext].
@@ -1417,9 +1408,7 @@ Proof.
     rewrite Hw2.
     destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
       simpl; try (apply Hfall).
-    destruct (andb (tmChkNoExtraCstrs v2) (isValueFn (tmPushPlain v2))) eqn:Hchk.
-    - simpl. reflexivity.
-    - apply Hfall.
+    simpl. reflexivity.
   }
   destruct w1; simpl; try apply Hcont.
   reflexivity.
@@ -1446,9 +1435,7 @@ Lemma dispatch_tpred : forall n t f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' v') =>
-          if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-          then Success tm (tmTransparentSigmaPushBody f v')
-          else Success tm (f (tpred t))
+          Success tm (tmTransparentSigmaPushBody f v')
       | _ => Success tm (f (tpred t))
       end
   end.
@@ -1481,9 +1468,7 @@ Lemma anim_S_tpred : forall n t f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' v') =>
-          if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-          then Success tm (tmTransparentSigmaPushBody f v')
-          else Success tm (f (tpred t))
+          Success tm (tmTransparentSigmaPushBody f v')
       | _ => Success tm (f (tpred t))
       end
   end.
@@ -1526,12 +1511,10 @@ Lemma dispatch_tifz_from_ifz : forall n t t1 t2 f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' vn') =>
-          if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-          then (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+          (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
                 | Success x => Success tm (tmTransparentSigmaPushBody f x)
                 | _ => NoMatch tm
                 end)
-          else Success tm (f (tifz t t1 t2))
       | _ => Success tm (f (tifz t t1 t2))
       end
   end.
@@ -1573,23 +1556,17 @@ Proof.
     E_IfzSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
     match w1 with
     | tsucc' vn' =>
-        if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-        then Success tm' w3
-        else NoMatch tm'
+        Success tm' w3
     | _ => NoMatch tm'
     end).
   { clear. intros evalFn m u1 u2 u3 w1 w3 H1 H3.
     unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
            AnimationResult.option_to_result, AnimationResult.join_pair,
            TermUtils.with_default, TermUtils.dispatch_clauses,
-           AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+           AnimationResult.fuel_error_fn.
     simpl.
     rewrite H1, H3.
-    destruct w1 as [s1|s2 ty2 b2|a1 a2| |vn'|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
-      simpl; try reflexivity.
-    destruct (tmChkNoExtraCstrs vn'); simpl.
-    - destruct (isValueFn (tmPushPlain vn')); reflexivity.
-    - reflexivity. }
+    destruct w1; simpl; reflexivity. }
   (* If neither E_IfzZero nor E_IfzSucc matches, E_Fix + UndefinedAnimated bottom out at
      the oracle escape, exactly as in [dispatch_tpred_from_pred]'s [Hfall]. *)
   assert (Hfall : forall m,
@@ -1638,12 +1615,10 @@ Proof.
      end) =
     match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
     | Success (tsucc' vn') =>
-        if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-        then (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+        (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
               | Success x => Success tm (tmTransparentSigmaPushBody f x)
               | _ => NoMatch tm
               end)
-        else Success tm (f (tifz t t1 t2))
     | _ => Success tm (f (tifz t t1 t2))
     end).
   { cbn [dispatch_coind_ext].
@@ -1653,9 +1628,7 @@ Proof.
     rewrite Hw2, Hw3.
     destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
       simpl; try (apply Hfall).
-    destruct (andb (tmChkNoExtraCstrs v2) (isValueFn (tmPushPlain v2))) eqn:Hchk.
-    - simpl. reflexivity.
-    - apply Hfall.
+    simpl. reflexivity.
   }
   destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
     [ simpl; apply Hcont
@@ -1687,12 +1660,10 @@ Lemma dispatch_tifz : forall n t t1 t2 f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' vn') =>
-          if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-          then (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+          (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
                 | Success x => Success tm (tmTransparentSigmaPushBody f x)
                 | _ => NoMatch tm
                 end)
-          else Success tm (f (tifz t t1 t2))
       | _ => Success tm (f (tifz t t1 t2))
       end
   end.
@@ -1744,12 +1715,10 @@ Lemma anim_S_tifz : forall n t t1 t2 f,
   | _ =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
       | Success (tsucc' vn') =>
-          if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-          then match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+          match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
                | Success x => Success tm (tmTransparentSigmaPushBody f x)
                | _ => NoMatch tm
                end
-          else Success tm (f (tifz t t1 t2))
       | _ => Success tm (f (tifz t t1 t2))
       end
   end.
@@ -1963,9 +1932,7 @@ Lemma E_PredSucc_result :
   E_PredSuccremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
   match evalFn (S n) (Success tm' v) with
   | Success (tsucc' v') =>
-      if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-      then Success tm' v'
-      else NoMatch tm'
+      Success tm' v'
   | Success _ => NoMatch tm'
   | FuelError => FuelError tm'
   | NoMatch => NoMatch tm'
@@ -1975,14 +1942,11 @@ Proof.
   unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   destruct (evalFn (S n) (Success tm' v)) as [| w |] eqn:E.
   - reflexivity.
-  - destruct w; simpl; try reflexivity.
-    destruct (tmChkNoExtraCstrs w); simpl.
-    + destruct (isValueFn (tmPushPlain w)); reflexivity.
-    + reflexivity.
+  - destruct w; simpl; reflexivity.
   - reflexivity.
 Qed.
 
@@ -1992,9 +1956,7 @@ Lemma E_PredSucc_result_spec2 :
   E_PredSuccremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
   match w with
   | tsucc' v' =>
-      if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-      then Success tm' v'
-      else NoMatch tm'
+      Success tm' v'
   | _ => NoMatch tm'
   end.
 Proof.
@@ -2010,7 +1972,7 @@ Proof.
   unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   destruct t1'; simpl; try reflexivity.
   exfalso. eapply Hne. reflexivity.
@@ -2021,52 +1983,18 @@ Lemma E_App_result_spec :
          n t1' t2' xx tty tt3 w2 w3,
   evalFn (S n) (Success tm' t1') = Success tm' (tabs' xx tty tt3) ->
   evalFn (S n) (Success tm' t2') = Success tm' w2 ->
-  tmChkNoExtraCstrs w2 = true ->
-  isValueFn (tmPushPlain w2) = true ->
   evalFn (S n) (Success tm' (substliftedFunc xx w2 tt3)) = Success tm' w3 ->
   E_AppremoveFnPos'Animated evalFn (S n) (Success tm' (tapp' t1' t2')) = Success tm' w3.
 Proof.
-  intros evalFn n t1' t2' xx tty tt3 w2 w3 H1 H2 Hchk Hval H3.
+  intros evalFn n t1' t2' xx tty tt3 w2 w3 H1 H2 H3.
   unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   rewrite H1, H2, H3.
   simpl.
-  rewrite Hchk, Hval.
   reflexivity.
-Qed.
-
-Lemma E_App_result_nomatch2 :
-  forall (evalFn : nat -> animation_result tm' -> animation_result tm')
-         n t1' t2' xx tty tt3 w2 w3,
-  evalFn (S n) (Success tm' t1') = Success tm' (tabs' xx tty tt3) ->
-  evalFn (S n) (Success tm' t2') = Success tm' w2 ->
-  evalFn (S n) (Success tm' (substliftedFunc xx w2 tt3)) = Success tm' w3 ->
-  (tmChkNoExtraCstrs w2 = false \/ isValueFn (tmPushPlain w2) = false) ->
-  E_AppremoveFnPos'Animated evalFn (S n) (Success tm' (tapp' t1' t2')) = NoMatch tm'.
-Proof.
-  intros evalFn n t1' t2' xx tty tt3 w2 w3 H1 H2 H3 [Hf | Hf].
-  - unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
-           AnimationResult.option_to_result, AnimationResult.join_pair,
-           TermUtils.with_default, TermUtils.dispatch_clauses,
-           AnimationResult.fuel_error_fn, isValueFnliftedFunc.
-    simpl.
-    rewrite H1, H2, H3.
-    simpl.
-    rewrite Hf.
-    reflexivity.
-  - unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
-           AnimationResult.option_to_result, AnimationResult.join_pair,
-           TermUtils.with_default, TermUtils.dispatch_clauses,
-           AnimationResult.fuel_error_fn, isValueFnliftedFunc.
-    simpl.
-    rewrite H1, H2, H3.
-    simpl.
-    destruct (tmChkNoExtraCstrs w2) eqn:Hchk; simpl.
-    + rewrite Hf. reflexivity.
-    + reflexivity.
 Qed.
 
 Lemma E_App_result_nomatch1 :
@@ -2080,7 +2008,7 @@ Proof.
   unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   rewrite H1.
   destruct w1; simpl; try reflexivity.
@@ -2096,7 +2024,7 @@ Proof.
   unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   destruct t1'; simpl; try reflexivity.
   exfalso. eapply Hne. reflexivity.
@@ -2163,9 +2091,7 @@ Lemma E_IfzSucc_result_spec :
   E_IfzSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
   match w1 with
   | tsucc' vn' =>
-      if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-      then Success tm' w3
-      else NoMatch tm'
+      Success tm' w3
   | _ => NoMatch tm'
   end.
 Proof.
@@ -2173,14 +2099,10 @@ Proof.
   unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   rewrite H1, H3.
-  destruct w1 as [s1|s2 ty2 b2|a1 a2| |vn'|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
-    simpl; try reflexivity.
-  destruct (tmChkNoExtraCstrs vn'); simpl.
-  - destruct (isValueFn (tmPushPlain vn')); reflexivity.
-  - reflexivity.
+  destruct w1; simpl; reflexivity.
 Qed.
 
 Lemma E_IfzSucc_result_wrongshape :
@@ -2192,7 +2114,7 @@ Proof.
   unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
          AnimationResult.option_to_result, AnimationResult.join_pair,
          TermUtils.with_default, TermUtils.dispatch_clauses,
-         AnimationResult.fuel_error_fn, isValueFnliftedFunc.
+         AnimationResult.fuel_error_fn.
   simpl.
   destruct t1'; simpl; try reflexivity.
   exfalso. eapply Hne. reflexivity.
@@ -2305,46 +2227,26 @@ Ltac escape_app_ifz_fix u k H :=
     k) in H;
   discriminate H.
 
-Lemma E_App_lambda_body_no_extra_cstrs_general : forall n (u : tm') x ty t3',
-  tmChkNoExtraCstrs u = true ->
-  evalremoveFnPos'AnimatedTopFn n (Success tm' u) = Success tm' (tabs' x ty t3') ->
-  tmChkNoExtraCstrs t3' = true.
+Lemma evalTop_substLifted_escape : forall n x a b,
+  evalremoveFnPos'AnimatedTopFn n (Success tm' (substLiftedCstr x a b)) =
+  Success tm' (evalremoveFnPosAn1 (substLiftedCstr x a b)).
 Proof.
-  intro n.
-  apply (lt_wf_ind n (fun n => forall (u : tm') x ty t3',
-    tmChkNoExtraCstrs u = true ->
-    evalremoveFnPos'AnimatedTopFn n (Success tm' u) = Success tm' (tabs' x ty t3') ->
-    tmChkNoExtraCstrs t3' = true)).
-  clear n. intros n IH u x ty t3' Hu Heq.
+  intros n x a b.
   destruct n as [| m].
-  { rewrite base_result in Heq. discriminate Heq. }
-  rewrite evalTop_stepSuccess in Heq.
-  destruct u as [s1|lx lT lbody|a1 a2| |v1|b1|c1 c2 c3|fn0 T0 fbody0|mk|s4 n1 n2] eqn:Hu_eq;
-    simpl in Hu; try discriminate Hu.
-
-  - (* tvar' s1: every handler NoMatch, escape *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app
-        [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        [evalremoveFnPos'UndefinedAnimated]) in Heq.
-    rewrite (dispatch_coind_ext_escape
+  { apply base_result. }
+  rewrite evalTop_stepSuccess.
+  change
+    [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    with
+    (List.app
       [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
        E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
        E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
@@ -2353,542 +2255,30 @@ Proof.
        E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
        E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
        E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-      (tvar' s1)
-      ltac:(intros hh k Hin;
-            simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity
-            | rewrite E_Succ_result_generic; reflexivity
-            | apply E_PredZero_result_wrongshape; intros v'; discriminate
-            | apply E_PredSucc_result_wrongshape; intros v'; discriminate
-            | apply E_App_result_wrongshape; intros aa1 aa2; discriminate
-            | apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate
-            | apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate
-            | apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate ])
-      m) in Heq.
-    discriminate Heq.
-
-  - (* tabs' lx lT lbody: E_Lam fires directly *)
-    destruct m as [| m'].
-    { simpl in Heq. discriminate Heq. }
-    rewrite (dispatch_coind_ext_fire E_LamremoveFnPos'Animated _ _ m'
-               (tabs' lx lT lbody)
-               (E_Lam_result m' (tabs' lx lT lbody))) in Heq.
-    injection Heq as -> -> <-.
-    exact Hu.
-
-  - (* tapp' a1 a2: only E_App can produce a tabs' result *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app
-        [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-      [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      (tapp' a1 a2)
-      m
-      ltac:(intros hh k Hin;
-            simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | | | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity
-            | rewrite E_Succ_result_generic; reflexivity
-            | apply E_PredZero_result_wrongshape; intros v'; discriminate
-            | apply E_PredSucc_result_wrongshape; intros v'; discriminate ]))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) a1) as [w1 Hw1].
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) a2) as [w2 Hw2].
-    destruct w1 as [s1'|xx tty tt3|a1'' a2''| |v1'|b1'|c1' c2' c3'|fn0' T0' fbody0'|mk'|s4' n1' n2']
-      eqn:Hw1shape.
-    1,3,4,5,6,7,8,9,10 :
-      (rewrite (dispatch_coind_ext_skip _ _ _ _
-                  (E_App_result_nomatch1 evalremoveFnPos'AnimatedTopFn k a1 a2 _ Hw1
-                     ltac:(discriminate))) in Heq;
-       change
-         [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-          E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-          E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-          evalremoveFnPos'UndefinedAnimated]
-         with
-         (List.app
-           [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-            E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-            E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-           [evalremoveFnPos'UndefinedAnimated]) in Heq;
-       rewrite (dispatch_coind_ext_escape
-         [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-          E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-          E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-         (tapp' a1 a2)
-         ltac:(intros hh kk Hin;
-               simpl in Hin;
-               repeat destruct Hin as [<- | Hin]; [ | | | contradiction];
-               [ apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate
-               | apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate
-               | apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate ])
-         k) in Heq;
-       discriminate Heq).
-    (* remaining case (2nd): w1 = tabs' xx tty tt3 *)
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k)
-                (substliftedFunc xx w2 tt3)) as [w3 Hw3].
-    destruct (andb (tmChkNoExtraCstrs w2) (isValueFn (tmPushPlain w2))) eqn:Hchk.
-    + apply andb_prop in Hchk as [Hchk1 Hchk2].
-      rewrite (dispatch_coind_ext_fire _ _ _ _ _
-                 (E_App_result_spec evalremoveFnPos'AnimatedTopFn k a1 a2 xx tty tt3 w2 w3
-                    Hw1 Hw2 Hchk1 Hchk2 Hw3)) in Heq.
-      injection Heq as Heqw3.
-      rewrite Heqw3 in Hw3.
-      assert (Htt3 : tmChkNoExtraCstrs tt3 = true).
-      { apply andb_prop in Hu as [Hu1 Hu2].
-        apply andb_prop in Hu2 as [Hu2 _].
-        apply (IH (S k) ltac:(lia) a1 xx tty tt3 Hu2 Hw1). }
-      apply (IH (S k) ltac:(lia) (substliftedFunc xx w2 tt3) x ty t3').
-      * apply substliftedFunc_no_extra_cstrs; assumption.
-      * exact Hw3.
-    + rewrite (dispatch_coind_ext_skip _ _ _ _
-                 (E_App_result_nomatch2 evalremoveFnPos'AnimatedTopFn k a1 a2 xx tty tt3 w2 w3
-                    Hw1 Hw2 Hw3
-                    ltac:(destruct (tmChkNoExtraCstrs w2) eqn:E; simpl in Hchk;
-                          [right | left]; congruence))) in Heq.
-      change
-        [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]
-        with
-        (List.app
-          [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-           E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-           E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-          [evalremoveFnPos'UndefinedAnimated]) in Heq.
-      rewrite (dispatch_coind_ext_escape
-        [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        (tapp' a1 a2)
-        ltac:(intros hh kk Hin;
-              simpl in Hin;
-              repeat destruct Hin as [<- | Hin]; [ | | | contradiction];
-              [ apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate
-              | apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate
-              | apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate ])
-        k) in Heq.
-      discriminate Heq.
-
-  - (* tzero': only E_Zero can produce a Success at all (tzero'-shaped, not tabs') *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app [E_LamremoveFnPos'Animated]
-        [E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach [E_LamremoveFnPos'Animated]
-      [E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      tzero' m
-      ltac:(intros hh k Hin; simpl in Hin; destruct Hin as [<- | []];
-            rewrite E_Lam_result; reflexivity))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _ (E_Zero_result k tzero')) in Heq.
-    discriminate Heq.
-
-  - (* tsucc' v1: only E_Succ can fire, always giving a tsucc'-shaped (not tabs') value *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated]
-        [E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated]
-      [E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      (tsucc' v1) m
-      ltac:(intros hh k Hin; simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity ]))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) v1) as [wv Hwv].
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _
-               (E_Succ_result_generic_spec evalremoveFnPos'AnimatedTopFn k v1 wv Hwv)) in Heq.
-    discriminate Heq.
-  - (* tpred' b1: PredZero or PredSucc may produce a result; PredSucc's own gate gives
-       marker-freeness of its passthrough value for free. *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app
-        [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        [E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-      [E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      (tpred' b1) m
-      ltac:(intros hh k Hin; simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity
-            | rewrite E_Succ_result_generic; reflexivity ]))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    (* Factor "whenever PredZero doesn't fire, here's what the rest gives" once, exactly as
-       [dispatch_tpred_from_pred]'s own proof does for its analogous continuation. *)
-    assert (Hcont : forall k0,
-      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
-        [E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]
-        k0 (Success tm' (tpred' b1)) = Success tm' (tabs' x ty t3') ->
-      tmChkNoExtraCstrs t3' = true).
-    { clear Heq Hkm k. intros k0 Heq2.
-      destruct k0 as [| k].
-      { simpl in Heq2. discriminate Heq2. }
-      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) b1) as [w1' Hw1'].
-      destruct w1' as [s1'|xx tty tt3|a1' a2'| |v1'|b1'|c1' c2' c3'|fn0' T0' fbody0'|mk'|s4' n1' n2']
-        eqn:Hw1'shape.
-      1,2,3,4,6,7,8,9,10:
-        (pose proof (E_PredSucc_result_spec2 evalremoveFnPos'AnimatedTopFn k b1 _ Hw1') as HPS;
-         simpl in HPS;
-         rewrite (dispatch_coind_ext_skip _ _ _ _ HPS) in Heq2;
-         escape_app_ifz_fix (tpred' b1) k Heq2).
-      (* remaining case (5th, tsucc' v1'): PredSucc may fire *)
-      pose proof (E_PredSucc_result_spec2 evalremoveFnPos'AnimatedTopFn k b1 _ Hw1') as HPS.
-      simpl in HPS.
-      destruct (andb (tmChkNoExtraCstrs v1') (isValueFn (tmPushPlain v1'))) eqn:Hchk.
-      + apply andb_prop in Hchk as [Hchk1 Hchk2].
-        rewrite (dispatch_coind_ext_fire _ _ _ _ _ HPS) in Heq2.
-        injection Heq2 as Heqv1.
-        rewrite Heqv1 in Hchk1. simpl in Hchk1.
-        exact Hchk1.
-      + rewrite (dispatch_coind_ext_skip _ _ _ _ HPS) in Heq2.
-        escape_app_ifz_fix (tpred' b1) k Heq2. }
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) b1) as [w1 Hw1].
-    destruct w1 as [s1'|xx tty tt3|a1' a2'| |v1'|b1'|c1' c2' c3'|fn0' T0' fbody0'|mk'|s4' n1' n2']
-      eqn:Hw1shape.
-    1,2,3,5,6,7,8,9,10:
-      (pose proof (E_PredZero_result_spec evalremoveFnPos'AnimatedTopFn k b1 _ Hw1) as HPZ;
-       simpl in HPZ;
-       rewrite (dispatch_coind_ext_skip _ _ _ _ HPZ) in Heq;
-       apply (Hcont k Heq)).
-    (* remaining case (4th, tzero'): PredZero fires directly *)
-    pose proof (E_PredZero_result_spec evalremoveFnPos'AnimatedTopFn k b1 _ Hw1) as HPZ.
-    simpl in HPZ.
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _ HPZ) in Heq.
-    discriminate Heq.
-  - (* tifz' c1 c2 c3: IfzZero or IfzSucc may produce a result. *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app
-        [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-      [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      (tifz' c1 c2 c3) m
-      ltac:(intros hh k Hin; simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | | | | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity
-            | rewrite E_Succ_result_generic; reflexivity
-            | apply E_PredZero_result_wrongshape; intros v'; discriminate
-            | apply E_PredSucc_result_wrongshape; intros v'; discriminate
-            | apply E_App_result_wrongshape; intros aa1 aa2; discriminate ]))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    (* Factor "whenever IfzZero doesn't fire, here's what the rest gives" once. Threads the
-       fuel bound [k0 <= m] through so the IH application below (needed for the IfzSucc/c3
-       case, which — unlike PredSucc — has no "andb gives it for free" shortcut) stays
-       well-founded. *)
-    assert (Hcont : forall k0, k0 <= m ->
-      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
-        [E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]
-        k0 (Success tm' (tifz' c1 c2 c3)) = Success tm' (tabs' x ty t3') ->
-      tmChkNoExtraCstrs t3' = true).
-    { clear Heq Hkm k. intros k0 Hk0m Heq2.
-      destruct k0 as [| k].
-      { simpl in Heq2. discriminate Heq2. }
-      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) c1) as [w1' Hw1'].
-      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) c3) as [w3' Hw3'].
-      destruct w1' as [s1'|xx tty tt3|a1' a2'| |v1'|b1'|cc1' cc2' cc3'|fn0' T0' fbody0'|mk'|s4' n1' n2']
-        eqn:Hw1'shape.
-      1,2,3,4,6,7,8,9,10:
-        (pose proof (E_IfzSucc_result_spec evalremoveFnPos'AnimatedTopFn k c1 c2 c3 _ w3'
-                       Hw1' Hw3') as HIS;
-         rewrite (dispatch_coind_ext_skip _ _ _ _ HIS) in Heq2;
-         change
-           [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-            evalremoveFnPos'UndefinedAnimated]
-           with
-           (List.app [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-             [evalremoveFnPos'UndefinedAnimated]) in Heq2;
-         rewrite (dispatch_coind_ext_escape
-           [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-           (tifz' c1 c2 c3)
-           ltac:(intros hh kk Hin; simpl in Hin;
-                 destruct Hin as [<- | []];
-                 apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate)
-           k) in Heq2;
-         discriminate Heq2).
-      (* remaining case (5th, tsucc' v1'): IfzSucc may fire *)
-      pose proof (E_IfzSucc_result_spec evalremoveFnPos'AnimatedTopFn k c1 c2 c3 _ w3'
-                    Hw1' Hw3') as HIS.
-      simpl in HIS.
-      destruct (andb (tmChkNoExtraCstrs v1') (isValueFn (tmPushPlain v1'))) eqn:Hchk.
-      + rewrite (dispatch_coind_ext_fire _ _ _ _ _ HIS) in Heq2.
-        injection Heq2 as Heqw3.
-        rewrite Heqw3 in Hw3'.
-        apply (IH (S k) ltac:(lia) c3 x ty t3').
-        * apply andb_prop in Hu as [Hu1 Hu2].
-          exact Hu1.
-        * exact Hw3'.
-      + rewrite (dispatch_coind_ext_skip _ _ _ _ HIS) in Heq2.
-        change
-          [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-           evalremoveFnPos'UndefinedAnimated]
-          with
-          (List.app [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-            [evalremoveFnPos'UndefinedAnimated]) in Heq2.
-        rewrite (dispatch_coind_ext_escape
-          [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-          (tifz' c1 c2 c3)
-          ltac:(intros hh kk Hin; simpl in Hin;
-                destruct Hin as [<- | []];
-                apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate)
-          k) in Heq2.
-        discriminate Heq2. }
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) c1) as [w1 Hw1].
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) c2) as [w2 Hw2].
-    destruct w1 as [s1'|xx tty tt3|a1' a2'| |v1'|b1'|cc1 cc2 cc3|fn0' T0' fbody0'|mk'|s4' n1' n2']
-      eqn:Hw1shape.
-    1,2,3,5,6,7,8,9,10:
-      (pose proof (E_IfzZero_result_spec2 evalremoveFnPos'AnimatedTopFn k c1 c2 c3 _ w2
-                     Hw1 Hw2) as HIZ;
-       rewrite (dispatch_coind_ext_skip _ _ _ _ HIZ) in Heq;
-       apply (Hcont k ltac:(lia) Heq)).
-    (* remaining case (4th, tzero'): IfzZero fires directly *)
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _
-               (E_IfzZero_result_spec2 evalremoveFnPos'AnimatedTopFn k c1 c2 c3 tzero' w2
-                  Hw1 Hw2)) in Heq.
-    injection Heq as Heqw2.
-    rewrite Heqw2 in Hw2.
-    apply (IH (S k) ltac:(lia) c2 x ty t3').
-    + apply andb_prop in Hu as [Hu1 Hu2].
-      apply andb_prop in Hu2 as [Hu2 Hu3].
-      exact Hu2.
-    + exact Hw2.
-
-  - (* tfix' fn0 T0 fbody0: E_Fix always fires once reached (its own shape check is already
-       satisfied, since u itself is tfix'-shaped); no gating condition, so [fbody0]'s
-       marker-freeness (needed for [substliftedFunc]'s smart branch) comes directly from
-       [Hu]. *)
-    change
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      with
-      (List.app
-        [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-         E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-        [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-         evalremoveFnPos'UndefinedAnimated]) in Heq.
-    destruct (dispatch_coind_ext_reach
-      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
-       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
-      [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
-       evalremoveFnPos'UndefinedAnimated]
-      (tfix' fn0 T0 fbody0) m
-      ltac:(intros hh k Hin; simpl in Hin;
-            repeat destruct Hin as [<- | Hin]; [ | | | | | | | | contradiction];
-            [ rewrite E_Lam_result; reflexivity
-            | rewrite E_Zero_result; reflexivity
-            | rewrite E_Succ_result_generic; reflexivity
-            | apply E_PredZero_result_wrongshape; intros v'; discriminate
-            | apply E_PredSucc_result_wrongshape; intros v'; discriminate
-            | apply E_App_result_wrongshape; intros aa1 aa2; discriminate
-            | apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate
-            | apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate ]))
-      as [Hesc | [k [Hkm Hk]]].
-    { rewrite Hesc in Heq. discriminate Heq. }
-    rewrite Hk in Heq. clear Hk.
-    destruct k as [| k].
-    { simpl in Heq. discriminate Heq. }
-    assert (Hbody : tmChkNoExtraCstrs (substliftedFunc fn0 (tfix' fn0 T0 fbody0) fbody0) = true).
-    { apply substliftedFunc_no_extra_cstrs.
-      - simpl. exact Hu.
-      - exact Hu. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k)
-                (substliftedFunc fn0 (tfix' fn0 T0 fbody0) fbody0)) as [w Hw].
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _
-               (E_Fix_result_spec evalremoveFnPos'AnimatedTopFn k fn0 T0 fbody0 w Hw)) in Heq.
-    injection Heq as Heqw.
-    rewrite Heqw in Hw.
-    apply (IH (S k) ltac:(lia) (substliftedFunc fn0 (tfix' fn0 T0 fbody0) fbody0) x ty t3').
-    + exact Hbody.
-    + exact Hw.
+      [evalremoveFnPos'UndefinedAnimated]).
+  apply (dispatch_coind_ext_escape
+    [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
+    (substLiftedCstr x a b)).
+  intros hh k Hin.
+  simpl in Hin.
+  repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction].
+  - rewrite E_Lam_result; reflexivity.
+  - rewrite E_Zero_result; reflexivity.
+  - rewrite E_Succ_result_generic; reflexivity.
+  - apply E_PredZero_result_wrongshape; intros v'; discriminate.
+  - apply E_PredSucc_result_wrongshape; intros v'; discriminate.
+  - apply E_App_result_wrongshape; intros aa1 aa2; discriminate.
+  - apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate.
+  - apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate.
+  - apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate.
 Qed.
-
-Lemma E_App_lambda_body_no_extra_cstrs : forall n t1 x ty t3',
-  evalremoveFnPos'AnimatedTopFn n (Success tm' (tmLift t1)) = Success tm' (tabs' x ty t3') ->
-  tmChkNoExtraCstrs t3' = true.
-Proof.
-  intros n t1 x ty t3' H.
-  apply (E_App_lambda_body_no_extra_cstrs_general n (tmLift t1) x ty t3').
-  - apply tmChkNoExtraCstrs_tmLift.
-  - exact H.
-Qed.
-
 
 Lemma dispatch_tapp_from_app : forall n t1 t2 f,
   (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
@@ -2905,13 +2295,11 @@ Lemma dispatch_tapp_from_app : forall n t1 t2 f,
   | Success (tabs' x ty t3') =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
       | Success v2' =>
-          if andb (tmChkNoExtraCstrs v2') (isValueFn (tmPushPlain v2'))
-          then (match evalremoveFnPos'AnimatedTopFn (S n)
-                        (Success tm' (tmLift (subst x (tmPushPlain v2') (tmPushPlain t3')))) with
-                | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
-                | _ => NoMatch tm
-                end)
-          else Success tm (f (tapp t1 t2))
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
       | _ => Success tm (f (tapp t1 t2))
       end
   | Success _ => Success tm (f (tapp t1 t2))
@@ -2980,29 +2368,13 @@ Proof.
   (* w1 = tabs' x ty t3' *)
   destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t2)) as [w2 Hw2].
   rewrite Hw2.
-  destruct (andb (tmChkNoExtraCstrs w2) (isValueFn (tmPushPlain w2))) eqn:Hchk.
-  - apply andb_prop in Hchk as [Hchk1 Hchk2].
-    assert (Ht3 : tmChkNoExtraCstrs t3' = true)
-      by (apply (E_App_lambda_body_no_extra_cstrs (S n) t1 x ty t3'); exact Hw1).
-    assert (Hsubst_eq :
-      substliftedFunc x w2 t3' = tmLift (subst x (tmPushPlain w2) (tmPushPlain t3'))).
-    { unfold substliftedFunc. rewrite Hchk1, Ht3. reflexivity. }
-    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n)
-                (substliftedFunc x w2 t3')) as [w3 Hw3].
-    rewrite (dispatch_coind_ext_fire _ _ _ _ _
-               (E_App_result_spec evalremoveFnPos'AnimatedTopFn n (tmLift t1) (tmLift t2) x ty t3'
-                  w2 w3 Hw1 Hw2 Hchk1 Hchk2 Hw3)).
-    rewrite Hsubst_eq in Hw3.
-    rewrite Hw3.
-    reflexivity.
-  - destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n)
-                (substliftedFunc x w2 t3')) as [w3 Hw3].
-    rewrite (dispatch_coind_ext_skip _ _ _ _
-               (E_App_result_nomatch2 evalremoveFnPos'AnimatedTopFn n (tmLift t1) (tmLift t2) x ty t3'
-                  w2 w3 Hw1 Hw2 Hw3
-                  ltac:(destruct (tmChkNoExtraCstrs w2) eqn:E; simpl in Hchk;
-                        [right | left]; congruence))).
-    apply Hfall.
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n)
+              (substliftedFunc x w2 t3')) as [w3 Hw3].
+  rewrite (dispatch_coind_ext_fire _ _ _ _ _
+             (E_App_result_spec evalremoveFnPos'AnimatedTopFn n (tmLift t1) (tmLift t2) x ty t3'
+                w2 w3 Hw1 Hw2 Hw3)).
+  rewrite Hw3.
+  reflexivity.
 Qed.
 
 Lemma dispatch_tapp : forall n t1 t2 f,
@@ -3016,13 +2388,11 @@ Lemma dispatch_tapp : forall n t1 t2 f,
   | Success (tabs' x ty t3') =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
       | Success v2' =>
-          if andb (tmChkNoExtraCstrs v2') (isValueFn (tmPushPlain v2'))
-          then (match evalremoveFnPos'AnimatedTopFn (S n)
-                        (Success tm' (tmLift (subst x (tmPushPlain v2') (tmPushPlain t3')))) with
-                | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
-                | _ => NoMatch tm
-                end)
-          else Success tm (f (tapp t1 t2))
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
       | _ => Success tm (f (tapp t1 t2))
       end
   | Success _ => Success tm (f (tapp t1 t2))
@@ -3065,13 +2435,11 @@ Lemma anim_S_tapp : forall n t1 t2 f,
   | Success (tabs' x ty t3') =>
       match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
       | Success v2' =>
-          if andb (tmChkNoExtraCstrs v2') (isValueFn (tmPushPlain v2'))
-          then match evalremoveFnPos'AnimatedTopFn (S n)
-                       (Success tm' (tmLift (subst x (tmPushPlain v2') (tmPushPlain t3')))) with
-               | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
-               | _ => NoMatch tm
-               end
-          else Success tm (f (tapp t1 t2))
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
       | _ => Success tm (f (tapp t1 t2))
       end
   | Success _ => Success tm (f (tapp t1 t2))
@@ -3195,18 +2563,44 @@ Proof.
   ; unfold evalTransparentSigma2AnimatedTopFn; cbn;
     try rewrite tmTransparentSigmaPushBody_tmLift; reflexivity.
 Qed.
+(* Counterexample to a "productivity" theorem (removed): for every well-typed, closed,
+   non-value [inputTm] there is a fuel [n > 0] such that the animation with the identity
+   oracle returns some [outputTm] with [stepTC inputTm outputTm].
 
+     loopfn := tfix "f" (TArrow TNat TNat)
+                 (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x"))))
+     cex    := tpred (tapp loopfn tzero)          (* : TNat, closed, not a value *)
 
-Theorem correspondence_soundness_productive : forall (n : nat) (inputTm outputTm : tm), (exists m : nat, (exists outputTm2 : tm,
-  m > n /\
-  ((evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm) ->
-  (exists outputTm1' : tm, step outputTm outputTm1') ->
-  (* [outputTm1'] above only witnesses that [outputTm] is not stuck; it need
-     not be (and in general is not) what the fuel-[m] animation returns. *)
-  (evalTransparentSigma2AnimatedTopFn m (Success tm inputTm)) (fun t' : tm => t')  = Success (tm) (outputTm2) /\
-  stepTC outputTm outputTm2))).
-Proof. Admitted.
+   For every fuel tried (20, 60, 120),
+     evalTransparentSigma2AnimatedTopFn n (Success tm cex) (fun t => t) = Success tm cex,
+   i.e. the animation returns the input unchanged, and [stepTC cex cex] does not hold
+   ([cex] reduces to [tpred (tapp loopfn (tsucc tzero))], [... (tsucc (tsucc tzero))], ...:
+   the argument keeps growing, so [cex] never reaches itself).
 
+   Reason: [E_PredZero]/[E_PredSucc] need the argument to evaluate to [tzero]/[tsucc _].
+   [tapp loopfn tzero] diverges, so its animation only ever returns an oracle marker;
+   neither handler matches, and the [tpred] clause falls back to the oracle on the WHOLE
+   input, discarding the inner progress. ([tapp loopfn tzero] alone does progress, e.g.
+   at fuel 60 it returns [tapp loopfn (tsucc^7 tzero)].) [eval] has no rule that keeps
+   partial progress under [tpred]/[tifz]/[tapp] (unlike [bigstop]'s stopping rules), so
+   any diverging argument/discriminant/operator gives the same failure. *)
+
+Lemma tmPush_eq_plain : forall (g : tm -> tm) (w : tm'),
+  tmChkNoExtraCstrs w = true ->
+  tmTransparentSigmaPushBody g w = tmPushPlain w.
+Proof.
+  intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+Qed.
 
 (** CSB — Soundness w.r.t. bigstop.
     Proof by strong induction on fuel [n] via [lt_wf_ind].
@@ -3284,55 +2678,46 @@ Proof.
       destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) (tmLift t2)) as [w2 Hw2].
       rewrite Hw2 in Hanim.
       destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k)
-                  (tmLift (subst x (tmPushPlain w2) (tmPushPlain t3')))) as [w3 Hw3].
+                  (substliftedFunc x w2 t3')) as [w3 Hw3].
       rewrite Hw3 in Hanim.
       simpl in Hanim.
-      destruct (andb (tmChkNoExtraCstrs w2) (isValueFn (tmPushPlain w2))) eqn:Hchk;
-        simpl in Hanim.
-      * injection Hanim as <-.
-        apply andb_prop in Hchk as [Hchk1 Hchk2].
-        pose proof (E_App_lambda_body_no_extra_cstrs (S k) t1 x ty t3' Hw1) as Ht3.
-        assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                        tmTransparentSigmaPushBody g w = tmPushPlain w).
-        { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-          - rewrite IHw; [reflexivity | exact H].
-          - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-              simpl in H; try discriminate.
-            rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-          - rewrite IHw; [reflexivity | exact H].
-          - rewrite IHw; [reflexivity | exact H].
-          - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-              destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-            rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-          - rewrite IHw; [reflexivity | exact H]. }
-        assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t1) (fun t' : tm => t') =
-                        Success tm (tabs x ty (tmTransparentSigmaPushBody (fun t' : tm => t') t3'))).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift]. rewrite Hw1. reflexivity. }
-        assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t2) (fun t' : tm => t') =
-                        Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') w2)).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift]. rewrite Hw2. reflexivity. }
-        assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S k)
-                          (Success tm (subst x (tmTransparentSigmaPushBody (fun t' : tm => t') w2)
-                                               (tmTransparentSigmaPushBody (fun t' : tm => t') t3')))
-                          (fun t' : tm => t') =
-                        Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') w3)).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift].
-          rewrite (Hpush (fun t' : tm => t') w2 Hchk1).
-          rewrite (Hpush (fun t' : tm => t') t3' Ht3).
-          rewrite Hw3. reflexivity. }
-        eapply BS_App. repeat split.
-        -- apply (IH (S k)). lia. exact Htm1.
-        -- apply (IH (S k)). lia. exact Htm2.
-        -- apply isValueFn_to_is_value.
-           rewrite (Hpush (fun t' : tm => t') w2 Hchk1). exact Hchk2.
-        -- apply (IH (S k)). lia. exact Htm3.
-      * injection Hanim as <-. apply BS_Stop.
+      injection Hanim as <-.
+      assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t1) (fun t' : tm => t') =
+                      Success tm (tabs x ty (tmTransparentSigmaPushBody (fun t' : tm => t') t3'))).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw1. reflexivity. }
+      assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t2) (fun t' : tm => t') =
+                      Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') w2)).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw2. reflexivity. }
+      eapply BS_App. repeat split.
+      -- apply (IH (S k)). lia. exact Htm1.
+      -- apply (IH (S k)). lia. exact Htm2.
+      -- destruct (andb (tmChkNoExtraCstrs w2) (andb (tmChkNoExtraCstrs t3') true)) eqn:Hchk.
+         ++ apply andb_prop in Hchk as [Hchk1 Hchk2].
+            apply andb_prop in Hchk2 as [Hchk2 _].
+            assert (Hsub : substliftedFunc x w2 t3' =
+                           tmLift (subst x (tmPushPlain w2) (tmPushPlain t3'))).
+            { unfold substliftedFunc. rewrite Hchk1, Hchk2. reflexivity. }
+            rewrite Hsub in Hw3.
+            assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S k)
+                              (Success tm (subst x (tmTransparentSigmaPushBody (fun t' : tm => t') w2)
+                                                   (tmTransparentSigmaPushBody (fun t' : tm => t') t3')))
+                              (fun t' : tm => t') =
+                            Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') w3)).
+            { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+              cbn [tmLift].
+              rewrite (tmPush_eq_plain (fun t' : tm => t') w2 Hchk1).
+              rewrite (tmPush_eq_plain (fun t' : tm => t') t3' Hchk2).
+              rewrite Hw3. reflexivity. }
+            apply (IH (S k)). lia. exact Htm3.
+         ++ unfold substliftedFunc in Hw3. rewrite Hchk in Hw3.
+            rewrite evalTop_substLifted_escape in Hw3.
+            injection Hw3 as <-.
+            simpl. apply BS_Stop.
 
   (* ---- tzero: E_Zero fires at n ≥ 3; n=1,2 are oracle ---- *)
   - destruct n' as [|[| m]].
@@ -3354,7 +2739,7 @@ Proof.
         as [| v |] eqn:H1.
       * discriminate.
       * injection Hanim as <-.
-        apply BS_Succ. apply (IH (S k)). lia. exact H1.
+        apply BS_SuccStop. apply (IH (S k)). lia. exact H1.
       * discriminate.
 
   (* ---- tpred t: E_PredZero/E_PredSucc fire at n ≥ 6; n=1..5 oracle ---- *)
@@ -3378,9 +2763,7 @@ Proof.
       assert (Hinner : forall outputTm2,
         match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t)) with
         | Success (tsucc' v') =>
-            if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-            then Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') v')
-            else Success tm ((fun t' : tm => t') (tpred t))
+            Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') v')
         | _ => Success tm ((fun t' : tm => t') (tpred t))
         end = Success tm outputTm2 -> bigstop (tpred t) outputTm2).
       { intros outputTm2 Heq.
@@ -3389,32 +2772,14 @@ Proof.
         - injection Heq as <-. apply BS_Stop.
         - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
             simpl in Heq; try (injection Heq as <-; apply BS_Stop).
-          destruct (andb (tmChkNoExtraCstrs v2) (isValueFn (tmPushPlain v2))) eqn:Hchk;
-            simpl in Heq; injection Heq as <-.
-          + assert (Htm : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) (fun t' : tm => t') =
-                           Success tm (tsucc (tmTransparentSigmaPushBody (fun t' : tm => t') v2))).
-            { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-              cbn [tmLift]. rewrite Hw2. reflexivity. }
-            apply andb_prop in Hchk as [Hchk1 Hchk2].
-            assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                            tmTransparentSigmaPushBody g w = tmPushPlain w).
-            { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-              - rewrite IHw; [reflexivity | exact H].
-              - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                  simpl in H; try discriminate.
-                rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-              - rewrite IHw; [reflexivity | exact H].
-              - rewrite IHw; [reflexivity | exact H].
-              - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                  destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-                rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-              - rewrite IHw; [reflexivity | exact H]. }
-            eapply BS_PredSucc. split.
-            * apply (IH (S k)). lia. exact Htm.
-            * apply isValueFn_to_is_value.
-              rewrite (Hpush (fun t' : tm => t') v2 Hchk1). exact Hchk2.
-          + apply BS_Stop.
+          simpl in Heq. injection Heq as <-.
+          assert (Htm : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) (fun t' : tm => t') =
+                         Success tm (tsucc (tmTransparentSigmaPushBody (fun t' : tm => t') v2))).
+          { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+            cbn [tmLift]. rewrite Hw2. reflexivity. }
+          eapply BS_PredSucc.
+          apply (IH (S k)). lia. exact Htm.
         - injection Heq as <-. apply BS_Stop. }
       destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift t))) as [| w1 |] eqn:Hw1;
         simpl in Hanim.
@@ -3453,12 +2818,10 @@ Proof.
       assert (Hinner : forall outputTm2,
         match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift tdisc)) with
         | Success (tsucc' vn') =>
-            if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-            then match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
-                 | Success x => Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') x)
-                 | _ => NoMatch tm
-                 end
-            else Success tm ((fun t' : tm => t') (tifz tdisc t1 t2))
+            match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
+            | Success x => Success tm (tmTransparentSigmaPushBody (fun t' : tm => t') x)
+            | _ => NoMatch tm
+            end
         | _ => Success tm ((fun t' : tm => t') (tifz tdisc t1 t2))
         end = Success tm outputTm2 -> bigstop (tifz tdisc t1 t2) outputTm2).
       { intros outputTm2 Heq.
@@ -3480,37 +2843,16 @@ Proof.
           | simpl in Heq; injection Heq as <-; apply BS_Stop
           | simpl in Heq; injection Heq as <-; apply BS_Stop ].
         (* w2 = tsucc' vn' *)
-        simpl in Heq.
-        destruct (andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))) eqn:Hchk;
-          simpl in Heq.
-        + injection Heq as <-.
-          apply andb_prop in Hchk as [Hchk1 Hchk2].
-          assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                          tmTransparentSigmaPushBody g w = tmPushPlain w).
-          { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-            - rewrite IHw; [reflexivity | exact H].
-            - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                simpl in H; try discriminate.
-              rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-            - rewrite IHw; [reflexivity | exact H].
-            - rewrite IHw; [reflexivity | exact H].
-            - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-              rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-            - rewrite IHw; [reflexivity | exact H]. }
-          eapply BS_IfzSucc. repeat split.
-          * apply (IH (S k)). lia.
-            unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-            cbn [tmLift]. rewrite Hw2. reflexivity.
-          * apply isValueFn_to_is_value.
-            change (isValueFn (tmTransparentSigmaPushBody (fun t' : tm => t') vn') = true).
-            rewrite (Hpush (fun t' : tm => t') vn' Hchk1). exact Hchk2.
-          * apply (IH (S k)). lia.
-            unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-            cbn [tmLift]. rewrite Hw3. reflexivity.
-        + injection Heq as <-. apply BS_Stop. }
+        simpl in Heq. injection Heq as <-.
+        eapply BS_IfzSucc. split.
+        - apply (IH (S k)). lia.
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw2. reflexivity.
+        - apply (IH (S k)). lia.
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw3. reflexivity. }
       destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift tdisc))) as [| w1 |] eqn:Hw1;
         simpl in Hanim.
       * apply (Hinner outputTm Hanim).
@@ -3613,58 +2955,47 @@ Proof.
       destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k) (tmLift t2)) as [w2 Hw2].
       rewrite Hw2 in Hanim.
       destruct (evalremoveFnPos'AnimatedTopFn_always_success (S k)
-                  (tmLift (subst x (tmPushPlain w2) (tmPushPlain t3')))) as [w3 Hw3].
+                  (substliftedFunc x w2 t3')) as [w3 Hw3].
       rewrite Hw3 in Hanim.
       simpl in Hanim.
-      destruct (andb (tmChkNoExtraCstrs w2) (isValueFn (tmPushPlain w2))) eqn:Hchk;
-        simpl in Hanim.
-      * injection Hanim as <-.
-        apply andb_prop in Hchk as [Hchk1 Hchk2].
-        pose proof (E_App_lambda_body_no_extra_cstrs (S k) t1 x ty t3' Hw1) as Ht3.
-        assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                        tmTransparentSigmaPushBody g w = tmPushPlain w).
-        { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-          - rewrite IHw; [reflexivity | exact H].
-          - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-              simpl in H; try discriminate.
-            rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-          - rewrite IHw; [reflexivity | exact H].
-          - rewrite IHw; [reflexivity | exact H].
-          - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-              destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-            rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-          - rewrite IHw; [reflexivity | exact H]. }
-        assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t1) f =
-                        Success tm (tabs x ty (tmTransparentSigmaPushBody f t3'))).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift]. rewrite Hw1. reflexivity. }
-        assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t2) f =
-                        Success tm (tmTransparentSigmaPushBody f w2)).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift]. rewrite Hw2. reflexivity. }
-        assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S k)
-                          (Success tm (subst x (tmTransparentSigmaPushBody f w2)
-                                               (tmTransparentSigmaPushBody f t3')))
-                          f =
-                        Success tm (tmTransparentSigmaPushBody f w3)).
-        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-          cbn [tmLift].
-          rewrite (Hpush f w2 Hchk1).
-          rewrite (Hpush f t3' Ht3).
-          rewrite Hw3. reflexivity. }
-        (* E_App's components are ordered (isValueFn, t1-eval, t2-eval, subst-eval) — apply
-           it with every existential (x, ty, t3-val, v2-val) supplied explicitly so no
-           metavariable-ordering issue arises across the [repeat split] subgoals. *)
-        apply (E_App t1 t2 x ty (tmTransparentSigmaPushBody f t3') (tmTransparentSigmaPushBody f w2)).
-        repeat split.
-        -- rewrite (Hpush f w2 Hchk1). exact Hchk2.
-        -- apply (IH (S k)). lia. exact Htm1.
-        -- apply (IH (S k)). lia. exact Htm2.
-        -- apply (IH (S k)). lia. exact Htm3.
-      * injection Hanim as <-. apply Hf.
+      injection Hanim as <-.
+      assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t1) f =
+                      Success tm (tabs x ty (tmTransparentSigmaPushBody f t3'))).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw1. reflexivity. }
+      assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t2) f =
+                      Success tm (tmTransparentSigmaPushBody f w2)).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw2. reflexivity. }
+      apply (E_App t1 t2 x ty (tmTransparentSigmaPushBody f t3') (tmTransparentSigmaPushBody f w2)).
+      repeat split.
+      -- apply (IH (S k)). lia. exact Htm1.
+      -- apply (IH (S k)). lia. exact Htm2.
+      -- destruct (andb (tmChkNoExtraCstrs w2) (andb (tmChkNoExtraCstrs t3') true)) eqn:Hchk.
+         ++ apply andb_prop in Hchk as [Hchk1 Hchk2].
+            apply andb_prop in Hchk2 as [Hchk2 _].
+            assert (Hsub : substliftedFunc x w2 t3' =
+                           tmLift (subst x (tmPushPlain w2) (tmPushPlain t3'))).
+            { unfold substliftedFunc. rewrite Hchk1, Hchk2. reflexivity. }
+            rewrite Hsub in Hw3.
+            assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S k)
+                              (Success tm (subst x (tmTransparentSigmaPushBody f w2)
+                                                   (tmTransparentSigmaPushBody f t3')))
+                              f =
+                            Success tm (tmTransparentSigmaPushBody f w3)).
+            { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+              cbn [tmLift].
+              rewrite (tmPush_eq_plain f w2 Hchk1).
+              rewrite (tmPush_eq_plain f t3' Hchk2).
+              rewrite Hw3. reflexivity. }
+            apply (IH (S k)). lia. exact Htm3.
+         ++ unfold substliftedFunc in Hw3. rewrite Hchk in Hw3.
+            rewrite evalTop_substLifted_escape in Hw3.
+            injection Hw3 as <-.
+            simpl. apply Hf.
 
   (* tzero: E_Zero fires at n ≥ 3 *)
   - destruct n' as [|[| m]].
@@ -3705,9 +3036,7 @@ Proof.
       assert (Hinner : forall outputTm2,
         match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t)) with
         | Success (tsucc' v') =>
-            if andb (tmChkNoExtraCstrs v') (isValueFn (tmPushPlain v'))
-            then Success tm (tmTransparentSigmaPushBody f v')
-            else Success tm (f (tpred t))
+            Success tm (tmTransparentSigmaPushBody f v')
         | _ => Success tm (f (tpred t))
         end = Success tm outputTm2 -> eval (tpred t) outputTm2).
       { intros outputTm2 Heq.
@@ -3716,31 +3045,14 @@ Proof.
         - injection Heq as <-. apply Hf.
         - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
             simpl in Heq; try (injection Heq as <-; apply Hf).
-          destruct (andb (tmChkNoExtraCstrs v2) (isValueFn (tmPushPlain v2))) eqn:Hchk;
-            simpl in Heq; injection Heq as <-.
-          + assert (Htm : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) f =
-                           Success tm (tsucc (tmTransparentSigmaPushBody f v2))).
-            { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-              cbn [tmLift]. rewrite Hw2. reflexivity. }
-            apply andb_prop in Hchk as [Hchk1 Hchk2].
-            assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                            tmTransparentSigmaPushBody g w = tmPushPlain w).
-            { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-              - rewrite IHw; [reflexivity | exact H].
-              - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                  simpl in H; try discriminate.
-                rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-              - rewrite IHw; [reflexivity | exact H].
-              - rewrite IHw; [reflexivity | exact H].
-              - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                  destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-                rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-              - rewrite IHw; [reflexivity | exact H]. }
-            eapply E_PredSucc. split.
-            * rewrite (Hpush f v2 Hchk1). exact Hchk2.
-            * apply (IH (S k)). lia. exact Htm.
-          + apply Hf.
+          simpl in Heq. injection Heq as <-.
+          assert (Htm : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) f =
+                         Success tm (tsucc (tmTransparentSigmaPushBody f v2))).
+          { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+            cbn [tmLift]. rewrite Hw2. reflexivity. }
+          eapply E_PredSucc.
+          apply (IH (S k)). lia. exact Htm.
         - injection Heq as <-. apply Hf. }
       destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift t))) as [| w1 |] eqn:Hw1;
         simpl in Hanim.
@@ -3780,12 +3092,10 @@ Proof.
       assert (Hinner : forall outputTm2,
         match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift tdisc)) with
         | Success (tsucc' vn') =>
-            if andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))
-            then match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
-                 | Success x => Success tm (tmTransparentSigmaPushBody f x)
-                 | _ => NoMatch tm
-                 end
-            else Success tm (f (tifz tdisc t1 t2))
+            match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
+            | Success x => Success tm (tmTransparentSigmaPushBody f x)
+            | _ => NoMatch tm
+            end
         | _ => Success tm (f (tifz tdisc t1 t2))
         end = Success tm outputTm2 -> eval (tifz tdisc t1 t2) outputTm2).
       { intros outputTm2 Heq.
@@ -3807,39 +3117,18 @@ Proof.
           | simpl in Heq; injection Heq as <-; apply Hf
           | simpl in Heq; injection Heq as <-; apply Hf ].
         (* w2 = tsucc' vn' *)
-        simpl in Heq.
-        destruct (andb (tmChkNoExtraCstrs vn') (isValueFn (tmPushPlain vn'))) eqn:Hchk;
-          simpl in Heq.
-        + injection Heq as <-.
-          apply andb_prop in Hchk as [Hchk1 Hchk2].
-          assert (Hpush : forall (g : tm -> tm) (w : tm'), tmChkNoExtraCstrs w = true ->
-                          tmTransparentSigmaPushBody g w = tmPushPlain w).
-          { clear. intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
-            - rewrite IHw; [reflexivity | exact H].
-            - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                simpl in H; try discriminate.
-              rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
-            - rewrite IHw; [reflexivity | exact H].
-            - rewrite IHw; [reflexivity | exact H].
-            - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
-                destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
-              rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
-            - rewrite IHw; [reflexivity | exact H]. }
-          (* E_IfzSucc's components are ordered (isValueFn, discriminant-eval, t2-eval) —
-             apply it with every existential supplied explicitly, as with E_App above. *)
-          apply (E_IfzSucc tdisc (tmTransparentSigmaPushBody f vn') t1 t2
-                   (tmTransparentSigmaPushBody f w3)).
-          repeat split.
-          * rewrite (Hpush f vn' Hchk1). exact Hchk2.
-          * apply (IH (S k)). lia.
-            unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-            cbn [tmLift]. rewrite Hw2. reflexivity.
-          * apply (IH (S k)). lia.
-            unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
-                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
-            cbn [tmLift]. rewrite Hw3. reflexivity.
-        + injection Heq as <-. apply Hf. }
+        simpl in Heq. injection Heq as <-.
+        apply (E_IfzSucc tdisc (tmTransparentSigmaPushBody f vn') t1 t2
+                 (tmTransparentSigmaPushBody f w3)).
+        split.
+        * apply (IH (S k)). lia.
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw2. reflexivity.
+        * apply (IH (S k)). lia.
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw3. reflexivity. }
       destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift tdisc))) as [| w1 |] eqn:Hw1;
         simpl in Hanim.
       * apply (Hinner outputTm Hanim).
@@ -3887,5 +3176,209 @@ Qed.
 
 
 End PCFBigStep.
+
+
+
+
+
+
+
+
+
+Module EffectfulPCFBigStop.
+
+Inductive ty : Type :=
+| TNat   : ty
+| TArrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+| tvar  : string -> tm
+| tabs  : string -> ty -> tm -> tm
+| tapp  : tm -> tm -> tm
+| tzero : tm
+| tsucc : tm -> tm
+| tpred : tm -> tm
+| tifz  : tm -> tm -> tm -> tm
+| tfix  : string -> ty -> tm -> tm
+| teff  : string -> tm -> tm.        (** emit effect then evaluate *)
+
+Fixpoint eqFnty (t1 t2 : ty) : bool :=
+  match t1, t2 with
+  | TNat, TNat => true
+  | TArrow a1 b1, TArrow a2 b2 => andb (eqFnty a1 a2) (eqFnty b1 b2)
+  | _, _ => false
+  end.
+
+Fixpoint eqFntm (t1 t2 : tm) : bool :=
+  match t1, t2 with
+  | tvar x, tvar y => String.eqb x y
+  | tabs x T1 e1, tabs y T2 e2 =>
+      andb (String.eqb x y) (andb (eqFnty T1 T2) (eqFntm e1 e2))
+  | tapp e1 e2, tapp e3 e4 => andb (eqFntm e1 e3) (eqFntm e2 e4)
+  | tzero, tzero => true
+  | tsucc e1, tsucc e2 => eqFntm e1 e2
+  | tpred e1, tpred e2 => eqFntm e1 e2
+  | tifz e1 e2 e3, tifz e4 e5 e6 =>
+      andb (eqFntm e1 e4) (andb (eqFntm e2 e5) (eqFntm e3 e6))
+  | tfix f T1 e1, tfix g T2 e2 =>
+      andb (String.eqb f g) (andb (eqFnty T1 T2) (eqFntm e1 e2))
+  | teff a1 e1, teff a2 e2 => andb (String.eqb a1 a2) (eqFntm e1 e2)
+  | _, _ => false
+  end.
+
+Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
+  match t with
+  | tvar y          => if String.eqb x y then s else t
+  | tabs y T t1     => if String.eqb x y then t else tabs y T (subst x s t1)
+  | tapp t1 t2      => tapp (subst x s t1) (subst x s t2)
+  | tzero           => tzero
+  | tsucc t1        => tsucc (subst x s t1)
+  | tpred t1        => tpred (subst x s t1)
+  | tifz t1 t2 t3   => tifz (subst x s t1) (subst x s t2) (subst x s t3)
+  | tfix f T t1     => if String.eqb x f then t else tfix f T (subst x s t1)
+  | teff a t1       => teff a (subst x s t1)
+  end.
+
+Fixpoint isValueFn (t : tm) : bool :=
+  match t with
+  | tabs _ _ _ => true
+  | tzero      => true
+  | tsucc v    => isValueFn v
+  | _          => false
+  end.
+
+Definition effects := list string.
+
+Fixpoint eqFnEff (a b : effects) : bool :=
+  match a, b with
+  | [], []           => true
+  | x :: xs, y :: ys => andb (String.eqb x y) (eqFnEff xs ys)
+  | _, _             => false
+  end.
+
+Inductive is_value : tm -> Prop :=
+| V_Lam  : forall x T t, is_value (tabs x T t)
+| V_Zero :                is_value tzero
+| V_Succ : forall v,      is_value v -> is_value (tsucc v).
+
+(* ------------------------------------------------------------------ *)
+(** ** Effectful Big-Stop (Figure 8 of Kahn, Hoffmann, Li)            *)
+(* ------------------------------------------------------------------ *)
+
+Inductive bigstop : tm -> tm -> effects -> Prop :=
+
+(** -- Stopping rules (STE-Stop schema, expanded) ------------------- *)
+
+| BS_Stop : forall e,
+    bigstop e e []
+| BS_SuccStop : forall e e' a,
+    bigstop e e' a ->
+    bigstop (tsucc e) (tsucc e') a
+| BS_PredStop : forall e e' a,
+    bigstop e e' a ->
+    bigstop (tpred e) (tpred e') a
+| BS_IfStop: forall e e' t1 t2 a a' a'' t1' t2',
+    bigstop e e' a /\ bigstop t1 t1' a' /\ bigstop t2 t2' a'' ->
+    bigstop (tifz e t1 t2) (tifz e' t1' t2') (List.app a (List.app a' a''))
+| BS_AppStop : forall t1 t1' t2 a a' t2',
+    bigstop t1 t1' a /\ bigstop t2 t2' a' ->
+    bigstop (tapp t1 t2) (tapp t1' t2') (List.app a a')
+    
+| BS_FixStop : forall f T t a t',
+    bigstop t t' a ->
+    bigstop (tfix f T t)  (tfix f T t')  a  
+ 
+| BS_EffStop : forall act e e' a,
+    bigstop e e' a ->
+    bigstop (teff act e) (teff act e') a     
+
+(** -- Progressing rules (STE-App / STE-CaseZ / STE-CaseS etc.) ---- *)
+
+| BS_PredZero : forall e a,
+    bigstop e tzero a ->
+    bigstop (tpred e) tzero a
+| BS_PredSucc : forall e v a,
+    bigstop e (tsucc v) a ->
+    bigstop (tpred e) v a
+| BS_IfzZero : forall e t1 t1' t2 a1 a2,
+    bigstop e tzero a1 /\ bigstop t1 t1' a2 ->
+    bigstop (tifz e t1 t2) t1' (List.app a1 a2)
+
+| BS_IfzSucc : forall e vn t1 t2 t2' a1 a2,
+    bigstop e (tsucc vn) a1 /\ bigstop t2 t2' a2 ->
+    bigstop (tifz e t1 t2) t2' (List.app a1 a2)
+| BS_App : forall t1 x T t3 t2 v2 e' a1 a2 a3,
+    bigstop t1 (tabs x T t3) a1 /\ bigstop t2 v2 a2 /\
+    bigstop (subst x v2 t3) e' a3 ->
+    bigstop (tapp t1 t2) e' (List.app a1 (List.app a2 a3))
+| BS_Fix : forall f T t e' a,
+    bigstop (subst f (tfix f T t) t) e' a ->
+    bigstop (tfix f T t) e' a
+| BS_Eff : forall act e e' a,
+    bigstop e e' a ->
+    bigstop (teff act e) e' (act :: a).
+
+(* ------------------------------------------------------------------ *)
+(** ** Effectful Coinductive Eval (progressing rules + value bases)   *)
+(* ------------------------------------------------------------------ *)
+
+Definition listAppEf := @List.app string.
+
+
+CoInductive eval : tm -> tm -> list string -> Prop :=
+| E_Lam : forall x T t,
+    eval (tabs x T t) (tabs x T t) []
+| E_Zero :
+    eval tzero tzero []
+| E_Succ : forall t v a,
+    eval t v a ->
+    eval (tsucc t) (tsucc v) a
+| E_PredZero : forall t a,
+    eval t tzero a ->
+    eval (tpred t) tzero a
+| E_PredSucc : forall t v a,
+    isValueFn v = true /\ eval t (tsucc v) a ->
+    eval (tpred t) v a
+| E_App : forall t1 t2 x T t3 v2 v a1 a2 a3,
+    isValueFn v2 = true /\
+    eval t1 (tabs x T t3) a1 /\ eval t2 v2 a2 /\ eval (subst x v2 t3) v a3 ->
+    eval (tapp t1 t2) v (listAppEf a1 (listAppEf a2 a3))
+| E_IfzZero : forall t t1 t2 v a1 a2,
+    eval t tzero a1 /\ eval t1 v a2 ->
+    eval (tifz t t1 t2) v (listAppEf a1 a2)
+| E_IfzSucc : forall t vn t1 t2 t4 a1 a2,
+    isValueFn vn = true /\ eval t (tsucc vn) a1 /\ eval t2 t4 a2 ->
+    eval (tifz t t1 t2) t4 (listAppEf a1 a2)
+| E_Fix : forall f T t v a,
+    eval (subst f (tfix f T t) t) v a ->
+    eval (tfix f T t) v a
+| E_Eff : forall act t v a,
+    eval t v a ->
+    eval (teff act t) v (act :: a).
+
+
+MetaRocq Run (animate_coinductive_with_fn_pos <?eval?> [("eval", ([0], [1;2]))] 500).
+
+Print evalTransparentSigma2AnimatedTopFn.
+
+(* ------------------------------------------------------------------ *)
+(** ** Correspondence Theorems for Effectful PCF                       *)
+(* ------------------------------------------------------------------ *)
+
+Theorem animation_soundness_general : forall (f1 : tm -> tm) (f2 : tm -> list string) ,
+  (forall tm1 : tm, eval tm1 (f1 tm1) (f2 tm1)) ->
+  forall (inputTm outputTm : tm) (outputEff : list string) (n : nat),
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f1 f2 = Success (tm * list string) (outputTm, outputEff) ->
+    eval inputTm outputTm outputEff.
+Proof. Admitted.
+
+Theorem correspondence_soundness : forall (n : nat) (inputTm outputTm : tm) (outputEff : list string),
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') (fun t' : tm => @nil string)  = Success (tm * list string) (outputTm, outputEff) ->
+  bigstop inputTm outputTm outputEff.
+Proof. Admitted.
+
+
+
+End EffectfulPCFBigStop.
 
 
