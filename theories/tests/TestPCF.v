@@ -123,7 +123,7 @@ CoInductive eval : tm -> tm -> Prop :=
     eval (tpred t) tzero
 
 | E_PredSucc : forall t v,
-    isValueFn v = true /\ eval t (tsucc v) ->
+   isValueFn v = true /\ eval t (tsucc v) ->
     eval (tpred t) v
 
 (** CBV application: evaluate operator to a lambda, evaluate argument,
@@ -148,6 +148,14 @@ CoInductive eval : tm -> tm -> Prop :=
     eval (tfix f T t) v.
 
 MetaRocq Run (animate_coinductive_with_fn_pos <?eval?> [("eval", ([0], [1]))] 500).
+
+Definition loopfn := 
+tfix "f" (TArrow TNat TNat)
+                 (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))).
+                 
+Definition cex :=  tpred (tapp loopfn tzero).
+
+Compute (evalTransparentSigma2AnimatedTopFn 90 (Success tm cex)) (fun t : tm => t).
 
 
 (* ------------------------------------------------------------------ *)
