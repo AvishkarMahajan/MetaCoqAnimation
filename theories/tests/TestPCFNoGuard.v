@@ -3170,6 +3170,773 @@ Qed.
 
 
 
+Definition evalremoveFnPos'AnimatedTopFn_always_success_T :
+  forall n (x : tm'), {w | evalremoveFnPos'AnimatedTopFn n (Success tm' x) = Success tm' w}.
+Proof.
+  intro n.
+  apply (well_founded_induction_type Wf_nat.lt_wf (fun n => forall x,
+    {w | evalremoveFnPos'AnimatedTopFn n (Success tm' x) = Success tm' w})).
+  clear n. intros n IH x.
+  destruct n as [| m].
+  { eexists. unfold evalremoveFnPos'AnimatedTopFn. simpl. reflexivity. }
+  rewrite evalTop_stepSuccess.
+  destruct m as [| n0].
+  { eexists. simpl. reflexivity. }
+  remember (E_LamremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_ZeroremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext.
+  remember (evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)) as r0. destruct r0.
+  { assert (H_undefined_Succ : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+    { simpl. reflexivity. }
+    exfalso. rewrite <- Heqr10 in H_undefined_Succ. discriminate H_undefined_Succ. }
+  { eexists. rewrite <- Heqr0. reflexivity. }
+  assert (H_undefined_Succ2 : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+  { simpl. reflexivity. }
+  exfalso. rewrite <- Heqr10 in H_undefined_Succ2. discriminate H_undefined_Succ2.
+Defined.
+
+Lemma hf_restrict : forall (f : tm -> tm) (sub sup : list tm),
+  (forall t1, In t1 sup -> eval t1 (f t1)) ->
+  (forall t1, In t1 sub -> In t1 sup) ->
+  forall t1, In t1 sub -> eval t1 (f t1).
+Proof. intros f sub sup Hsup Hincl t1 Ht1. apply Hsup, Hincl, Ht1. Qed.
+
+Ltac in_union := simpl; repeat rewrite in_app_iff; simpl; tauto.
+
+
+Fixpoint animation_soundness_local_aux (depth : nat) {struct depth} :
+  forall (f : tm -> tm) (n : nat), n <= depth -> forall (inputTm : tm),
+  { args : list tm | forall outputTm,
+      (forall t1, In t1 args -> eval t1 (f t1)) ->
+      evalTransparentSigma2AnimatedTopFn n (Success tm inputTm) f = Success tm outputTm ->
+      eval inputTm outputTm }.
+Proof.
+  destruct depth as [| depth'].
+  { intros f n Hn inputTm.
+    assert (Hn0 : n = 0) by lia. subst n.
+    exists [inputTm]. intros outputTm Hf Hanim.
+    rewrite anim_0_oracle in Hanim. injection Hanim as <-.
+    apply Hf. left. reflexivity. }
+  intros f n Hn inputTm.
+  destruct n as [| n'].
+  { exists [inputTm]. intros outputTm Hf Hanim.
+    rewrite anim_0_oracle in Hanim. injection Hanim as <-.
+    apply Hf. left. reflexivity. }
+  destruct inputTm as [s | lx lT lbody | t1 t2 | | t | t | tdisc t1 t2 | fn T fbody].
+
+  - (* tvar *)
+    exists [tvar s]. intros outputTm Hf Hanim.
+    rewrite anim_S_tvar in Hanim. injection Hanim as <-.
+    apply Hf. left. reflexivity.
+
+  - (* tabs *)
+    destruct n' as [| m].
+    + exists [tabs lx lT lbody]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-.
+      apply Hf. left. reflexivity.
+    + exists []. intros outputTm Hf Hanim.
+      rewrite anim_S_tabs in Hanim. injection Hanim as <-. apply E_Lam.
+
+  - (* tapp t1 t2 *)
+    destruct n' as [|[|[|[|[|[|k]]]]]].
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. in_union.
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tapp 2 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tapp 3 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tapp 4 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tapp 5 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tapp t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tapp 6 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k) (tmLift t1)) as [w1 Hw1].
+      destruct w1 as [s1|x ty t3'|a1 a2| |v1|b1|c1 c2 c3|s2 ty2 b2|m1|s3 n1 n2] eqn:Hw1shape.
+      1,3,4,5,6,7,8,9,10:
+        (exists [tapp t1 t2]; intros outputTm Hf Hanim;
+         rewrite anim_S_tapp in Hanim; rewrite Hw1 in Hanim;
+         simpl in Hanim; injection Hanim as <-; apply Hf; in_union).
+      (* w1 = tabs' x ty t3' *)
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k) (tmLift t2)) as [w2 Hw2].
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k)
+                  (substliftedFunc x w2 t3')) as [w3 Hw3].
+      destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) t1) as [args1 Hargs1].
+      destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) t2) as [args2 Hargs2].
+      destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) (subst x (tmPushPlain w2) (tmPushPlain t3'))) as [args3 Hargs3].
+      exists (args1 ++ args2 ++ args3 ++
+              [tapp t1 t2;
+               subst x (tmTransparentSigmaPushBody f w2) (tmTransparentSigmaPushBody f t3')])%list.
+      intros outputTm Hf Hanim.
+      assert (Hf1 : forall t1', In t1' args1 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (Hf2 : forall t1', In t1' args2 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (Hf3 : forall t1', In t1' args3 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (HfTop : eval (tapp t1 t2) (f (tapp t1 t2))) by (apply Hf; in_union).
+      assert (HfSubEsc : eval (subst x (tmTransparentSigmaPushBody f w2) (tmTransparentSigmaPushBody f t3'))
+                               (f (subst x (tmTransparentSigmaPushBody f w2) (tmTransparentSigmaPushBody f t3'))))
+        by (apply Hf; in_union).
+      rewrite anim_S_tapp in Hanim.
+      rewrite Hw1 in Hanim.
+      rewrite Hw2 in Hanim.
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k)
+                  (substliftedFunc x w2 t3')) as [w3' Hw3'].
+      rewrite Hw3' in Hanim.
+      simpl in Hanim.
+      injection Hanim as <-.
+      assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t1) f =
+                      Success tm (tabs x ty (tmTransparentSigmaPushBody f t3'))).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw1. reflexivity. }
+      assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t2) f =
+                      Success tm (tmTransparentSigmaPushBody f w2)).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw2. reflexivity. }
+      apply (E_App t1 t2 x ty (tmTransparentSigmaPushBody f t3') (tmTransparentSigmaPushBody f w2)).
+      repeat split.
+      -- apply (Hargs1 _ Hf1 Htm1).
+      -- apply (Hargs2 _ Hf2 Htm2).
+      -- destruct (andb (tmChkNoExtraCstrs w2) (andb (tmChkNoExtraCstrs t3') true)) eqn:Hchk.
+         ++ apply andb_prop in Hchk as [Hchk1 Hchk2].
+            apply andb_prop in Hchk2 as [Hchk2 _].
+            assert (Hsub : substliftedFunc x w2 t3' =
+                           tmLift (subst x (tmPushPlain w2) (tmPushPlain t3'))).
+            { unfold substliftedFunc. rewrite Hchk1, Hchk2. reflexivity. }
+            rewrite Hsub in Hw3'.
+            assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S k)
+                              (Success tm (subst x (tmPushPlain w2) (tmPushPlain t3')))
+                              f =
+                            Success tm (tmTransparentSigmaPushBody f w3')).
+            { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+              cbn [tmLift].
+              rewrite Hw3'. reflexivity. }
+            rewrite (tmPush_eq_plain f w2 Hchk1), (tmPush_eq_plain f t3' Hchk2).
+            apply (Hargs3 _ Hf3 Htm3).
+         ++ unfold substliftedFunc in Hw3'. rewrite Hchk in Hw3'.
+            rewrite evalTop_substLifted_escape in Hw3'.
+            injection Hw3' as <-.
+            simpl. exact HfSubEsc.
+
+  - (* tzero *)
+    destruct n' as [|[| m]].
+    + exists [tzero]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tzero]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tzero 2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists []. intros outputTm Hf Hanim.
+      rewrite anim_S_tzero in Hanim. injection Hanim as <-. apply E_Zero.
+
+  - (* tsucc t *)
+    destruct n' as [|[|[|k]]].
+    + exists [tsucc t]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tsucc t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tsucc 2 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tsucc t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tsucc 3 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) t) as [args Hargs].
+      exists args. intros outputTm Hf Hanim.
+      rewrite anim_S_tsucc in Hanim.
+      set (r := evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) f) in Hanim.
+      destruct r as [| v |] eqn:H1; simpl in Hanim.
+      * discriminate.
+      * injection Hanim as <-.
+        apply E_Succ. apply (Hargs v Hf H1).
+      * discriminate.
+
+  - (* tpred t *)
+    destruct n' as [|[|[|[|[|k]]]]].
+    + exists [tpred t]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. in_union.
+    + exists [tpred t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tpred 2 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tpred t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tpred 3 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tpred t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tpred 4 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tpred t]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tpred 5 t f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) t) as [args1 Hargs1].
+      destruct (animation_soundness_local_aux depth' f (S (S k)) ltac:(lia) t) as [args2 Hargs2].
+      exists (args1 ++ args2 ++ [tpred t])%list.
+      intros outputTm Hf Hanim.
+      assert (Hf1 : forall t1, In t1 args1 -> eval t1 (f t1)) by (intros t1 Ht1; apply Hf; in_union).
+      assert (Hf2 : forall t1, In t1 args2 -> eval t1 (f t1)) by (intros t1 Ht1; apply Hf; in_union).
+      assert (HfTop : eval (tpred t) (f (tpred t))) by (apply Hf; in_union).
+      rewrite anim_S_tpred in Hanim.
+      assert (Hinner : forall outputTm2,
+        match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t)) with
+        | Success (tsucc' v') => Success tm (tmTransparentSigmaPushBody f v')
+        | _ => Success tm (f (tpred t))
+        end = Success tm outputTm2 -> eval (tpred t) outputTm2).
+      { intros outputTm2 Heq.
+        destruct (evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t))) as [| w2 |] eqn:Hw2;
+          simpl in Heq.
+        - injection Heq as <-. exact HfTop.
+        - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+            simpl in Heq; try (injection Heq as <-; exact HfTop).
+          simpl in Heq. injection Heq as <-.
+          assert (Htm : evalTransparentSigma2AnimatedTopFn (S k) (Success tm t) f =
+                         Success tm (tsucc (tmTransparentSigmaPushBody f v2))).
+          { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                   evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+            cbn [tmLift]. rewrite Hw2. reflexivity. }
+          eapply E_PredSucc.
+          apply (Hargs1 _ Hf1 Htm).
+        - injection Heq as <-. exact HfTop. }
+      destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift t))) as [| w1 |] eqn:Hw1;
+        simpl in Hanim.
+      * apply (Hinner outputTm Hanim).
+      * destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+          simpl in Hanim; try (apply (Hinner outputTm Hanim)).
+        injection Hanim as <-. apply E_PredZero.
+        apply (Hargs2 tzero Hf2).
+        unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw1. reflexivity.
+      * apply (Hinner outputTm Hanim).
+
+  - (* tifz tdisc t1 t2 *)
+    destruct n' as [|[|[|[|[|[|[|[|k]]]]]]]].
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 2 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 3 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 4 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 5 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 6 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 7 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + exists [tifz tdisc t1 t2]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tifz 8 tdisc t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. in_union.
+    + destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) tdisc) as [args1 Hargs1].
+      destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) t2) as [args2 Hargs2].
+      destruct (animation_soundness_local_aux depth' f (S (S k)) ltac:(lia) tdisc) as [args3 Hargs3].
+      destruct (animation_soundness_local_aux depth' f (S (S k)) ltac:(lia) t1) as [args4 Hargs4].
+      exists (args1 ++ args2 ++ args3 ++ args4 ++ [tifz tdisc t1 t2])%list.
+      intros outputTm Hf Hanim.
+      assert (Hf1 : forall t1', In t1' args1 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (Hf2 : forall t1', In t1' args2 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (Hf3 : forall t1', In t1' args3 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (Hf4 : forall t1', In t1' args4 -> eval t1' (f t1')) by (intros t1' Ht1; apply Hf; in_union).
+      assert (HfTop : eval (tifz tdisc t1 t2) (f (tifz tdisc t1 t2))) by (apply Hf; in_union).
+      rewrite anim_S_tifz in Hanim.
+      assert (Hinner : forall outputTm2,
+        match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift tdisc)) with
+        | Success (tsucc' vn') =>
+            match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
+            | Success x => Success tm (tmTransparentSigmaPushBody f x)
+            | _ => NoMatch tm
+            end
+        | _ => Success tm (f (tifz tdisc t1 t2))
+        end = Success tm outputTm2 -> eval (tifz tdisc t1 t2) outputTm2).
+      { intros outputTm2 Heq.
+        destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k) (tmLift tdisc)) as [w2 Hw2].
+        rewrite Hw2 in Heq.
+        destruct (evalremoveFnPos'AnimatedTopFn_always_success_T (S k) (tmLift t2)) as [w3 Hw3].
+        rewrite Hw3 in Heq.
+        destruct w2 as [s1|s2 ty2 b2|a1 a2| |vn'|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+          [ simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | idtac
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop
+          | simpl in Heq; injection Heq as <-; exact HfTop ].
+        simpl in Heq. injection Heq as <-.
+        apply (E_IfzSucc tdisc (tmTransparentSigmaPushBody f vn') t1 t2
+                 (tmTransparentSigmaPushBody f w3)).
+        split.
+        - apply (Hargs1 _ Hf1).
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw2. reflexivity.
+        - apply (Hargs2 _ Hf2).
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw3. reflexivity. }
+      destruct (evalremoveFnPos'AnimatedTopFn (S (S k)) (Success tm' (tmLift tdisc))) as [| w1 |] eqn:Hw1;
+        simpl in Hanim.
+      * apply (Hinner outputTm Hanim).
+      * destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+          simpl in Hanim; try (apply (Hinner outputTm Hanim)).
+        eapply E_IfzZero. split.
+        -- apply (Hargs3 tzero Hf3).
+           unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                  evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+           cbn [tmLift]. rewrite Hw1. reflexivity.
+        -- apply (Hargs4 outputTm Hf4 Hanim).
+      * apply (Hinner outputTm Hanim).
+  - (* tfix fn T fbody *)
+    destruct n' as [|[|[|[|[|[|[|[|[|k]]]]]]]]].
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 2 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 3 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 4 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 5 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 6 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 7 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 8 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + exists [tfix fn T fbody]. intros outputTm Hf Hanim.
+      rewrite (anim_below_thr_tfix 9 fn T fbody f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hf. left. reflexivity.
+    + destruct (animation_soundness_local_aux depth' f (S k) ltac:(lia) (subst fn (tfix fn T fbody) fbody)) as [args Hargs].
+      exists args. intros outputTm Hf Hanim.
+      rewrite anim_S_tfix in Hanim.
+      eapply E_Fix. apply (Hargs outputTm Hf Hanim).
+Defined.
+
+Definition animation_soundness_local (f : tm -> tm) (n : nat) (inputTm : tm) :=
+  animation_soundness_local_aux n f n (le_n n) inputTm.
+
+(** Existential repackaging: the [sig]-typed witness above, wrapped as a plain
+    [Prop]. This never needs to be reduced/computed -- it is used only for its
+    existence -- so it carries none of the [animation_soundness_local_aux]
+    proof term's computational cost. *)
+Theorem animation_soundness_local_exists : forall (f : tm -> tm) (n : nat) (inputTm : tm),
+  exists args : list tm, forall outputTm,
+      (forall t1, In t1 args -> eval t1 (f t1)) ->
+      evalTransparentSigma2AnimatedTopFn n (Success tm inputTm) f = Success tm outputTm ->
+      eval inputTm outputTm.
+Proof.
+  intros f n inputTm.
+  exists (proj1_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
+  exact (proj2_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
+Qed.
+
+
+(* ------------------------------------------------------------------ *)
+(** ** Fast witness extraction for [animation_soundness_local]        *)
+(*                                                                     *)
+(*  [animation_soundness_local_aux] above is sound (its type says so  *)
+(*  directly), but as a proof term built by [destruct]/[injection]/   *)
+(*  [assert]-heavy tactics, forcing [proj1_sig] of it via [vm_compute]*)
+(*  or [Eval lazy] to see a concrete witness list is impractically    *)
+(*  slow (hangs past 300s even at moderate fuel), because exposing    *)
+(*  the outer [exist] requires reducing through all of that tactic    *)
+(*  scaffolding first. [Extraction] sidesteps this: it is a separate  *)
+(*  compilation pass that ERASES everything [Prop]-sorted (the proof  *)
+(*  half) and keeps only the [Type]-sorted computational content (the *)
+(*  [list tm] half), producing genuinely lean code with none of that  *)
+(*  bloat. Extracting [animation_soundness_local] (`Extraction        *)
+(*  "x.ml" PCFBigStep.animation_soundness_local.` after               *)
+(*  `Require ExtrOcamlBasic. Require ExtrOcamlNatInt.`) gives exactly *)
+(*  this. The OCaml below is that extraction's actual output,         *)
+(*  verbatim, kept here for traceability against the Rocq definition  *)
+(*  that follows it, which is a direct, minimally-adapted translation *)
+(*  of this OCaml back into Gallina (only syntax changes: OCaml's     *)
+(*  church-encoded nat match becomes a native [match], [Coq_tapp]     *)
+(*  becomes [tapp], [app] becomes [++], etc. -- no logic was altered).*)
+(*                                                                     *)
+(*  Cross-checking against this extraction caught a real bug in an    *)
+(*  earlier hand-written attempt at this function: it had an          *)
+(*  [if andb (tmChkNoExtraCstrs ...) then .. else ..] split in the    *)
+(*  [tapp] case that does NOT appear in the actual proof term -- the  *)
+(*  real witness unconditionally includes the third recursive call's  *)
+(*  args together with both escape terms, an over-approximation, not  *)
+(*  a tight case split. The translation below matches the extraction. *)
+(*                                                                     *)
+(*
+       (** val animation_soundness_local_aux :
+           int -> (tm -> tm) -> int -> tm -> tm list **)
+
+       let rec animation_soundness_local_aux depth f n0 inputTm =
+         (fun fO fS n -> if n=0 then fO () else fS (n-1))
+           (fun _ -> inputTm :: [])
+           (fun n1 ->
+           (fun fO fS n -> if n=0 then fO () else fS (n-1))
+             (fun _ -> inputTm :: [])
+             (fun n2 ->
+             match inputTm with
+             | Coq_tvar t0 -> (Coq_tvar t0) :: []
+             | Coq_tabs (t0, t1, t2) ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tabs (t0, t1, t2)) :: [])
+                  (fun _ -> [])
+                  n2)
+             | Coq_tapp (t0, t1) ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                    (fun n4 ->
+                    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                      (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                      (fun n5 ->
+                      (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                        (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                        (fun n6 ->
+                        (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                          (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                          (fun n7 ->
+                          (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                            (fun _ -> (Coq_tapp (t0, t1)) :: [])
+                            (fun n8 ->
+                            let s =
+                              evalremoveFnPos'AnimatedTopFn_always_success_T
+                                (Stdlib.Int.succ n8) (tmLift t0)
+                            in
+                            (match s with
+                             | Coq_tabs' (t2, _, t3) ->
+                               let s0 =
+                                 evalremoveFnPos'AnimatedTopFn_always_success_T
+                                   (Stdlib.Int.succ n8) (tmLift t1)
+                               in
+                               let s1 =
+                                 animation_soundness_local_aux n1 f
+                                   (Stdlib.Int.succ n8) t0
+                               in
+                               let s2 =
+                                 animation_soundness_local_aux n1 f
+                                   (Stdlib.Int.succ n8) t1
+                               in
+                               let s3 =
+                                 animation_soundness_local_aux n1 f
+                                   (Stdlib.Int.succ n8)
+                                   (subst t2 (tmPushPlain s0) (tmPushPlain t3))
+                               in
+                               app s1
+                                 (app s2
+                                   (app s3 ((Coq_tapp (t0,
+                                     t1)) :: ((subst t2
+                                                (tmTransparentSigmaPushBody f s0)
+                                                (tmTransparentSigmaPushBody f t3)) :: []))))
+                             | _ -> (Coq_tapp (t0, t1)) :: []))
+                            n7)
+                          n6)
+                        n5)
+                      n4)
+                    n3)
+                  n2)
+             | Coq_tzero ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> Coq_tzero :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> Coq_tzero :: [])
+                    (fun _ -> [])
+                    n3)
+                  n2)
+             | Coq_tsucc t0 ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tsucc t0) :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> (Coq_tsucc t0) :: [])
+                    (fun n4 ->
+                    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                      (fun _ -> (Coq_tsucc t0) :: [])
+                      (fun n5 ->
+                      animation_soundness_local_aux n1 f (Stdlib.Int.succ n5) t0)
+                      n4)
+                    n3)
+                  n2)
+             | Coq_tpred t0 ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tpred t0) :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> (Coq_tpred t0) :: [])
+                    (fun n4 ->
+                    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                      (fun _ -> (Coq_tpred t0) :: [])
+                      (fun n5 ->
+                      (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                        (fun _ -> (Coq_tpred t0) :: [])
+                        (fun n6 ->
+                        (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                          (fun _ -> (Coq_tpred t0) :: [])
+                          (fun n7 ->
+                          let s =
+                            animation_soundness_local_aux n1 f (Stdlib.Int.succ
+                              n7) t0
+                          in
+                          let s0 =
+                            animation_soundness_local_aux n1 f (Stdlib.Int.succ
+                              (Stdlib.Int.succ n7)) t0
+                          in
+                          app s (app s0 ((Coq_tpred t0) :: [])))
+                          n6)
+                        n5)
+                      n4)
+                    n3)
+                  n2)
+             | Coq_tifz (t0, t1, t2) ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                    (fun n4 ->
+                    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                      (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                      (fun n5 ->
+                      (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                        (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                        (fun n6 ->
+                        (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                          (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                          (fun n7 ->
+                          (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                            (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                            (fun n8 ->
+                            (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                              (fun _ -> (Coq_tifz (t0, t1, t2)) :: [])
+                              (fun n9 ->
+                              (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                                (fun _ -> (Coq_tifz (t0, t1,
+                                t2)) :: [])
+                                (fun n10 ->
+                                let s =
+                                  animation_soundness_local_aux n1 f
+                                    (Stdlib.Int.succ n10) t0
+                                in
+                                let s0 =
+                                  animation_soundness_local_aux n1 f
+                                    (Stdlib.Int.succ n10) t2
+                                in
+                                let s1 =
+                                  animation_soundness_local_aux n1 f
+                                    (Stdlib.Int.succ (Stdlib.Int.succ n10)) t0
+                                in
+                                let s2 =
+                                  animation_soundness_local_aux n1 f
+                                    (Stdlib.Int.succ (Stdlib.Int.succ n10)) t1
+                                in
+                                app s
+                                  (app s0
+                                    (app s1
+                                      (app s2 ((Coq_tifz (t0, t1, t2)) :: [])))))
+                                n9)
+                              n8)
+                            n7)
+                          n6)
+                        n5)
+                      n4)
+                    n3)
+                  n2)
+             | Coq_tfix (t0, t1, t2) ->
+               ((fun fO fS n -> if n=0 then fO () else fS (n-1))
+                  (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                  (fun n3 ->
+                  (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                    (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                    (fun n4 ->
+                    (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                      (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                      (fun n5 ->
+                      (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                        (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                        (fun n6 ->
+                        (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                          (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                          (fun n7 ->
+                          (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                            (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                            (fun n8 ->
+                            (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                              (fun _ -> (Coq_tfix (t0, t1, t2)) :: [])
+                              (fun n9 ->
+                              (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                                (fun _ -> (Coq_tfix (t0, t1,
+                                t2)) :: [])
+                                (fun n10 ->
+                                (fun fO fS n -> if n=0 then fO () else fS (n-1))
+                                  (fun _ -> (Coq_tfix (t0, t1,
+                                  t2)) :: [])
+                                  (fun n11 ->
+                                  animation_soundness_local_aux n1 f
+                                    (Stdlib.Int.succ n11)
+                                    (subst t0 (Coq_tfix (t0, t1, t2)) t2))
+                                  n10)
+                                n9)
+                              n8)
+                            n7)
+                          n6)
+                        n5)
+                      n4)
+                    n3)
+                  n2))
+             n0)
+           depth
+
+       (** val animation_soundness_local : (tm -> tm) -> int -> tm -> tm list **)
+
+       let animation_soundness_local f n0 inputTm =
+         animation_soundness_local_aux n0 f n0 inputTm
+*)
+(* ------------------------------------------------------------------ *)
+
+Fixpoint animArgs_aux (depth : nat) (f : tm -> tm) (n : nat) (inputTm : tm) {struct depth} : list tm :=
+  match depth with
+  | 0 => [inputTm]
+  | S depth' =>
+    match n with
+    | 0 => [inputTm]
+    | S n' =>
+      match inputTm with
+      | tvar s => [tvar s]
+      | tabs lx lT lbody =>
+          match n' with
+          | 0 => [tabs lx lT lbody]
+          | S _ => []
+          end
+      | tapp t1 t2 =>
+          match n' with
+          | 0 | 1 | 2 | 3 | 4 | 5 => [tapp t1 t2]
+          | S (S (S (S (S (S k))))) =>
+              match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t1)) with
+              | Success (tabs' x ty t3') =>
+                  match evalremoveFnPos'AnimatedTopFn (S k) (Success tm' (tmLift t2)) with
+                  | Success w2 =>
+                      let args1 := animArgs_aux depth' f (S k) t1 in
+                      let args2 := animArgs_aux depth' f (S k) t2 in
+                      let args3 := animArgs_aux depth' f (S k) (subst x (tmPushPlain w2) (tmPushPlain t3')) in
+                      (args1 ++ args2 ++ args3 ++
+                       [tapp t1 t2;
+                        subst x (tmTransparentSigmaPushBody f w2) (tmTransparentSigmaPushBody f t3')])%list
+                  | _ => [tapp t1 t2]
+                  end
+              | _ => [tapp t1 t2]
+              end
+          end
+      | tzero =>
+          match n' with
+          | 0 | 1 => [tzero]
+          | S (S _) => []
+          end
+      | tsucc t =>
+          match n' with
+          | 0 | 1 | 2 => [tsucc t]
+          | S (S (S k)) => animArgs_aux depth' f (S k) t
+          end
+      | tpred t =>
+          match n' with
+          | 0 | 1 | 2 | 3 | 4 => [tpred t]
+          | S (S (S (S (S k)))) =>
+              let args1 := animArgs_aux depth' f (S k) t in
+              let args2 := animArgs_aux depth' f (S (S k)) t in
+              (args1 ++ args2 ++ [tpred t])%list
+          end
+      | tifz tdisc t1 t2 =>
+          match n' with
+          | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 => [tifz tdisc t1 t2]
+          | S (S (S (S (S (S (S (S k))))))) =>
+              let args1 := animArgs_aux depth' f (S k) tdisc in
+              let args2 := animArgs_aux depth' f (S k) t2 in
+              let args3 := animArgs_aux depth' f (S (S k)) tdisc in
+              let args4 := animArgs_aux depth' f (S (S k)) t1 in
+              (args1 ++ args2 ++ args3 ++ args4 ++ [tifz tdisc t1 t2])%list
+          end
+      | tfix fn T fbody =>
+          match n' with
+          | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 => [tfix fn T fbody]
+          | S (S (S (S (S (S (S (S (S k)))))))) =>
+              animArgs_aux depth' f (S k) (subst fn (tfix fn T fbody) fbody)
+          end
+      end
+    end
+  end.
+
+(** [animArgs] is the fast, directly-computable counterpart to
+    [proj1_sig (animation_soundness_local f n inputTm)]. It carries no
+    guarantee of its own by construction -- see [animArgs_aux_correct]
+    below, which ties it back to [animation_soundness_local_aux]'s proven
+    soundness by a plain (never-forced) equality. *)
+Definition animArgs (f : tm -> tm) (n : nat) (inputTm : tm) : list tm :=
+  animArgs_aux n f n inputTm.
+
 (** --- Correspondence via bigstop (intermediate) --------------------------- *)
 
 
