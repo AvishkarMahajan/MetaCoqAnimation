@@ -17,6 +17,7 @@ From Stdlib Require Import List.
 From Stdlib Require Import Arith.Wf_nat.
 From Stdlib Require Import Arith.PeanoNat.
 From Stdlib Require Import Lia.
+From MetaRocq.ErasurePlugin Require Import Erasure Loader.
 Require Import MetaRocq.Template.All.
 Import monad_utils.MRMonadNotation.
 Unset MetaRocq Strict Unquote Universe Mode.
@@ -3576,7 +3577,7 @@ Proof.
       eapply E_Fix. apply (Hargs outputTm Hf Hanim).
 Defined.
 
-Definition animation_soundness_local (f : tm -> tm) (n : nat) (inputTm : tm) :=
+Definition animation_soundness_local (n : nat) (inputTm : tm) (f : tm -> tm) :=
   animation_soundness_local_aux n f n (le_n n) inputTm.
 
 (** Existential repackaging: the [sig]-typed witness above, wrapped as a plain
@@ -3593,6 +3594,10 @@ Proof.
   exists (proj1_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
   exact (proj2_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
 Qed.
+
+Definition animArgsLst (n : nat) (inputTm : tm) (f : tm -> tm) :=
+(proj1_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
+
 
 
 (* ------------------------------------------------------------------ *)
@@ -3934,8 +3939,14 @@ Fixpoint animArgs_aux (depth : nat) (f : tm -> tm) (n : nat) (inputTm : tm) {str
     guarantee of its own by construction -- see [animArgs_aux_correct]
     below, which ties it back to [animation_soundness_local_aux]'s proven
     soundness by a plain (never-forced) equality. *)
-Definition animArgs (f : tm -> tm) (n : nat) (inputTm : tm) : list tm :=
+Definition animArgsLstFast (n : nat) (inputTm : tm) (f : tm -> tm) : list tm :=
   animArgs_aux n f n inputTm.
+  
+Compute animArgsLstFast 20 (tapp (tfix "f" (TArrow TNat TNat)
+                 (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x"))))) tzero). 
+                 
+Theorem witnessFnSound : forall n inputTm f, animArgsLst n inputTm f =  animArgsLstFast n inputTm f.
+Proof. Admitted.                  
 
 (** --- Correspondence via bigstop (intermediate) --------------------------- *)
 
@@ -3945,11 +3956,26 @@ Definition animArgs (f : tm -> tm) (n : nat) (inputTm : tm) : list tm :=
 End PCFBigStep.
 
 
+(*
+Eval native_compute in animArgsLst 20 (tapp (tfix "f" (TArrow TNat TNat)
+                 (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x"))))) tzero).
+Check animArgsLst.
+Check tmQuote.
+
+MetaRocq Erase animArgsLst.
+MetaRocq Quote Recursively Definition f_q := animArgsLst.
+From MetaRocq.Erasure Require Import Erasure.
+From MetaRocq.ErasurePlugin Require Import Erasure Loader.
+From MetaRocq.Erasure Require Import ErasureFunction.
+(*
+Definition f_erased :=
+  Eval lazy in
+    erase_template_program default_erasure_config [] f_q.
+
+*)
 
 
-
-
-
+*)
 
 
 Module EffectfulPCFBigStop.
