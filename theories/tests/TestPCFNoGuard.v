@@ -3599,7 +3599,22 @@ Definition animArgsLst (n : nat) (inputTm : tm) (f : tm -> tm) :=
 (proj1_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
 
 
+Theorem animation_soundness_partialRel : forall (f : tm -> tm) (inputTm outputTm : tm) (n : nat),
+  (forall tm1 : tm, (exists tm2 : tm, eval tm1 tm2) -> eval tm1 (f tm1)) ->
+  (exists outputTm' : tm, (eval inputTm outputTm')) ->
+    (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
+    eval inputTm outputTm. Proof. Admitted.
 
+(*
+Theorem animation_soundness_TotalRel : (forall (inputTm' : tm), (exists outputTm' : tm, eval inputTm' outputTm')) -> 
+(forall (f : tm -> tm) (inputTm outputTm : tm) (n : nat),
+  (eval inputTm (f inputTm)) ->
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
+    eval inputTm outputTm). Proof. Admitted.
+    
+*)    
+
+ 
 (* ------------------------------------------------------------------ *)
 (** ** Fast witness extraction for [animation_soundness_local]        *)
 (*                                                                     *)
