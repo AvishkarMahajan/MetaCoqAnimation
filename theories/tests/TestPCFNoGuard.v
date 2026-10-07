@@ -3863,6 +3863,8 @@ Definition animArgsLst (n : nat) (inputTm : tm) (f : tm -> tm) :=
 *)
 (* ------------------------------------------------------------------ *)
 
+(*
+
 Fixpoint animArgs_aux (depth : nat) (f : tm -> tm) (n : nat) (inputTm : tm) {struct depth} : list tm :=
   match depth with
   | 0 => [inputTm]
@@ -3946,7 +3948,8 @@ Compute animArgsLstFast 20 (tapp (tfix "f" (TArrow TNat TNat)
                  (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x"))))) tzero). 
                  
 Theorem witnessFnSound : forall n inputTm f, animArgsLst n inputTm f =  animArgsLstFast n inputTm f.
-Proof. Admitted.                  
+Proof. Admitted.   
+*)               
 
 (** --- Correspondence via bigstop (intermediate) --------------------------- *)
 
