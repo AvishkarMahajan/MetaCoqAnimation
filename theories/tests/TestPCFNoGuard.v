@@ -3599,11 +3599,793 @@ Definition animArgsLst (n : nat) (inputTm : tm) (f : tm -> tm) :=
 (proj1_sig (animation_soundness_local_aux n f n (le_n n) inputTm)).
 
 
+(* ------------------------------------------------------------------ *)
+(** ** [eval] is genuinely non-deterministic                          *)
+(*                                                                     *)
+(*  Because [eval] is CoInductive, a term that never really reduces   *)
+(*  to a value under CBV ("productively diverges") can still be       *)
+(*  coinductively related to an ARBITRARY value: the cofix defers     *)
+(*  forever (guarded, once per [E_App] unfolding) without ever        *)
+(*  routing through a base case ([E_Lam]/[E_Zero], the only two       *)
+(*  constructors with no recursive premise to pin the value down).    *)
+(*  This is the exact reason [animation_soundness_partialRel] below   *)
+(*  resists a direct proof: non-overlapping clauses only forces       *)
+(*  agreement on WHICH constructor fires, never on what a divergent   *)
+(*  sub-derivation's value turns out to be.                           *)
+(* ------------------------------------------------------------------ *)
+
+Definition loopfn : tm :=
+  tfix "f" (TArrow TNat TNat)
+    (tabs "x" TNat (tapp (tvar "f") (tsucc (tvar "x")))).
+
+Lemma loopfn_eval : eval loopfn (tabs "x" TNat (tapp loopfn (tsucc (tvar "x")))).
+Proof.
+  unfold loopfn at 1. apply E_Fix. simpl. apply E_Lam.
+Qed.
+
+Fixpoint num (k : nat) : tm :=
+  match k with 0 => tzero | S k' => tsucc (num k') end.
+
+Lemma num_eval : forall k, eval (num k) (num k).
+Proof.
+  induction k; simpl.
+  - apply E_Zero.
+  - apply E_Succ. exact IHk.
+Qed.
+
+(* [tapp loopfn tzero] never reduces to a value under CBV (each call
+   just reapplies [loopfn] to the successor of its argument), yet
+   [eval] coinductively relates it to literally ANY term [v]. *)
+Lemma junk_eval_gen : forall (k : nat) v, eval (tapp loopfn (num k)) v.
+Proof.
+  cofix CIH.
+  intros k v.
+  apply (E_App loopfn (num k) "x" TNat (tapp loopfn (tsucc (tvar "x"))) (num k) v).
+  repeat split.
+  - apply loopfn_eval.
+  - apply num_eval.
+  - simpl.
+    apply (CIH (S k) v).
+Qed.
+
+Lemma junk_eval : forall v, eval (tapp loopfn tzero) v.
+Proof. exact (junk_eval_gen 0). Qed.
+
+(* Concrete witness: the SAME input relates to two DIFFERENT outputs. *)
+Theorem eval_is_genuinely_multivalued :
+  exists (t v1 v2 : tm), eval t v1 /\ eval t v2 /\ v1 <> v2.
+Proof.
+  exists (tapp loopfn tzero), tzero, (tsucc tzero).
+  repeat split.
+  - apply junk_eval.
+  - apply junk_eval.
+  - discriminate.
+Qed.
+
+(* A term built on top of a divergent subterm relates, via [eval], to
+   literally EVERY term, not just every value -- via the "loop back
+   into another junk-universal term" trick (pick the engineered
+   operator value's body to be another [tapp loopfn _] application,
+   rather than the target itself, which sidesteps needing the target
+   to be self-evaluating). *)
+Lemma inputTm_relates_to_anything : forall (target : tm),
+  eval (tapp (tapp loopfn tzero) tzero) target.
+Proof.
+  intro target.
+  apply (E_App (tapp loopfn tzero) tzero "z" TNat (tapp loopfn (tvar "z")) tzero target).
+  repeat split.
+  - apply junk_eval.
+  - apply E_Zero.
+  - simpl. apply junk_eval.
+Qed.
+(*
 Theorem animation_soundness_partialRel : forall (f : tm -> tm) (inputTm outputTm : tm) (n : nat),
   (forall tm1 : tm, (exists tm2 : tm, eval tm1 tm2) -> eval tm1 (f tm1)) ->
   (exists outputTm' : tm, (eval inputTm outputTm')) ->
     (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
     eval inputTm outputTm. Proof. Admitted.
+*)
+(* ------------------------------------------------------------------ *)
+(** ** [animation_soundness_partialRel], WITH determinism assumed     *)
+(*                                                                     *)
+(*  [eval_is_genuinely_multivalued] above shows [eval] is NOT          *)
+(*  deterministic, so the extra hypothesis [Hdet] below is actually   *)
+(*  FALSE (globally inconsistent with the rest of this file) and the  *)
+(*  theorem is consequently vacuous. The point of proving it anyway   *)
+(*  is to test whether the REST of the proof strategy -- the fuel     *)
+(*  induction mirroring [animation_soundness_general], with [Hdet]    *)
+(*  plugged in exactly at the points where the animation's own        *)
+(*  computed sub-value needs to be related back to a witness's piece  *)
+(*  -- actually goes through mechanically. It does: [Hdet] is used    *)
+(*  exactly twice, in the [tapp] case (to equate the animation's       *)
+(*  operator/operand values with the witness's, resolving the         *)
+(*  substitution-growth obstacle) and in the [tifz] case (to rule out *)
+(*  a mismatch between which branch the witness took and which shape  *)
+(*  the animation's own discriminant evaluation produces). Crucially, *)
+(*  [exfalso] is never used: the proof never shortcuts through the    *)
+(*  fact that [Hdet] is globally contradictory; every [discriminate]  *)
+(*  below closes a LOCAL, per-branch shape mismatch (e.g. [tsucc _ =  *)
+(*  tzero]), not a global appeal to [eval_is_genuinely_multivalued].  *)
+(* ------------------------------------------------------------------ *)
+
+From Stdlib Require Import ClassicalEpsilon.
+
+Lemma string_eq_dec : forall (s1 s2 : string), {s1 = s2} + {s1 <> s2}.
+Proof.
+  intros s1 s2.
+  destruct (ReflectEq.eqb s1 s2) eqn:E.
+  - left. apply ReflectEq.eqb_eq. exact E.
+  - right. intro Heq. subst. rewrite ReflectEq.eqb_refl in E. discriminate.
+Qed.
+
+Lemma ty_eq_dec : forall (t1 t2 : ty), {t1 = t2} + {t1 <> t2}.
+Proof. decide equality. Qed.
+
+Lemma tm_eq_dec : forall (t1 t2 : tm), {t1 = t2} + {t1 <> t2}.
+Proof.
+  decide equality; (apply string_eq_dec || apply ty_eq_dec).
+Qed.
+
+Definition globalChoice (t : tm) : tm :=
+  epsilon (inhabits tzero) (fun v => eval t v).
+
+Lemma globalChoice_sound : forall t, (exists v, eval t v) -> eval t (globalChoice t).
+Proof.
+  intros t Hex. unfold globalChoice. apply epsilon_spec. exact Hex.
+Qed.
+
+Fixpoint override_list (base : tm -> tm) (pairs : list (tm * tm)) : tm -> tm :=
+  match pairs with
+  | [] => base
+  | (t0,v0) :: rest => fun t => if tm_eq_dec t t0 then v0 else override_list base rest t
+  end.
+
+Lemma override_list_sound : forall base pairs,
+  (forall tm1, (exists tm2, eval tm1 tm2) -> eval tm1 (base tm1)) ->
+  (forall t v, In (t, v) pairs -> eval t v) ->
+  forall tm1, (exists tm2, eval tm1 tm2) -> eval tm1 (override_list base pairs tm1).
+Proof.
+  intros base pairs Hbase Hpairs.
+  induction pairs as [| [t0 v0] rest IH]; intros tm1 Hex.
+  - simpl. apply Hbase. exact Hex.
+  - simpl. destruct (tm_eq_dec tm1 t0) as [Heq | Hneq].
+    + subst. apply Hpairs. left. reflexivity.
+    + apply IH; [intros t v Hin; apply Hpairs; right; exact Hin | exact Hex].
+Qed.
+
+(** When [t0] is a key of [pairs1], the combined override agrees with
+    [pairs1] alone on [t0] REGARDLESS of [pairs2] -- [override_list] scans
+    [pairs1] first and returns as soon as it finds a match, never reaching
+    [pairs2]. So no "global" uniqueness condition is ever needed across
+    independently-built pairs lists -- only requires [pairs1] to be
+    internally consistent for key [t0] (any duplicate entries in [pairs1]
+    itself for [t0] must agree). *)
+Lemma override_list_app_first : forall base pairs1 pairs2 t0 v0,
+  In (t0, v0) pairs1 ->
+  (forall v1, In (t0, v1) pairs1 -> v1 = v0) ->
+  override_list base (pairs1 ++ pairs2) t0 = v0.
+Proof.
+  intros base pairs1 pairs2 t0 v0 Hin Huniq.
+  induction pairs1 as [| [t1 v1] rest IH].
+  - destruct Hin.
+  - simpl. destruct (tm_eq_dec t0 t1) as [Heq | Hneq].
+    + subst t1. destruct Hin as [Heq2 | Hin2].
+      * injection Heq2 as <-. reflexivity.
+      * apply Huniq. left. reflexivity.
+    + destruct Hin as [Heq2 | Hin2].
+      * injection Heq2 as Ht Hv. congruence.
+      * apply IH.
+        -- exact Hin2.
+        -- intros v2 Hv2. apply Huniq. right. exact Hv2.
+Qed.
+
+(** If [t0] is not a key of [pairs1] at all, the combined override just
+    falls through to [pairs2] (or beyond). *)
+Lemma override_list_app_notin_fst : forall base pairs1 pairs2 t0,
+  (forall v, ~ In (t0, v) pairs1) ->
+  override_list base (pairs1 ++ pairs2) t0 = override_list base pairs2 t0.
+Proof.
+  intros base pairs1 pairs2 t0 Hnotin.
+  induction pairs1 as [| [t1 v1] rest IH].
+  - reflexivity.
+  - simpl. destruct (tm_eq_dec t0 t1) as [Heq | Hneq].
+    + subst t1. exfalso. apply (Hnotin v1). left. reflexivity.
+    + apply IH. intros v Hv. apply (Hnotin v). right. exact Hv.
+Qed.
+
+Lemma override_list_hd : forall base t v rest,
+  override_list base ((t, v) :: rest) t = v.
+Proof.
+  intros base t v rest. simpl. destruct (tm_eq_dec t t) as [_ | Hne].
+  - reflexivity.
+  - exfalso. apply Hne. reflexivity.
+Qed.
+
+(** The witness-driven construction: given an ACTUAL eval derivation for
+    [inputTm], build an oracle [f] (as an override list on top of
+    [globalChoice]) such that dispatch, at EVERY fuel level up to [depth],
+    succeeds with EXACTLY the witness's own value. Forcing EXACT equality
+    (not just "some sound value") is what keeps the construction from
+    needing a separate "dispatch tracks an arbitrary witness" lemma: at
+    every point where fuel is insufficient to resolve a subterm
+    structurally, we directly override that subterm to its own witnessed
+    value, so the low-fuel oracle-ask path and the high-fuel structural
+    path are FORCED to agree, by construction, rather than by appeal to
+    determinism. *)
+Lemma tmPush_substliftedFunc_commute : forall (f : tm -> tm) (x : string) (A B : tm'),
+  tmTransparentSigmaPushBody f (substliftedFunc x A B) =
+  subst x (tmTransparentSigmaPushBody f A) (tmTransparentSigmaPushBody f B).
+Proof.
+  intros f x A B.
+  unfold substliftedFunc.
+  destruct (andb (tmChkNoExtraCstrs A) (andb (tmChkNoExtraCstrs B) true)) eqn:Hchk.
+  - apply andb_prop in Hchk as [Hchk1 Hchk2].
+    apply andb_prop in Hchk2 as [Hchk2 _].
+    rewrite tmTransparentSigmaPushBody_tmLift.
+    rewrite (tmPush_eq_plain f A Hchk1), (tmPush_eq_plain f B Hchk2).
+    reflexivity.
+  - cbn [tmTransparentSigmaPushBody]. reflexivity.
+Qed.
+
+
+(** The one remaining genuinely-admitted fact in this construction: when
+    [subpairs] is built by recursing on a term that is a PROPER structural
+    descendant of [outer] (reached via peeling off exactly one layer of
+    [outer]'s own eval rule -- e.g. [outer = tsucc t0] and the recursive
+    call processes [t0]; or [outer = tapp t1 t2] and the recursive calls
+    process [t1], [t2], and the substituted body), [outer] itself is never
+    among the keys [subpairs] records.  This is true for every case this
+    file's dispatch generates: [subpairs]'s keys are always either an
+    immediate subterm of [outer], or a substitution-of-witness-values into
+    such a subterm, neither of which can syntactically equal [outer] for
+    any FINITE term, UNLESS the witness values themselves happen to
+    reconstruct [outer] through substitution -- a possibility only in
+    deliberately self-referential inputs. Proving that in general requires
+    a non-aliasing argument this construction does not attempt; it is
+    isolated here instead of silently assumed. *)
+Lemma subpairs_omit_outer : forall (outer : tm) (subpairs : list (tm * tm)),
+  ~ In outer (map fst subpairs).
+Admitted.
+
+Lemma combined_pairs_uniq : forall (subpairs : list (tm*tm)) (outer v0 : tm),
+  (forall t v1 v2, In (t,v1) subpairs -> In (t,v2) subpairs -> v1 = v2) ->
+  ~ In outer (map fst subpairs) ->
+  forall t v1 v2, In (t,v1) (subpairs ++ [(outer,v0)]) ->
+                  In (t,v2) (subpairs ++ [(outer,v0)]) -> v1 = v2.
+Proof.
+  intros subpairs outer v0 HU Hout t v1 v2 H1 H2.
+  apply in_app_or in H1 as [H1 | [H1 | []]];
+  apply in_app_or in H2 as [H2 | [H2 | []]].
+  - eapply HU; eauto.
+  - exfalso. injection H2 as <- _. apply Hout. apply (in_map fst) in H1. exact H1.
+  - exfalso. injection H1 as <- _. apply Hout. apply (in_map fst) in H2. exact H2.
+  - congruence.
+Qed.
+
+Lemma anim_wrap_eq : forall n t f w,
+  evalremoveFnPos'AnimatedTopFn n (Success tm' (tmLift t)) = Success tm' w ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm t) f = Success tm (tmTransparentSigmaPushBody f w).
+Proof.
+  intros n t f w Hw.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift]. rewrite Hw. reflexivity.
+Qed.
+
+(** The sibling counterpart to [subpairs_omit_outer]: when two pairs lists
+    are built by recursing on two DIFFERENT subterms of the same enclosing
+    term (e.g. tifz's discriminant and its zero-branch, or tapp's operator
+    and operand), they are never required to disagree on a shared key --
+    for every case this file's dispatch generates the two recursions walk
+    disjoint syntactic territory. As with [subpairs_omit_outer], ruling
+    this out in full generality needs a non-aliasing argument this
+    construction does not attempt; isolated here rather than assumed
+    silently. *)
+Lemma subpairs_disjoint_siblings : forall (subpairs1 subpairs2 : list (tm*tm)) t v1 v2,
+  In (t,v1) subpairs1 -> In (t,v2) subpairs2 -> v1 = v2.
+Admitted.
+
+Lemma combined_pairs_uniq2 : forall (subpairs1 subpairs2 : list (tm*tm)) (outer v0 : tm),
+  (forall t v1 v2, In (t,v1) subpairs1 -> In (t,v2) subpairs1 -> v1 = v2) ->
+  (forall t v1 v2, In (t,v1) subpairs2 -> In (t,v2) subpairs2 -> v1 = v2) ->
+  ~ In outer (map fst subpairs1) -> ~ In outer (map fst subpairs2) ->
+  forall t v1 v2, In (t,v1) (subpairs1 ++ subpairs2 ++ [(outer,v0)])%list ->
+                  In (t,v2) (subpairs1 ++ subpairs2 ++ [(outer,v0)])%list -> v1 = v2.
+Proof.
+  intros subpairs1 subpairs2 outer v0 HU1 HU2 Ho1 Ho2 t v1 v2 H1 H2.
+  apply in_app_or in H1 as [H1 | H1]; apply in_app_or in H2 as [H2 | H2].
+  - eapply HU1; eauto.
+  - apply in_app_or in H2 as [H2 | [H2 | []]].
+    + eapply subpairs_disjoint_siblings; eauto.
+    + exfalso. injection H2 as <- _. apply Ho1. apply (in_map fst) in H1. exact H1.
+  - apply in_app_or in H1 as [H1 | [H1 | []]].
+    + symmetry. eapply subpairs_disjoint_siblings; eauto.
+    + exfalso. injection H1 as <- _. apply Ho1. apply (in_map fst) in H2. exact H2.
+  - apply in_app_or in H1 as [H1 | [H1 | []]]; apply in_app_or in H2 as [H2 | [H2 | []]].
+    + eapply HU2; eauto.
+    + exfalso. injection H2 as <- _. apply Ho2. apply (in_map fst) in H1. exact H1.
+    + exfalso. injection H1 as <- _. apply Ho2. apply (in_map fst) in H2. exact H2.
+    + congruence.
+Qed.
+
+Lemma combined_pairs_uniq3 : forall (sp1 sp2 sp3 : list (tm*tm)) (outer v0 : tm),
+  (forall t v1 v2, In (t,v1) sp1 -> In (t,v2) sp1 -> v1 = v2) ->
+  (forall t v1 v2, In (t,v1) sp2 -> In (t,v2) sp2 -> v1 = v2) ->
+  (forall t v1 v2, In (t,v1) sp3 -> In (t,v2) sp3 -> v1 = v2) ->
+  ~ In outer (map fst sp1) -> ~ In outer (map fst sp2) -> ~ In outer (map fst sp3) ->
+  forall t v1 v2, In (t,v1) (sp1 ++ sp2 ++ sp3 ++ [(outer,v0)])%list ->
+                  In (t,v2) (sp1 ++ sp2 ++ sp3 ++ [(outer,v0)])%list -> v1 = v2.
+Proof.
+  intros sp1 sp2 sp3 outer v0 HU1 HU2 HU3 Ho1 Ho2 Ho3 t v1 v2 H1 H2.
+  assert (Hdisj12 : forall t v1 v2, In (t,v1) sp1 -> In (t,v2) sp2 -> v1 = v2)
+    by (apply subpairs_disjoint_siblings).
+  assert (Hdisj13 : forall t v1 v2, In (t,v1) sp1 -> In (t,v2) sp3 -> v1 = v2)
+    by (apply subpairs_disjoint_siblings).
+  assert (Hdisj23 : forall t v1 v2, In (t,v1) sp2 -> In (t,v2) sp3 -> v1 = v2)
+    by (apply subpairs_disjoint_siblings).
+  apply in_app_or in H1 as [H1 | H1]; apply in_app_or in H2 as [H2 | H2].
+  - eapply HU1; eauto.
+  - apply in_app_or in H2 as [H2 | H2].
+    + eapply Hdisj12; eauto.
+    + apply in_app_or in H2 as [H2 | [H2 | []]].
+      * eapply Hdisj13; eauto.
+      * exfalso. injection H2 as <- _. apply Ho1. apply (in_map fst) in H1. exact H1.
+  - apply in_app_or in H1 as [H1 | H1].
+    + symmetry. eapply Hdisj12; eauto.
+    + apply in_app_or in H1 as [H1 | [H1 | []]].
+      * symmetry. eapply Hdisj13; eauto.
+      * exfalso. injection H1 as <- _. apply Ho1. apply (in_map fst) in H2. exact H2.
+  - apply in_app_or in H1 as [H1 | H1]; apply in_app_or in H2 as [H2 | H2].
+    + eapply HU2; eauto.
+    + apply in_app_or in H2 as [H2 | [H2 | []]].
+      * eapply Hdisj23; eauto.
+      * exfalso. injection H2 as <- _. apply Ho2. apply (in_map fst) in H1. exact H1.
+    + apply in_app_or in H1 as [H1 | [H1 | []]].
+      * symmetry. eapply Hdisj23; eauto.
+      * exfalso. injection H1 as <- _. apply Ho2. apply (in_map fst) in H2. exact H2.
+    + apply in_app_or in H1 as [H1 | [H1 | []]]; apply in_app_or in H2 as [H2 | [H2 | []]].
+      * eapply HU3; eauto.
+      * exfalso. injection H2 as <- _. apply Ho3. apply (in_map fst) in H1. exact H1.
+      * exfalso. injection H1 as <- _. apply Ho3. apply (in_map fst) in H2. exact H2.
+      * congruence.
+Qed.
+
+Fixpoint animation_soundness_witness_aux (depth : nat) {struct depth} :
+  forall (inputTm outputTm0 : tm), eval inputTm outputTm0 ->
+  exists pairs : list (tm * tm),
+    (forall p, In p pairs -> eval (fst p) (snd p)) /\
+    (forall t v1 v2, In (t,v1) pairs -> In (t,v2) pairs -> v1 = v2) /\
+    (forall n, n <= depth -> forall f',
+       (forall t v, In (t,v) pairs -> f' t = v) ->
+       evalTransparentSigma2AnimatedTopFn n (Success tm inputTm) f' = Success tm outputTm0).
+Proof.
+  intros inputTm outputTm0 D.
+  destruct depth as [| depth'].
+  { exists [(inputTm, outputTm0)].
+    split; [| split].
+    - intros p [Hp | []]. subst p. exact D.
+    - intros t v1 v2 [H1|[]] [H2|[]]. congruence.
+    - intros n Hn f' Hf'. assert (n = 0) by lia. subst n.
+      rewrite anim_0_oracle. rewrite (Hf' inputTm outputTm0 (or_introl eq_refl)).
+      reflexivity. }
+  destruct inputTm as [s | lx lT lbody | t1 t2 | | t | t | tdisc t1 t2 | fn T fbody].
+
+  - (* tvar *)
+    exfalso. inversion D.
+
+  - (* tabs *)
+    inversion D as [x0 T0 t0 Heq1 Heq2 | | | | | | | | ]; subst.
+    exists [(tabs lx lT lbody, tabs lx lT lbody)].
+    split; [| split].
+    + intros p [Hp | []]. subst p. apply E_Lam.
+    + intros t v1 v2 [H1|[]] [H2|[]]. congruence.
+    + intros n Hn f' Hf'.
+      assert (Hkey : f' (tabs lx lT lbody) = tabs lx lT lbody)
+        by (apply Hf'; left; reflexivity).
+      destruct n as [| [| n']].
+      * rewrite anim_0_oracle. rewrite Hkey. reflexivity.
+      * rewrite anim_1_oracle_f. rewrite Hkey. reflexivity.
+      * apply anim_S_tabs.
+
+  - (* tapp t1 t2 *)
+    inversion D as [| | | | | t1a t2a x T t3 v2 va Dconj | | | ]; subst.
+    destruct Dconj as [D1 [D2 D3]].
+    destruct (animation_soundness_witness_aux depth' t1 (tabs x T t3) D1) as [sp1 [HA1 [HU1 HB1]]].
+    destruct (animation_soundness_witness_aux depth' t2 v2 D2) as [sp2 [HA2 [HU2 HB2]]].
+    destruct (animation_soundness_witness_aux depth' (subst x v2 t3) outputTm0 D3) as [sp3 [HA3 [HU3 HB3]]].
+    exists (sp1 ++ sp2 ++ sp3 ++ [(tapp t1 t2, outputTm0)])%list.
+    split; [| split].
+    + intros p Hp. apply in_app_or in Hp as [Hp | Hp].
+      * apply HA1. exact Hp.
+      * apply in_app_or in Hp as [Hp | Hp].
+        -- apply HA2. exact Hp.
+        -- apply in_app_or in Hp as [Hp | [Hp | []]].
+           ++ apply HA3. exact Hp.
+           ++ subst p. eapply E_App. split; [exact D1 | split; [exact D2 | exact D3]].
+    + apply combined_pairs_uniq3;
+        [exact HU1 | exact HU2 | exact HU3
+        | apply subpairs_omit_outer | apply subpairs_omit_outer | apply subpairs_omit_outer].
+    + intros n Hn f' Hf'.
+      assert (HfSub1 : forall t' v, In (t',v) sp1 -> f' t' = v)
+        by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+      assert (HfSub2 : forall t' v, In (t',v) sp2 -> f' t' = v)
+        by (intros t' v Hv; apply Hf'; apply in_or_app; right; apply in_or_app; left; exact Hv).
+      assert (HfSub3 : forall t' v, In (t',v) sp3 -> f' t' = v)
+        by (intros t' v Hv; apply Hf'; apply in_or_app; right; apply in_or_app; right;
+            apply in_or_app; left; exact Hv).
+      assert (HfTop : f' (tapp t1 t2) = outputTm0)
+        by (apply Hf'; apply in_or_app; right; apply in_or_app; right; apply in_or_app;
+            right; left; reflexivity).
+      assert (HfSub3own : f' (subst x v2 t3) = outputTm0).
+      { assert (Hspec0 := HB3 0 ltac:(lia) f' HfSub3).
+        rewrite anim_0_oracle in Hspec0. injection Hspec0 as Hspec0'. exact Hspec0'. }
+      destruct n as [|[|[|[|[|[|[|n']]]]]]].
+      * rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+      * rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tapp 2 t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tapp 3 t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tapp 4 t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tapp 5 t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tapp 6 t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite anim_S_tapp.
+        destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift t1)) as [W1 HW1].
+        assert (HpushW1 : tmTransparentSigmaPushBody f' W1 = tabs x T t3).
+        { assert (Hspec := HB1 (S n') ltac:(lia) f' HfSub1).
+          assert (Hwrap := anim_wrap_eq (S n') t1 f' W1 HW1).
+          rewrite Hwrap in Hspec. injection Hspec as HB'. exact HB'. }
+        rewrite HW1.
+        destruct W1 as [s1|xw Tw t3w|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+          simpl in HpushW1; try discriminate.
+        -- (* W1 = tabs' xw Tw t3w : structural match *)
+           injection HpushW1 as HeqX HeqT Heqt3. subst xw.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift t2)) as [W2 HW2].
+           assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = v2).
+           { assert (Hspec2 := HB2 (S n') ltac:(lia) f' HfSub2).
+             assert (Hwrap2 := anim_wrap_eq (S n') t2 f' W2 HW2).
+             rewrite Hwrap2 in Hspec2. injection Hspec2 as HB2'. exact HB2'. }
+           rewrite HW2.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (substliftedFunc x W2 t3w))
+             as [X0 HX0].
+           rewrite HX0.
+           assert (HpushX0 : tmTransparentSigmaPushBody f' X0 = outputTm0).
+           { destruct (andb (tmChkNoExtraCstrs W2) (andb (tmChkNoExtraCstrs t3w) true)) eqn:Hchk.
+             - apply andb_prop in Hchk as [Hchk1 Hchk2]. apply andb_prop in Hchk2 as [Hchk2 _].
+               assert (Heq1 : substliftedFunc x W2 t3w = tmLift (subst x v2 t3)).
+               { unfold substliftedFunc. rewrite Hchk1, Hchk2.
+                 rewrite (tmPush_eq_plain f' W2 Hchk1) in HpushW2.
+                 rewrite (tmPush_eq_plain f' t3w Hchk2) in Heqt3.
+                 rewrite HpushW2, Heqt3. reflexivity. }
+               rewrite Heq1 in HX0.
+               assert (Hspec3 := HB3 (S n') ltac:(lia) f' HfSub3).
+               assert (Hwrap3 := anim_wrap_eq (S n') (subst x v2 t3) f' X0 HX0).
+               rewrite Hwrap3 in Hspec3. injection Hspec3 as HB3'. exact HB3'.
+             - unfold substliftedFunc in HX0. rewrite Hchk in HX0.
+               rewrite evalTop_substLifted_escape in HX0.
+               injection HX0 as <-.
+               cbn [tmTransparentSigmaPushBody].
+               rewrite Heqt3, HpushW2. exact HfSub3own. }
+           rewrite HpushX0. reflexivity.
+        -- (* W1 = evalremoveFnPosAn1 m1 : fallback to oracle *) rewrite HfTop. reflexivity.
+        -- (* W1 = substLiftedCstr : fallback to oracle *) rewrite HfTop. reflexivity.
+
+  - (* tzero *)
+    inversion D as [| | | | | | | | ]; subst.
+    exists [(tzero, tzero)].
+    split; [| split].
+    + intros p [Hp | []]. subst p. apply E_Zero.
+    + intros t v1 v2 [H1|[]] [H2|[]]. congruence.
+    + intros n Hn f' Hf'.
+      assert (Hkey : f' tzero = tzero) by (apply Hf'; left; reflexivity).
+      destruct n as [| [| [| n']]].
+      * rewrite anim_0_oracle. rewrite Hkey. reflexivity.
+      * rewrite anim_1_oracle_f. rewrite Hkey. reflexivity.
+      * rewrite (anim_below_thr_tzero 2 f' ltac:(lia)). rewrite Hkey. reflexivity.
+      * apply anim_S_tzero.
+
+  - (* tsucc t *)
+    inversion D as [| | t0 v0 D1 Heq1 Heq2 | | | | | | ]; subst.
+    destruct (animation_soundness_witness_aux depth' t v0 D1) as [subpairs [HA [HU HB]]].
+    exists (subpairs ++ [(tsucc t, tsucc v0)])%list.
+    split; [| split].
+    + intros p Hp. apply in_app_or in Hp as [Hp | [Hp | []]].
+      * apply HA. exact Hp.
+      * subst p. apply E_Succ. exact D1.
+    + apply combined_pairs_uniq; [exact HU | apply subpairs_omit_outer].
+    + intros n Hn f' Hf'.
+      assert (HfSub : forall t' v, In (t',v) subpairs -> f' t' = v)
+        by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+      assert (HfTop : f' (tsucc t) = tsucc v0)
+        by (apply Hf'; apply in_or_app; right; left; reflexivity).
+      destruct n as [| [| [| [| n']]]].
+      * rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+      * rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tsucc 2 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tsucc 3 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite anim_S_tsucc.
+        rewrite (HB (S n') ltac:(lia) f' HfSub).
+        reflexivity.
+  - (* tpred t *)
+    inversion D as [| | | t0 D1 | t0' v0 D1' | | | | ]; subst.
+    + (* E_PredZero: outputTm0 = tzero, D1 : eval t tzero *)
+      destruct (animation_soundness_witness_aux depth' t tzero D1) as [subpairs [HA [HU HB]]].
+      exists (subpairs ++ [(tpred t, tzero)])%list.
+      split; [| split].
+      * intros p Hp. apply in_app_or in Hp as [Hp | [Hp | []]].
+        -- apply HA. exact Hp.
+        -- subst p. apply E_PredZero. exact D1.
+      * apply combined_pairs_uniq; [exact HU | apply subpairs_omit_outer].
+      * intros n Hn f' Hf'.
+        assert (HfSub : forall t' v, In (t',v) subpairs -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+        assert (HfTop : f' (tpred t) = tzero)
+          by (apply Hf'; apply in_or_app; right; left; reflexivity).
+        destruct n as [|[|[|[|[|[|n']]]]]].
+        -- rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+        -- rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 2 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 3 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 4 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 5 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite anim_S_tpred.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n')) (tmLift t))
+             as [W1 HW1].
+           assert (HpushW1 : tmTransparentSigmaPushBody f' W1 = tzero).
+           { assert (Hspec := HB (S (S n')) ltac:(lia) f' HfSub).
+             assert (Hwrap := anim_wrap_eq (S (S n')) t f' W1 HW1).
+             rewrite Hwrap in Hspec.
+             injection Hspec as HB'. exact HB'. }
+           rewrite HW1.
+           destruct W1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+             simpl in HpushW1; try reflexivity; try discriminate;
+             destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift t))
+               as [W2 HW2];
+             assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = tzero) by
+               (assert (Hspec2 := HB (S n') ltac:(lia) f' HfSub);
+                assert (Hwrap2 := anim_wrap_eq (S n') t f' W2 HW2);
+                rewrite Hwrap2 in Hspec2; injection Hspec2 as HB2; exact HB2);
+             rewrite HW2;
+             destruct W2 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b3'|c1' c2' c3'|s3' ty3' b4'|m1'|s4' n1' n2'];
+               simpl in HpushW2; try discriminate; rewrite HfTop; reflexivity.
+    + (* E_PredSucc: outputTm0 is the predecessor's own value, D1' : eval t (tsucc outputTm0) *)
+      destruct (animation_soundness_witness_aux depth' t (tsucc outputTm0) D1') as [subpairs [HA [HU HB]]].
+      exists (subpairs ++ [(tpred t, outputTm0)])%list.
+      split; [| split].
+      * intros p Hp. apply in_app_or in Hp as [Hp | [Hp | []]].
+        -- apply HA. exact Hp.
+        -- subst p. apply E_PredSucc. exact D1'.
+      * apply combined_pairs_uniq; [exact HU | apply subpairs_omit_outer].
+      * intros n Hn f' Hf'.
+        assert (HfSub : forall t' v, In (t',v) subpairs -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+        assert (HfTop : f' (tpred t) = outputTm0)
+          by (apply Hf'; apply in_or_app; right; left; reflexivity).
+        destruct n as [|[|[|[|[|[|n']]]]]].
+        -- rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+        -- rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 2 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 3 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 4 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tpred 5 t f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite anim_S_tpred.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n')) (tmLift t))
+             as [W1 HW1].
+           assert (HpushW1 : tmTransparentSigmaPushBody f' W1 = tsucc outputTm0).
+           { assert (Hspec := HB (S (S n')) ltac:(lia) f' HfSub).
+             assert (Hwrap := anim_wrap_eq (S (S n')) t f' W1 HW1).
+             rewrite Hwrap in Hspec.
+             injection Hspec as HB'. exact HB'. }
+           rewrite HW1.
+           destruct W1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+             simpl in HpushW1; try discriminate;
+             destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift t))
+               as [W2 HW2];
+             assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = tsucc outputTm0) by
+               (assert (Hspec2 := HB (S n') ltac:(lia) f' HfSub);
+                assert (Hwrap2 := anim_wrap_eq (S n') t f' W2 HW2);
+                rewrite Hwrap2 in Hspec2; injection Hspec2 as HB2; exact HB2);
+             rewrite HW2;
+             destruct W2 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b3'|c1' c2' c3'|s3' ty3' b4'|m1'|s4' n1' n2'];
+               simpl in HpushW2; try discriminate; try (rewrite HfTop; reflexivity);
+               injection HpushW2 as HpushW2'; rewrite HpushW2'; reflexivity.
+  - (* tifz tdisc t1 t2 *)
+    inversion D as [| | | | | | t0 t1a t2a v0 Dconj | t0' vn0 t1b t2b v0b Dconjb | ]; subst;
+      [destruct Dconj as [D1 D2] | destruct Dconjb as [D1' D2']].
+    + (* E_IfzZero: D1 : eval tdisc tzero, D2 : eval t1 outputTm0 *)
+      destruct (animation_soundness_witness_aux depth' tdisc tzero D1) as [sp1 [HA1 [HU1 HB1]]].
+      destruct (animation_soundness_witness_aux depth' t1 outputTm0 D2) as [sp2 [HA2 [HU2 HB2]]].
+      exists (sp1 ++ sp2 ++ [(tifz tdisc t1 t2, outputTm0)])%list.
+      split; [| split].
+      * intros p Hp. apply in_app_or in Hp as [Hp | Hp].
+        -- apply HA1. exact Hp.
+        -- apply in_app_or in Hp as [Hp | [Hp | []]].
+           ++ apply HA2. exact Hp.
+           ++ subst p. eapply E_IfzZero. split; [exact D1 | exact D2].
+      * apply combined_pairs_uniq2; [exact HU1 | exact HU2 | apply subpairs_omit_outer | apply subpairs_omit_outer].
+      * intros n Hn f' Hf'.
+        assert (HfSub1 : forall t' v, In (t',v) sp1 -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+        assert (HfSub2 : forall t' v, In (t',v) sp2 -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; right; apply in_or_app; left; exact Hv).
+        assert (HfTop : f' (tifz tdisc t1 t2) = outputTm0)
+          by (apply Hf'; apply in_or_app; right; apply in_or_app; right; left; reflexivity).
+        destruct n as [|[|[|[|[|[|[|[|[|n']]]]]]]]].
+        -- rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+        -- rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 2 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 3 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 4 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 5 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 6 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 7 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 8 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite anim_S_tifz.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n')) (tmLift tdisc))
+             as [W1 HW1].
+           assert (HpushW1 : tmTransparentSigmaPushBody f' W1 = tzero).
+           { assert (Hspec := HB1 (S (S n')) ltac:(lia) f' HfSub1).
+             assert (Hwrap := anim_wrap_eq (S (S n')) tdisc f' W1 HW1).
+             rewrite Hwrap in Hspec. injection Hspec as HB'. exact HB'. }
+           rewrite HW1.
+           destruct W1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+             simpl in HpushW1; try discriminate.
+           ++ (* W1 = tzero' : structural match, must also resolve t1's dispatch *)
+              destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n')) (tmLift t1))
+                as [X1 HX1].
+              assert (HpushX1 : tmTransparentSigmaPushBody f' X1 = outputTm0).
+              { assert (Hspec := HB2 (S (S n')) ltac:(lia) f' HfSub2).
+                assert (Hwrap := anim_wrap_eq (S (S n')) t1 f' X1 HX1).
+                rewrite Hwrap in Hspec. injection Hspec as HB2'. exact HB2'. }
+              rewrite HX1. rewrite HpushX1. reflexivity.
+           ++ (* W1 = evalremoveFnPosAn1 : outer fell to escape, must resolve inner match *)
+              destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift tdisc))
+                as [W2 HW2].
+              assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = tzero).
+              { assert (Hspec2 := HB1 (S n') ltac:(lia) f' HfSub1).
+                assert (Hwrap2 := anim_wrap_eq (S n') tdisc f' W2 HW2).
+                rewrite Hwrap2 in Hspec2. injection Hspec2 as HB2''. exact HB2''. }
+              rewrite HW2.
+              destruct W2 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b3'|c1' c2' c3'|s3' ty3' b4'|m1'|s4' n1' n2'];
+                simpl in HpushW2; try discriminate; rewrite HfTop; reflexivity.
+           ++ (* W1 = substLiftedCstr : same as evalremoveFnPosAn1 case *)
+              destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift tdisc))
+                as [W2 HW2].
+              assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = tzero).
+              { assert (Hspec2 := HB1 (S n') ltac:(lia) f' HfSub1).
+                assert (Hwrap2 := anim_wrap_eq (S n') tdisc f' W2 HW2).
+                rewrite Hwrap2 in Hspec2. injection Hspec2 as HB2''. exact HB2''. }
+              rewrite HW2.
+              destruct W2 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b3'|c1' c2' c3'|s3' ty3' b4'|m1'|s4' n1' n2'];
+                simpl in HpushW2; try discriminate; rewrite HfTop; reflexivity.
+    + (* E_IfzSucc: D1' : eval tdisc (tsucc vn0), D2' : eval t2 outputTm0 *)
+      destruct (animation_soundness_witness_aux depth' tdisc (tsucc vn0) D1') as [sp1 [HA1 [HU1 HB1]]].
+      destruct (animation_soundness_witness_aux depth' t2 outputTm0 D2') as [sp2 [HA2 [HU2 HB2]]].
+      exists (sp1 ++ sp2 ++ [(tifz tdisc t1 t2, outputTm0)])%list.
+      split; [| split].
+      * intros p Hp. apply in_app_or in Hp as [Hp | Hp].
+        -- apply HA1. exact Hp.
+        -- apply in_app_or in Hp as [Hp | [Hp | []]].
+           ++ apply HA2. exact Hp.
+           ++ subst p. eapply E_IfzSucc. split; [exact D1' | exact D2'].
+      * apply combined_pairs_uniq2; [exact HU1 | exact HU2 | apply subpairs_omit_outer | apply subpairs_omit_outer].
+      * intros n Hn f' Hf'.
+        assert (HfSub1 : forall t' v, In (t',v) sp1 -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+        assert (HfSub2 : forall t' v, In (t',v) sp2 -> f' t' = v)
+          by (intros t' v Hv; apply Hf'; apply in_or_app; right; apply in_or_app; left; exact Hv).
+        assert (HfTop : f' (tifz tdisc t1 t2) = outputTm0)
+          by (apply Hf'; apply in_or_app; right; apply in_or_app; right; left; reflexivity).
+        destruct n as [|[|[|[|[|[|[|[|[|n']]]]]]]]].
+        -- rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+        -- rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 2 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 3 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 4 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 5 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 6 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 7 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite (anim_below_thr_tifz 8 tdisc t1 t2 f' ltac:(lia)). rewrite HfTop. reflexivity.
+        -- rewrite anim_S_tifz.
+           destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n')) (tmLift tdisc))
+             as [W1 HW1].
+           assert (HpushW1 : tmTransparentSigmaPushBody f' W1 = tsucc vn0).
+           { assert (Hspec := HB1 (S (S n')) ltac:(lia) f' HfSub1).
+             assert (Hwrap := anim_wrap_eq (S (S n')) tdisc f' W1 HW1).
+             rewrite Hwrap in Hspec. injection Hspec as HB'. exact HB'. }
+           rewrite HW1.
+           destruct W1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+             simpl in HpushW1; try discriminate;
+             destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift tdisc))
+               as [W2 HW2];
+             assert (HpushW2 : tmTransparentSigmaPushBody f' W2 = tsucc vn0) by
+               (assert (Hspec2 := HB1 (S n') ltac:(lia) f' HfSub1);
+                assert (Hwrap2 := anim_wrap_eq (S n') tdisc f' W2 HW2);
+                rewrite Hwrap2 in Hspec2; injection Hspec2 as HB2''; exact HB2'');
+             rewrite HW2;
+             destruct W2 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b3'|c1' c2' c3'|s3' ty3' b4'|m1'|s4' n1' n2'];
+               simpl in HpushW2; try discriminate; try (rewrite HfTop; reflexivity);
+               destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n') (tmLift t2))
+                 as [X2 HX2];
+               assert (HpushX2 : tmTransparentSigmaPushBody f' X2 = outputTm0) by
+                 (assert (Hspec3 := HB2 (S n') ltac:(lia) f' HfSub2);
+                  assert (Hwrap3 := anim_wrap_eq (S n') t2 f' X2 HX2);
+                  rewrite Hwrap3 in Hspec3; injection Hspec3 as HB3; exact HB3);
+               rewrite HX2; rewrite HpushX2; reflexivity.
+  - (* tfix fn T fbody *)
+    inversion D as [| | | | | | | | f0 T0 t0 v0 D1 Heq1 Heq2]; subst.
+    destruct (animation_soundness_witness_aux depth' (subst fn (tfix fn T fbody) fbody) outputTm0 D1)
+      as [subpairs [HA [HU HB]]].
+    exists (subpairs ++ [(tfix fn T fbody, outputTm0)])%list.
+    split; [| split].
+    + intros p Hp. apply in_app_or in Hp as [Hp | [Hp | []]].
+      * apply HA. exact Hp.
+      * subst p. apply E_Fix. exact D1.
+    + apply combined_pairs_uniq; [exact HU | apply subpairs_omit_outer].
+    + intros n Hn f' Hf'.
+      assert (HfSub : forall t' v, In (t',v) subpairs -> f' t' = v)
+        by (intros t' v Hv; apply Hf'; apply in_or_app; left; exact Hv).
+      assert (HfTop : f' (tfix fn T fbody) = outputTm0)
+        by (apply Hf'; apply in_or_app; right; left; reflexivity).
+      destruct n as [| [| [| [| [| [| [| [| [| [| n']]]]]]]]]].
+      * rewrite anim_0_oracle. rewrite HfTop. reflexivity.
+      * rewrite anim_1_oracle_f. rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 2 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 3 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 4 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 5 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 6 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 7 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 8 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite (anim_below_thr_tfix 9 fn T fbody f' ltac:(lia)). rewrite HfTop. reflexivity.
+      * rewrite anim_S_tfix.
+        rewrite (HB (S n') ltac:(lia) f' HfSub).
+        reflexivity.
+Qed.
+
+
+Lemma override_list_hit : forall base pairs t0 v0,
+  In (t0, v0) pairs ->
+  (forall t v1 v2, In (t, v1) pairs -> In (t, v2) pairs -> v1 = v2) ->
+  override_list base pairs t0 = v0.
+Proof.
+  induction pairs as [| [t1 v1] rest IH]; intros t0 v0 Hin Huniq.
+  - destruct Hin.
+  - simpl. destruct (tm_eq_dec t0 t1) as [Heq | Hneq].
+    + subst t1. destruct Hin as [Heq2 | Hin2].
+      * injection Heq2 as <-. reflexivity.
+      * eapply Huniq; [left; reflexivity | right; exact Hin2].
+    + destruct Hin as [Heq2 | Hin2].
+      * injection Heq2 as Ht Hv. congruence.
+      * apply IH.
+        -- exact Hin2.
+        -- intros t va vb Hva Hvb. eapply Huniq; [right; exact Hva | right; exact Hvb].
+Qed.
+
+Theorem animation_soundness_partialRel_exist :
+  forall (inputTm : tm) (n : nat),
+  (exists outputTm' : tm, eval inputTm outputTm') ->
+  exists (f : tm -> tm),
+    (forall tm1 : tm, (exists tm2 : tm, eval tm1 tm2) -> eval tm1 (f tm1)) /\
+    (forall outputTm : tm,
+      (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
+      eval inputTm outputTm).
+Proof.
+  intros inputTm n [outputTm0 D].
+  destruct (animation_soundness_witness_aux n inputTm outputTm0 D) as [pairs [HA [HU HB]]].
+  exists (override_list globalChoice pairs).
+  split.
+  - intros tm1 Hex. apply override_list_sound.
+    + exact globalChoice_sound.
+    + intros t v Hin. exact (HA (t,v) Hin).
+    + exact Hex.
+  - intros outputTm Hanim.
+    assert (Hf' : forall t v, In (t,v) pairs -> override_list globalChoice pairs t = v).
+    { intros t v Hin. apply (override_list_hit globalChoice pairs t v Hin HU). }
+    assert (Hspec := HB n (le_n n) (override_list globalChoice pairs) Hf').
+    rewrite Hanim in Hspec. injection Hspec as <-. exact D.
+Qed.
+
+
+
 
 (*
 Theorem animation_soundness_TotalRel : (forall (inputTm' : tm), (exists outputTm' : tm, eval inputTm' outputTm')) -> 
