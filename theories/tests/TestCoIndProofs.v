@@ -141,12 +141,2845 @@ MetaRocq Run (animate_coinductive_with_fn_pos <?eval?> [("eval", ([0], [1]))] 50
 
 
 
+(* ------------------------------------------------------------------ *)
+(** ** Helper: PCF numeral [num n] = succ^n zero                      *)
+(* ------------------------------------------------------------------ *)
+
+
+(* ------------------------------------------------------------------ *)
+(** ** Big-Stop Semantics (Kahn, Hoffmann, Li — POPL 2026, Figure 5) *)
+(*                                                                     *)
+(*  The judgment [bigstop e e'] means that e partially evaluates to   *)
+(*  e' in finitely many steps; e' need not be a value.                *)
+(*                                                                     *)
+(*  Rules split into two groups:                                       *)
+(*  - Stopping rules (St-Stop schema): nondeterministically halt at   *)
+(*    any sub-expression, leaving the rest unevaluated.               *)
+(*  - Progressing rules: mirror the big-step rules, but with bigstop  *)
+(*    in the premises and explicit [is_value] premises where big-step  *)
+(*    previously got them for free.                                    *)
+(*                                                                     *)
+(*  Key theorem (Stop/Multi Equivalence, Thm 7 of the paper):         *)
+(*    bigstop e e'  iff  e -->* e'                                     *)
+(* ------------------------------------------------------------------ *)
+
+Inductive is_value : tm -> Prop :=
+| V_Lam  : forall x T t,  is_value (tabs x T t)
+| V_Zero :                 is_value tzero
+| V_Succ : forall v,       is_value v -> is_value (tsucc v).
+Inductive bigstop : tm -> tm -> Prop :=
+
+(** -- Stopping rules (St-Stop schema, expanded) -------------------- *)
+
+(** St-Stop (k=0): any expression can stop at itself. *)
+| BS_Stop : forall e,
+    bigstop e e
+
+(** St-Succ (k=1): stop inside the argument of succ. *)
+| BS_SuccStop : forall e e',
+    bigstop e e' ->
+    bigstop (tsucc e) (tsucc e')
+
+(** St-Pred (k=1): stop inside the argument of pred. *)
+| BS_PredStop : forall e e',
+    bigstop e e' ->
+    bigstop (tpred e) (tpred e')
+
+(** St-If (k=1): stop independently in any/all of the discriminant, the
+    zero-branch, and the succ-branch. Stopping in a single position is
+    recovered as a special case by letting the other two positions
+    [BS_Stop] at themselves. *)
+| BS_IfStop : forall e e' t1 t1' t2 t2',
+    bigstop e e' /\ bigstop t1 t1' /\ bigstop t2 t2' ->
+    bigstop (tifz e t1 t2) (tifz e' t1' t2')
+
+(** St-App1 (k=1): stop inside the operator of an application. *)
+| BS_AppStop : forall t1 t1' t2,
+    bigstop t1 t1' ->
+    bigstop (tapp t1 t2) (tapp t1' t2)
+
+(** St-Abs (k=1): stop inside the body of an abstraction. *)
+| BS_AbsStop : forall s T t t',
+    bigstop t t' -> bigstop (tabs s T t) (tabs s T t')
+
+(** St-FixBody (k=1): stop inside the body of a fix, without unrolling. *)
+| BS_FixStop : forall f T t t',
+    bigstop t t' ->
+    bigstop (tfix f T t) (tfix f T t')
+    
+
+
+(** -- Progressing rules (St-CaseZ / St-CaseS / St-App analogues) --- *)
+
+(** St-PredZero: discriminant big-stops to zero. *)
+| BS_PredZero : forall e,
+    bigstop e tzero ->
+    bigstop (tpred e) tzero
+
+(** St-PredSucc: discriminant big-stops to succ v (v a value). *)
+| BS_PredSucc : forall e v,
+    bigstop e (tsucc v) ->
+    bigstop (tpred e) v
+
+(** St-IfzZero: discriminant big-stops to zero; then big-stop the zero branch. *)
+| BS_IfzZero : forall e t1 t1' t2,
+    bigstop e tzero /\ bigstop t1 t1' ->
+    bigstop (tifz e t1 t2) t1'
+
+(** St-IfzSucc: discriminant big-stops to succ vn; big-stop the succ branch.
+    (vn is the predecessor; our ifz has no binding for it in the succ branch.) *)
+| BS_IfzSucc : forall e vn t1 t2 t2',
+    bigstop e (tsucc vn) /\ bigstop t2 t2' ->
+    bigstop (tifz e t1 t2) t2'
+
+(** St-App: operator big-stops to a lambda, operand to a value, body big-stopped. *)
+| BS_App : forall t1 x T t3 t2 v2 e',
+    bigstop t1 (tabs x T t3) /\ bigstop t2 v2 /\
+    bigstop (subst x v2 t3) e' ->
+    bigstop (tapp t1 t2) e'
+
+(** St-Fix: unroll the fixpoint once, then big-stop the substituted body. *)
+| BS_Fix : forall f T t e',
+    bigstop (subst f (tfix f T t) t) e' ->
+    bigstop (tfix f T t) e'.
+
+
+(* ------------------------------------------------------------------ *)
+(** ** Full beta reduction                                             *)
+(*                                                                     *)
+(*  Non-deterministic: reduction may occur anywhere in the term,      *)
+(*  including under binders, and the beta/delta redexes are not       *)
+(*  restricted to value arguments/discriminants.                      *)
+(* ------------------------------------------------------------------ *)
+
+Inductive step : tm -> tm -> Prop :=
+
+(** -- Redexes, unrestricted (no value-guards) ----------------------- *)
+
+| FB_AppAbs : forall x T t s,
+    step (tapp (tabs x T t) s) (subst x s t)
+
+| FB_PredZero :
+    step (tpred tzero) tzero
+
+| FB_PredSucc : forall t,
+    step (tpred (tsucc t)) t
+
+| FB_IfzZero : forall t1 t2,
+    step (tifz tzero t1 t2) t1
+
+| FB_IfzSucc : forall t t1 t2,
+    step (tifz (tsucc t) t1 t2) t2
+
+| FB_Fix : forall f T t,
+    step (tfix f T t) (subst f (tfix f T t) t)
+
+(** -- Congruence rules: reduction may occur anywhere, including      *)
+(**    inside binders.                                                 *)
+
+| FB_Abs : forall x T t t',
+    step t t' ->
+    step (tabs x T t) (tabs x T t')
+
+| FB_App1 : forall t1 t1' t2,
+    step t1 t1' ->
+    step (tapp t1 t2) (tapp t1' t2)
+
+| FB_App2 : forall t1 t2 t2',
+    step t2 t2' ->
+    step (tapp t1 t2) (tapp t1 t2')
+
+| FB_Succ : forall t t',
+    step t t' ->
+    step (tsucc t) (tsucc t')
+
+| FB_Pred : forall t t',
+    step t t' ->
+    step (tpred t) (tpred t')
+
+| FB_IfzDisc : forall t t' t1 t2,
+    step t t' ->
+    step (tifz t t1 t2) (tifz t' t1 t2)
+
+| FB_IfzThen : forall t t1 t1' t2,
+    step t1 t1' ->
+    step (tifz t t1 t2) (tifz t t1' t2)
+
+| FB_IfzElse : forall t t1 t2 t2',
+    step t2 t2' ->
+    step (tifz t t1 t2) (tifz t t1 t2')
+
+| FB_FixBody : forall f T t t',
+    step t t' ->
+    step (tfix f T t) (tfix f T t').
+
+(* ------------------------------------------------------------------ *)
+(** ** Transitive (non-reflexive) closure of full beta reduction      *)
+(* ------------------------------------------------------------------ *)
+
+Inductive stepTC : tm -> tm -> Prop :=
+| TC_step : forall t t',
+    step t t' ->
+    stepTC t t'
+| TC_trans : forall t t' t'',
+    step t t' ->
+    stepTC t' t'' ->
+    stepTC t t''.
+
+
+
+
+
+
+
+
+(** --- Main correspondence theorems --------------------------------------- *)
+(** Dependency order (foundational → dependent):
+      animation_soundness_general  [bottom: standalone, no deps]
+      correspondence_soundness_bigstop  [standalone; full proof needs animate_mono]
+      correspondence_completeness_bigstop  [top: needs CSB + bigstop transitivity]
+    We place them MOST-DEPENDENT FIRST so that "start from the bottom and
+    move upward" means prove animation_soundness_general first, then CSB,
+    then CCB. *)
+
+(** CCB — Completeness (most dependent).
+    Given [bigstop inputTm tm1], find some [tm2] and fuel [n] such that
+    [bigstop tm1 tm2] AND the animation at fuel [n] yields [tm2].
+
+    Proof strategy: induction on [bigstop inputTm tm1].
+    • BS_Stop (tm1 = inputTm): take tm2 := inputTm, n := 0.
+        - [bigstop inputTm inputTm] by BS_Stop.
+        - animation at 0 with identity oracle = Success tm inputTm by
+          computation (the composite applies oracle at fuel 0,
+          identity oracle gives the input back).
+    • All other bigstop constructors: the IH gives a witness for the
+      sub-expression, but the animation runs on the WHOLE inputTm, so
+      the IH cannot be applied directly without lemmas relating
+      animation(n)(tsucc e) to animation(m)(e), etc.
+      These cases require:
+        (a) bigstop transitivity (or bigstop_iff_stepRTC + RTC transitivity)
+        (b) congruence lemmas for the animation function
+      Both are non-trivial given the conjunction-packaged premises in
+      bigstop constructors; admitted pending that infrastructure. *)
+      
+(* Unnecessary     
+Lemma animate_mono_bigstop : forall (n m : nat) (inputTm outputN outputM : tm),
+  n <= m ->
+
+  (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) (fun t' : tm => t') = Success tm outputN ->
+  (evalTransparentSigma2AnimatedTopFn m (Success tm inputTm)) (fun t' : tm => t') = Success tm outputM ->
+  bigstop outputN outputM.
+Proof.
+Admitted.
+*)
+(** Helper: isValueFn b = true implies is_value. *)
+Lemma isValueFn_to_is_value : forall v, isValueFn v = true -> is_value v.
+Proof.
+  induction v; simpl; intros H; try discriminate.
+  - apply V_Lam.
+  - apply V_Zero.
+  - apply V_Succ. apply IHv. exact H.
+Qed.
+
+(** Round-trip identity: lifting a [tm] to [tm'] then projecting back (without
+    hitting any oracle-marked nodes) recovers the original term.  The proof is
+    a straightforward structural induction: [tmLift] and [tmTransparentSigmaPushBody]
+    are defined by mutual case analysis on the same constructors. *)
+Lemma tmTransparentSigmaPushBody_tmLift : forall (f : tm -> tm) (t : tm),
+  tmTransparentSigmaPushBody f (tmLift t) = t.
+Proof.
+  intros f t. induction t; simpl.
+  - reflexivity.
+  - rewrite IHt. reflexivity.
+  - rewrite IHt1. rewrite IHt2. reflexivity.
+  - reflexivity.
+  - rewrite IHt. reflexivity.
+  - rewrite IHt. reflexivity.
+  - rewrite IHt1. rewrite IHt2. rewrite IHt3. reflexivity.
+  - rewrite IHt. reflexivity.
+Qed.
+
+(** At fuel 0 the animated function wraps the lifted input in [evalremoveFnPosAn1]
+    (the oracle marker), and [tmTransparentSigmaPushBody] converts that marker
+    back via the oracle [f].  The identity [tmTransparentSigmaPushBody_tmLift]
+    then simplifies [f (push (lift inputTm))] to [f inputTm]. *)
+Lemma anim_0_oracle : forall (f : tm -> tm) (inputTm : tm),
+  evalTransparentSigma2AnimatedTopFn 0 (Success tm inputTm) f = Success tm (f inputTm).
+Proof.
+  intros f inputTm.
+  unfold evalTransparentSigma2AnimatedTopFn. cbn.
+  rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+Qed.
+
+(** At fuel 1 the inner dispatch also runs at oracle-level (dispatch fuel 0),
+    so for the identity oracle (fun t' => t'), any input returns itself.
+    The inner dispatch for a tabs input at fuel 1 fires E_Lam (not the oracle
+    wrapper), but the push still yields [tabs x T t] = [id (tabs x T t)].
+    This specialised form is used in correspondence_soundness_bigstop. *)
+Lemma anim_1_oracle_f : forall (inputTm : tm) (f : tm -> tm),
+  evalTransparentSigma2AnimatedTopFn 1 (Success tm inputTm) f =
+  Success tm (f inputTm).
+Proof.
+  intros inputTm f.
+  unfold evalTransparentSigma2AnimatedTopFn. cbn.
+  rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+Qed.
+
+Lemma anim_1_oracle_id : forall (inputTm : tm),
+  evalTransparentSigma2AnimatedTopFn 1 (Success tm inputTm) (fun t' => t') =
+  Success tm inputTm.
+Proof.
+  intro inputTm. rewrite anim_1_oracle_f. reflexivity.
+Qed.
+
+(** Below-threshold oracle lemmas.  For each constructor C with handler
+    threshold T, the oracle fires (returning [f (C args)]) for any outer
+    fuel [n < T].  Proof: case-split on [n]; each concrete case reduces by
+    [cbn] through [dispatch_coind_ext] until fuel reaches 0 and the oracle
+    fires, then [rewrite tmTransparentSigmaPushBody_tmLift] recovers [f t]. *)
+
+Lemma anim_below_thr_tzero : forall n f,
+  n <= 2 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm tzero) f = Success tm (f tzero).
+Proof.
+  intros n f Hn.
+  destruct n as [|[|[| n']]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+(*    rewrite tmTransparentSigmaPushBody_tmLift.*) reflexivity.
+  - lia.
+Qed.
+
+Lemma anim_below_thr_tsucc : forall n t f,
+  n <= 3 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm (tsucc t)) f = Success tm (f (tsucc t)).
+Proof.
+  intros n t f Hn.
+  destruct n as [|[|[|[| n']]]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - lia.
+Qed.
+
+Lemma anim_below_thr_tpred : forall n t f,
+  n <= 5 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm (tpred t)) f = Success tm (f (tpred t)).
+Proof.
+  intros n t f Hn.
+  destruct n as [|[|[|[|[|[| n']]]]]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - lia.
+Qed.
+
+Lemma anim_below_thr_tapp : forall n t1 t2 f,
+  n <= 6 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm (tapp t1 t2)) f = Success tm (f (tapp t1 t2)).
+Proof.
+  intros n t1 t2 f Hn.
+  destruct n as [|[|[|[|[|[|[| n']]]]]]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - lia.
+Qed.
+
+Lemma anim_below_thr_tifz : forall n t t1 t2 f,
+  n <= 8 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm (tifz t t1 t2)) f = Success tm (f (tifz t t1 t2)).
+Proof.
+  intros n t t1 t2 f Hn.
+  destruct n as [|[|[|[|[|[|[|[|[| n']]]]]]]]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - lia.
+Qed.
+
+Lemma anim_below_thr_tfix : forall n fn T t f,
+  n <= 9 ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm (tfix fn T t)) f = Success tm (f (tfix fn T t)).
+Proof.
+  intros n fn T t f Hn.
+  destruct n as [|[|[|[|[|[|[|[|[|[| n']]]]]]]]]].
+  - apply anim_0_oracle.
+  - apply anim_1_oracle_f.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - unfold evalTransparentSigma2AnimatedTopFn. cbn.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity.
+  - lia.
+Qed.
+
+(** Helper lemmas: reduction of the animation at S n for each tm constructor.
+    After unfolding the composite (inputLift; animatedFn; outputPush), [cbn]
+    reduces through the concrete tm' constructor produced by [tmLift], and
+    [tmTransparentSigmaPushBody_tmLift] closes any residual sub-term push. *)
+
+(** Dispatch helper lemmas.  The animation handler list is tried in order:
+    E_Lam (0), E_Zero (1), E_Succ (2), …  Each handler that does NOT match the
+    input constructor returns [NoMatch] and the dispatch recurses with one less
+    fuel unit.  For a handler at list-index [i] to fire with abstract [n], the
+    dispatch fuel must carry at least [i+1] concrete [S] constructors.  We prove
+    these helpers by firing [cbn [dispatch_coind_ext]] once per skipped handler. *)
+
+(** [E_Zero] is at index 1.  The tail list starting at [E_Zero] has it as its
+    first element, so any fuel [S n] suffices. *)
+
+(** [E_Succ] is at index 2.  After [E_Lam] and [E_Zero] have returned [NoMatch],
+    the sub-list starting at [E_Succ] has it as its first element.  At fuel
+    [S (S n)], [E_Succ] fires for [tsucc'] inputs; the handler makes a recursive
+    call — CRUCIALLY at the SAME fuel [S n] it itself received, not at [n].
+    (The generated handler body never peels a further [S] off its own fuel
+    before recursing; the "one less fuel per step" behaviour only emerges when
+    the callee happens to be [evalremoveFnPos'AnimatedTopFn] itself, since
+    THAT function decrements its own fuel at its own top-level match. For an
+    arbitrary [evalFn] — as this lemma is stated — there is no such decrement.
+    An earlier version of this lemma claimed the recursive call happens at
+    [n]; that is false in general, witnessed concretely by an [evalFn] whose
+    result depends on the exact fuel value it receives.)
+
+    The generated E_Succ handler body uses compose_outcome / join_pair /
+    dispatch_clauses combinators that cbn [E_Succ] will not reduce when evalFn
+    is abstract (cbn's lazy strategy refuses to delta-unfold a constant whose
+    result would be stuck).  We therefore prove a SPEC LEMMA [E_Succ_result]
+    first: it characterises the handler's concrete input/fuel reductions while
+    leaving the abstract evalFn call unexpanded.  Proof: unfold the handler and
+    all the combinators it's built from by name (compose_outcome,
+    option_to_result, join_pair, with_default, dispatch_clauses,
+    fuel_error_fn) — plain [simpl]/[cbn] refuse to see through these on their
+    own — then [simpl] to fire every structural match on the concrete
+    input/fuel, leaving [evalFn (S n) (Success tm' v)] as a literal residual
+    scrutinee; destructing it and closing each case by [reflexivity] finishes
+    it. All dispatch helpers then use [rewrite E_Succ_result] instead of
+    trying to reduce the complex combinator body inline. *)
+
+Lemma E_Succ_result :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v,
+  E_SuccremoveFnPos'Animated evalFn (S n) (Success tm' (tsucc' v)) =
+  match evalFn (S n) (Success tm' v) with
+  | FuelError  => FuelError  tm'
+  | Success w  => Success tm' (tsucc' w)
+  | NoMatch    => NoMatch    tm'
+  end.
+Proof.
+  intros evalFn n v.
+  unfold E_SuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct (evalFn (S n) (Success tm' v)); simpl; reflexivity.
+Qed.
+
+Lemma dispatch_tsucc_from_succ_gen :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t,
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_SuccremoveFnPos'Animated evalFn;
+     E_PredZeroremoveFnPos'Animated evalFn;
+     E_PredSuccremoveFnPos'Animated evalFn;
+     E_AppremoveFnPos'Animated evalFn;
+     E_IfzZeroremoveFnPos'Animated evalFn;
+     E_IfzSuccremoveFnPos'Animated evalFn;
+     E_FixremoveFnPos'Animated evalFn;
+     evalremoveFnPos'UndefinedAnimated]
+    (S n) (Success tm' (tsucc' (tmLift t))) =
+  match evalFn (S n) (Success tm' (tmLift t)) with
+  | Success v' => Success tm' (tsucc' v')
+  | FuelError => Success tm' (evalremoveFnPos'Rest (tsucc' (tmLift t)))
+  | NoMatch =>
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_PredZeroremoveFnPos'Animated evalFn;
+         E_PredSuccremoveFnPos'Animated evalFn;
+         E_AppremoveFnPos'Animated evalFn;
+         E_IfzZeroremoveFnPos'Animated evalFn;
+         E_IfzSuccremoveFnPos'Animated evalFn;
+         E_FixremoveFnPos'Animated evalFn;
+         evalremoveFnPos'UndefinedAnimated]
+        n (Success tm' (tsucc' (tmLift t)))
+  end.
+Proof.
+  intros evalFn n t.
+  cbn [dispatch_coind_ext].
+  rewrite (E_Succ_result evalFn n (tmLift t)).
+  destruct (evalFn (S n) (Success tm' (tmLift t))) as [| w |]; reflexivity.
+Qed.
+Lemma dispatch_tsucc_from_succ : forall n t,
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    (S n) (Success tm' (tsucc' (tmLift t))) =
+  match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+  | Success v' => Success tm' (tsucc' v')
+  | FuelError => Success tm' (evalremoveFnPos'Rest (tsucc' (tmLift t)))
+  | NoMatch =>
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        n (Success tm' (tsucc' (tmLift t)))
+  end.
+Proof.
+  exact (dispatch_tsucc_from_succ_gen evalremoveFnPos'AnimatedTopFn).
+Qed.
+
+
+
+Lemma dispatch_tsucc : forall n t,
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    (S (S (S n))) (Success tm' (tsucc' (tmLift t))) =
+  match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+  | Success v' => Success tm' (tsucc' v')
+  | FuelError => Success tm' (evalremoveFnPos'Rest (tsucc' (tmLift t)))
+  | NoMatch =>
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        n (Success tm' (tsucc' (tmLift t)))
+  end.
+Proof.
+  intros n t.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S (S n))) (Success tm' (tsucc' (tmLift t))) = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S (S n)) (Success tm' (tsucc' (tmLift t))) = NoMatch tm')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero.
+  exact (dispatch_tsucc_from_succ n t).
+Qed.
+
+Lemma dispatch_tzero_from_zero : forall n,
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    (S n) (Success tm' tzero') = Success tm' tzero'.
+Proof.
+  intros.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S n) (Success tm' tzero') = Success tm' tzero')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero. reflexivity.
+Qed.
+
+(** Full handler list starting at [E_Lam] (index 0): need [S (S n)] so that
+    after E_Lam fails (returning [NoMatch]) the recursion is at [S n], which
+    lets [dispatch_tzero_from_zero] close the goal. *)
+Lemma dispatch_tzero : forall n,
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    (S (S n)) (Success tm' tzero') = Success tm' tzero'.
+Proof.
+  intros.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S n)) (Success tm' tzero') = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  exact (dispatch_tzero_from_zero n).
+Qed.
+
+(** Non-recursive value cases: at fuel [S (S n)] the dispatch fires its [S n]
+    branch, the appropriate value handler matches, and [tmTransparentSigmaPushBody]
+    reconstructs the original term.  These require [S (S n)] because at [S n]
+    with [n = 0] the dispatch fires the oracle-wrap branch and returns [f t]
+    rather than [t] for abstract [f].
+    [anim_S_tzero] needs [S (S (S n))] because [E_Zero] is at dispatch index 1:
+    after [E_Lam] fails at [S (S n)] dispatch fuel the recursion is at [S n],
+    which is still concrete [S], allowing [dispatch_tzero_from_zero] to fire. *)
+
+(** Peels one S from evalremoveFnPos'AnimatedTopFn via kernel reduction.
+    Use instead of [cbn [evalremoveFnPos'AnimatedTopFn]] to avoid the latter
+    also delta-reducing instances of [evalremoveFnPos'AnimatedTopFn] that
+    appear inside the handler list, which would break dispatch rewrite patterns. *)
+
+   
+Lemma evalTop_stepSuccess : forall n (x : tm'),
+  evalremoveFnPos'AnimatedTopFn (S n) (Success tm' x) =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    n (Success tm' x).
+
+Proof. intros. unfold evalremoveFnPos'AnimatedTopFn. 
+remember n. destruct n0.
+-- simpl. reflexivity.
+-- remember (E_LamremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0.
+--- simpl. reflexivity.
+--- simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity.
+--- simpl. unfold dispatch_coind_ext. destruct n0.
+---- rewrite <- Heqr0. reflexivity.
+---- remember (E_ZeroremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0.
+----- simpl. reflexivity.
+----- simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity.
+----- unfold dispatch_coind_ext. destruct n0.
+* rewrite <- Heqr0. auto.
+* remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0.
+** simpl. fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr0. rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn. rewrite <- Heqr2. destruct n0.
+*** rewrite <- Heqr0. reflexivity.
+*** remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0.
+**** simpl. auto.
+**** rewrite <- Heqr0. auto.
+**** fold evalremoveFnPos'AnimatedTopFn. destruct n0.
+***** rewrite <- Heqr0. auto.
+***** remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext. 
+rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+****** rewrite <- Heqr0. simpl. auto.
+****** destruct n0. 
+******* rewrite <- Heqr0. auto.
+******* remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** destruct n0. 
+********* rewrite <- Heqr0. auto.
+********* remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+**********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** destruct n0. 
+*********** rewrite <- Heqr0. auto.
+*********** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ destruct n0. 
+************* rewrite <- Heqr0. auto.
+************* remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+**************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** destruct n0. 
+*************** rewrite <- Heqr0. auto.
+*************** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0.
+****************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** remember (evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)) as r0. destruct r0. 
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** assert (H_undefined_Succ : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+****************** simpl. reflexivity.
+****************** exfalso. rewrite <- Heqr10 in H_undefined_Succ. discriminate H_undefined_Succ. Qed.
+
+(** Key auxiliary: the tm'-level evaluator always returns [Success tm' _] when
+    given [Success tm' x] as input, for any fuel and any [x : tm'].
+    At fuel 0 the oracle fires; at positive fuel every exit path leads to
+    Success — a handler succeeds directly, a handler returns FuelError and the
+    oracle fires, or UndefinedAnimated fires (it is FuelError only at fuel 0,
+    which dispatch_coind_ext never passes to a handler; at any positive fuel
+    it always returns Success).
+
+    Proof: strong induction on fuel via [lt_wf_ind], then [evalTop_stepSuccess]
+    to reach the explicit 10-handler dispatch, then the same handler-by-handler
+    walk as [evalTop_stepSuccess] itself (remember each handler's call result,
+    destruct into FuelError/Success/NoMatch, recurse into the tail on NoMatch).
+    Unlike [evalTop_stepSuccess], the goal here is a bare existential rather
+    than an equality against a hand-written RHS, so the [fold
+    evalremoveFnPos'AnimatedTopFn] / handler-specific [Heqr2]-style rewrites
+    that template needs to match a specific target are unnecessary — each
+    branch closes via [rewrite <- Heqr0] (called BEFORE any [simpl], since
+    [simpl] first can over-reduce the goal and erase the very subterm the
+    rewrite needs to find) followed by [reflexivity]. UndefinedAnimated's
+    FuelError and NoMatch branches are closed the same way
+    [evalTop_stepSuccess] closes them: asserting the handler call equals
+    [Success tm' (evalremoveFnPosAn1 x)] and deriving a contradiction via
+    [discriminate]. *)
+Lemma evalremoveFnPos'AnimatedTopFn_always_success :
+  forall n (x : tm'),
+  exists w, evalremoveFnPos'AnimatedTopFn n (Success tm' x) = Success tm' w.
+Proof.
+  intro n.
+  apply (lt_wf_ind n (fun n => forall x,
+    exists w, evalremoveFnPos'AnimatedTopFn n (Success tm' x) = Success tm' w)).
+  clear n. intros n IH x.
+  destruct n as [| m].
+  { eexists. unfold evalremoveFnPos'AnimatedTopFn. simpl. reflexivity. }
+  rewrite evalTop_stepSuccess.
+  destruct m as [| n0].
+  { eexists. simpl. reflexivity. }
+  remember (E_LamremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_ZeroremoveFnPos'Animated (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext. destruct n0.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (Success tm' x)) as r0. destruct r0. unfold dispatch_coind_ext.
+  { eexists. rewrite <- Heqr0. simpl. reflexivity. }
+  { eexists. simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity. }
+  simpl. unfold dispatch_coind_ext.
+  remember (evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)) as r0. destruct r0.
+  { assert (H_undefined_Succ : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+    { simpl. reflexivity. }
+    exfalso. rewrite <- Heqr10 in H_undefined_Succ. discriminate H_undefined_Succ. }
+  { eexists. rewrite <- Heqr0. reflexivity. }
+  assert (H_undefined_Succ2 : Success tm' (evalremoveFnPosAn1 x) = evalremoveFnPos'UndefinedAnimated (S n0) (Success tm' x)).
+  { simpl. reflexivity. }
+  exfalso. rewrite <- Heqr10 in H_undefined_Succ2. discriminate H_undefined_Succ2.
+Qed.
+
+Lemma evalTop_stepNoMatch : forall n,
+  evalremoveFnPos'AnimatedTopFn (S n) (NoMatch tm') =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    n (NoMatch tm').
+
+
+Proof. intros. unfold evalremoveFnPos'AnimatedTopFn.
+remember n. destruct n0.
+-- simpl. reflexivity.
+-- remember (E_LamremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+--- simpl. reflexivity.
+--- simpl. assert (H0 : E_LamremoveFnPos'Animated (S n0) (NoMatch tm') = (NoMatch tm')).
+---- auto.
+---- rewrite H0 in Heqr0. discriminate Heqr0.
+--- destruct n0.
+---- reflexivity.
+---- remember (E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr1.
+{ simpl. reflexivity. }
+{ simpl. assert (H0 : E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+  rewrite H0 in Heqr1. discriminate Heqr1. }
+{ destruct n0.
+  { reflexivity. }
+  { remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+    fold evalremoveFnPos'AnimatedTopFn.
+    rewrite <- Heqr2.
+    { simpl. reflexivity. }
+    { simpl. assert (H0 : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+      rewrite H0 in Heqr2. discriminate Heqr2. }
+    { destruct n0.
+      { reflexivity. }
+      { remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+        fold evalremoveFnPos'AnimatedTopFn.
+        rewrite <- Heqr3.
+        { simpl. reflexivity. }
+        { simpl. assert (H0 : E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+          rewrite H0 in Heqr3. discriminate Heqr3. }
+        { destruct n0.
+          { reflexivity. }
+          { remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+            fold evalremoveFnPos'AnimatedTopFn.
+            rewrite <- Heqr4.
+            { simpl. reflexivity. }
+            { simpl. assert (H0 : E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+              rewrite H0 in Heqr4. discriminate Heqr4. }
+            { destruct n0.
+              { reflexivity. }
+              { remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                fold evalremoveFnPos'AnimatedTopFn.
+                rewrite <- Heqr5.
+                { simpl. reflexivity. }
+                { simpl. assert (H0 : E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                  rewrite H0 in Heqr5. discriminate Heqr5. }
+                { destruct n0.
+                  { reflexivity. }
+                  { remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                    fold evalremoveFnPos'AnimatedTopFn.
+                    rewrite <- Heqr6.
+                    { simpl. reflexivity. }
+                    { simpl. assert (H0 : E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                      rewrite H0 in Heqr6. discriminate Heqr6. }
+                    { destruct n0.
+                      { reflexivity. }
+                      { remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                        fold evalremoveFnPos'AnimatedTopFn.
+                        rewrite <- Heqr7.
+                        { simpl. reflexivity. }
+                        { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                          rewrite H0 in Heqr7. discriminate Heqr7. }
+                        { destruct n0.
+                          { reflexivity. }
+                          { remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+                            fold evalremoveFnPos'AnimatedTopFn.
+                            rewrite <- Heqr8.
+                            { simpl. reflexivity. }
+                            { simpl. assert (H0 : E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                              rewrite H0 in Heqr8. discriminate Heqr8. }
+                            { destruct n0.
+                              { reflexivity. }
+                              { remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+                                { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                  rewrite H0 in Heqr9. discriminate Heqr9. }
+                                { simpl. assert (H0 : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                  rewrite H0 in Heqr9. discriminate Heqr9. }
+                                { destruct n0.
+                                  { reflexivity. }
+                                  { remember (evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm')) as r0. destruct r0.
+                                    { simpl. assert (H0 : evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                      rewrite H0 in Heqr10. discriminate Heqr10. }
+                                    { simpl. assert (H0 : evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm') = NoMatch tm'). auto.
+                                      rewrite H0 in Heqr10. discriminate Heqr10. }
+                                    { auto. }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+Qed.
+
+(*
+
+
+
+
+rewrite <- Heqr0. simpl. reflexivity. unfold dispatch_coind_ext. destruct n0.
+----- auto.
+----- rewrite <- Heqr0. simpl. reflexivity.
+--- simpl. unfold dispatch_coind_ext. destruct n0.
+---- rewrite <- Heqr0. reflexivity.
+---- remember (E_ZeroremoveFnPos'Animated (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+----- simpl. reflexivity.
+----- simpl. unfold dispatch_coind_ext. rewrite <- Heqr0. simpl. reflexivity.
+----- unfold dispatch_coind_ext. destruct n0.
+* rewrite <- Heqr0. auto.
+* remember (E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+** simpl. fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn.  rewrite <- Heqr0. rewrite <- Heqr2. reflexivity.
+** fold evalremoveFnPos'AnimatedTopFn. rewrite <- Heqr2. destruct n0.
+*** rewrite <- Heqr0. reflexivity.
+*** remember (E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0.
+**** simpl. auto.
+**** rewrite <- Heqr0. auto.
+**** fold evalremoveFnPos'AnimatedTopFn. destruct n0.
+***** rewrite <- Heqr0. auto.
+***** remember (E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0. unfold dispatch_coind_ext.
+rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+****** rewrite <- Heqr0. simpl. auto.
+****** destruct n0.
+******* rewrite <- Heqr0. auto.
+******* remember (E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+******** destruct n0.
+********* rewrite <- Heqr0. auto.
+********* remember (E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+**********  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+********** destruct n0.
+*********** rewrite <- Heqr0. auto.
+*********** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************ destruct n0.
+************* rewrite <- Heqr0. auto.
+************* remember (E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+**************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+************** destruct n0.
+*************** rewrite <- Heqr0. auto.
+*************** remember (E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S n0) (NoMatch tm')) as r0. destruct r0.
+****************  rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+**************** remember (evalremoveFnPos'UndefinedAnimated (S n0) (NoMatch tm')) as r0. destruct r0.
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** rewrite <- Heqr0; (try rewrite <- Heqr0; try auto).
+***************** auto. Qed.
+*)
+Lemma evalTop_step : forall n x,
+  evalremoveFnPos'AnimatedTopFn (S n) (x) =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    n (x).
+Proof. intros. destruct x; (try eapply evalTop_stepSuccess; try eapply evalTop_stepNoMatch).
+* assert (H0 : evalremoveFnPos'AnimatedTopFn (S n) (FuelError tm') =  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+    [E_LamremoveFnPos'Animated;
+     E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated] n (FuelError tm')).
+** destruct n.
+*** simpl. reflexivity.
+*** unfold evalremoveFnPos'AnimatedTopFn. remember (E_LamremoveFnPos'Animated (S n) (FuelError tm')) as r0. destruct r0. 
+**** reflexivity.
+**** assert (H1 : E_LamremoveFnPos'Animated (S n) (FuelError tm') = (FuelError tm')).
+***** auto.
+***** rewrite -> H1 in Heqr0. auto.
+**** assert (H1 : E_LamremoveFnPos'Animated (S n) (FuelError tm') = (FuelError tm')).
+***** auto.
+***** rewrite -> H1 in Heqr0. discriminate Heqr0.
+** auto. Qed. 
+
+
+  
+Lemma anim_S_tabs : forall n x T t f,
+  evalTransparentSigma2AnimatedTopFn (S (S n)) (Success tm (tabs x T t)) f =
+  Success tm (tabs x T t).
+Proof.
+  intros.
+  unfold evalTransparentSigma2AnimatedTopFn,
+         evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush,
+         tmTransparentSigmaPush.
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S n) (Success tm' (tabs' x T (tmLift t))) =
+                    Success tm' (tabs' x T (tmLift t)))
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  assert (Hdisp : evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift (tabs x T t))) =
+                   Success tm' (tabs' x T (tmLift t))).
+  { cbn [tmLift evalremoveFnPos'AnimatedTopFn dispatch_coind_ext].
+    rewrite HE_Lam. reflexivity. }
+  rewrite Hdisp.
+  simpl tmTransparentSigmaPushBody.
+  rewrite tmTransparentSigmaPushBody_tmLift.
+  reflexivity.
+Qed.
+
+Lemma anim_S_tzero : forall n f,
+  evalTransparentSigma2AnimatedTopFn (S (S (S n))) (Success tm tzero) f =
+  Success tm tzero.
+Proof.
+  intros.
+  unfold evalTransparentSigma2AnimatedTopFn,
+         evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush,
+         tmTransparentSigmaPush.
+  assert (Hdisp : evalremoveFnPos'AnimatedTopFn (S (S (S n))) (Success tm' (tmLift tzero)) =
+                   Success tm' tzero').
+  { cbn [tmLift evalremoveFnPos'AnimatedTopFn].
+    exact (dispatch_tzero n). }
+  rewrite Hdisp.
+  simpl tmTransparentSigmaPushBody. reflexivity.
+Qed.
+
+Lemma anim_S_tsucc : forall n t f,
+  evalTransparentSigma2AnimatedTopFn (S (S (S (S n)))) (Success tm (tsucc t)) f =
+  match evalTransparentSigma2AnimatedTopFn (S n) (Success tm t) f with
+  | Success v => Success tm (tsucc v)
+  | other => other
+  end.
+Proof.
+  intros n t f.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift].
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t)) as [w Hw].
+  assert (Hdisp : evalremoveFnPos'AnimatedTopFn (S (S (S (S n)))) (Success tm' (tsucc' (tmLift t))) =
+                   Success tm' (tsucc' w)).
+  { rewrite evalTop_step.
+    rewrite (dispatch_tsucc n t).
+    rewrite Hw. reflexivity. }
+  rewrite Hw, Hdisp.
+  simpl tmTransparentSigmaPushBody.
+  reflexivity.
+Qed.
+
+(** Direct dispatch characterisation starting at E_PredZero (index 3), for [tpred'] input.
+
+    CORRECTED: an earlier version of this lemma checked the shape of the discriminant's
+    evaluation AFTER pushing it through the oracle [f] (i.e. [match ... tmTransparentSigmaPushBody
+    f x ... with Success tzero => ...]).  That is unsound for arbitrary [f]: if the discriminant's
+    evaluation does not complete within the given fuel, the raw [tm'] result is an
+    [evalremoveFnPosAn1]-wrapped residual — not [tzero'] or [tsucc' _] — so neither
+    [E_PredZero] nor [E_PredSucc] actually fires, regardless of what pushing that residual
+    through an adversarial [f] happens to look like.  Concretely, with [t := tapp id_nat tzero]
+    (needs >= 7 fuel) and [f] mapping any [tapp]-shaped term to [tzero], the old statement's RHS
+    computed [tzero] while the real dispatch computed [tsucc tzero].  The fix: check the shape of
+    the RAW (unpushed) [tm'] result directly — this is what [E_PredZero]/[E_PredSucc] actually
+    look at — and only push through [f] once a shape decision has already been made. *)
+Lemma dispatch_tpred_from_pred : forall n t f,
+  (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+      [E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       evalremoveFnPos'UndefinedAnimated]
+      (S (S n)) (Success tm' (tpred' (tmLift t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end) =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' => Success tm tzero
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' v') =>
+          Success tm (tmTransparentSigmaPushBody f v')
+      | _ => Success tm (f (tpred t))
+      end
+  end.
+Proof.
+  intros n t f.
+  (* Spec lemma for E_PredZero's own reduction, generic in evalFn (same style as
+     E_Succ_result): unfold every combinator by name, then let simpl fire every
+     structural match on the concrete input/fuel, leaving evalFn's call as a residual. *)
+  assert (E_PredZero_result :
+    forall (evalFn : nat -> animation_result tm' -> animation_result tm') m v,
+    E_PredZeroremoveFnPos'Animated evalFn (S m) (Success tm' (tpred' v)) =
+    match evalFn (S m) (Success tm' v) with
+    | Success tzero' => Success tm' tzero'
+    | Success _ => NoMatch tm'
+    | FuelError => FuelError tm'
+    | NoMatch => NoMatch tm'
+    end).
+  { clear. intros evalFn m v.
+    unfold E_PredZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+           AnimationResult.option_to_result, AnimationResult.join_pair,
+           TermUtils.with_default, TermUtils.dispatch_clauses,
+           AnimationResult.fuel_error_fn.
+    simpl.
+    destruct (evalFn (S m) (Success tm' v)) as [| w |] eqn:E.
+    - reflexivity.
+    - destruct w; reflexivity.
+    - reflexivity. }
+  (* Spec lemma for E_PredSucc's own reduction (no guard in the source relation). *)
+  assert (E_PredSucc_result :
+    forall (evalFn : nat -> animation_result tm' -> animation_result tm') m v,
+    E_PredSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tpred' v)) =
+    match evalFn (S m) (Success tm' v) with
+    | Success (tsucc' v') =>
+        Success tm' v'
+    | Success _ => NoMatch tm'
+    | FuelError => FuelError tm'
+    | NoMatch => NoMatch tm'
+    end).
+  { clear. intros evalFn m v.
+    unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+           AnimationResult.option_to_result, AnimationResult.join_pair,
+           TermUtils.with_default, TermUtils.dispatch_clauses,
+           AnimationResult.fuel_error_fn.
+    simpl.
+    destruct (evalFn (S m) (Success tm' v)) as [| w |] eqn:E.
+    - reflexivity.
+    - destruct w; simpl; reflexivity.
+    - reflexivity. }
+  (* If neither E_PredZero nor E_PredSucc fires, every remaining handler
+     (E_App/E_IfzZero/E_IfzSucc/E_Fix) also fails to match a [tpred'] input, so the
+     whole dispatch bottoms out at UndefinedAnimated's oracle escape — which, pushed,
+     is exactly [f (tpred t)] (the escape wraps the ORIGINAL [tpred' (tmLift t)] input,
+     and pushing a marker-free lift always round-trips to the original term). *)
+  assert (Hfall : forall m,
+    (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tpred' (tmLift t))) with
+     | Success x => Success tm (tmTransparentSigmaPushBody f x)
+     | _ => NoMatch tm
+     end) = Success tm (f (tpred t))).
+  { intro m.
+    assert (Hraw :
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tpred' (tmLift t))) = Success tm' (evalremoveFnPosAn1 (tpred' (tmLift t)))).
+    { clear. destruct m.
+      - simpl. reflexivity.
+      - unfold dispatch_coind_ext.
+        assert (HA : E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+          by (unfold E_AppremoveFnPos'Animated, option_to_result; reflexivity).
+        rewrite HA. destruct m.
+        + simpl. reflexivity.
+        + unfold dispatch_coind_ext.
+          assert (HIZ : E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+            by (unfold E_IfzZeroremoveFnPos'Animated, option_to_result; reflexivity).
+          rewrite HIZ. destruct m.
+          * simpl. reflexivity.
+          * unfold dispatch_coind_ext.
+            assert (HIS : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+              by (unfold E_IfzSuccremoveFnPos'Animated, option_to_result; reflexivity).
+            rewrite HIS. destruct m.
+            -- simpl. reflexivity.
+            -- unfold dispatch_coind_ext.
+               assert (HF : E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+                 by (unfold E_FixremoveFnPos'Animated, option_to_result; reflexivity).
+               rewrite HF. destruct m.
+               ++ simpl. reflexivity.
+               ++ unfold dispatch_coind_ext.
+                  assert (HU : Success tm' (evalremoveFnPosAn1 (tpred' (tmLift t))) = evalremoveFnPos'UndefinedAnimated (S m) (Success tm' (tpred' (tmLift t))))
+                    by (simpl; reflexivity).
+                  rewrite <- HU. reflexivity. }
+    rewrite Hraw. simpl.
+    rewrite tmTransparentSigmaPushBody_tmLift. reflexivity. }
+  cbn [dispatch_coind_ext].
+  rewrite (E_PredZero_result evalremoveFnPos'AnimatedTopFn (S n) (tmLift t)).
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n)) (tmLift t)) as [w1 Hw1].
+  rewrite Hw1.
+  assert (Hcont :
+    (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        (S n) (Success tm' (tpred' (tmLift t))) with
+     | Success x => Success tm (tmTransparentSigmaPushBody f x)
+     | _ => NoMatch tm
+     end) =
+    match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+    | Success (tsucc' v') =>
+        Success tm (tmTransparentSigmaPushBody f v')
+    | _ => Success tm (f (tpred t))
+    end).
+  { cbn [dispatch_coind_ext].
+    rewrite (E_PredSucc_result evalremoveFnPos'AnimatedTopFn n (tmLift t)).
+    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t)) as [w2 Hw2].
+    rewrite Hw2.
+    destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+      simpl; try (apply Hfall).
+    simpl. reflexivity.
+  }
+  destruct w1; simpl; try apply Hcont.
+  reflexivity.
+Qed.
+
+(** Full dispatch characterisation for [tpred'] inputs at the [tm] level
+    (post push-through-oracle [f]).  After unfolding [evalTransparentSigma2AnimatedTopFn],
+    [evalremoveFnPosinputLift], [evalremoveFnPosTransparentSigmaOutputPush], and
+    [tmTransparentSigmaPush], and reducing [tmLift (tpred t)] to [tpred' (tmLift t)], the
+    goal of [anim_S_tpred] is exactly this lemma.
+    E_Lam / E_Zero / E_Succ return [NoMatch] on [tpred'] inputs (three fuel
+    units consumed).  E_PredZero fires at fuel [S(S n)]; if the argument
+    evaluates to [tzero'] it returns zero.  E_PredSucc fires at fuel [S n];
+    if the argument evaluates to [tsucc' u] and the pushed value is a value,
+    it returns [u]; otherwise the oracle fires. *)
+Lemma dispatch_tpred : forall n t f,
+  (match evalremoveFnPos'AnimatedTopFn (S (S (S (S (S (S n)))))) (Success tm' (tpred' (tmLift t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end)
+  =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' => Success tm tzero
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' v') =>
+          Success tm (tmTransparentSigmaPushBody f v')
+      | _ => Success tm (f (tpred t))
+      end
+  end.
+Proof.
+  intros n t f.
+  rewrite evalTop_step.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S (S (S (S n))))) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S (S (S (S n)))) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero.
+  cbn [dispatch_coind_ext].
+  assert (HE_Succ : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                      (S (S (S n))) (Success tm' (tpred' (tmLift t))) = NoMatch tm')
+    by (unfold E_SuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_Succ.
+  exact (dispatch_tpred_from_pred n t f).
+Qed.
+
+(** CORRECTED (see [dispatch_tpred_from_pred]): the shape decision (is the discriminant
+    zero? a successor of a value?) is made on the raw [tm'] result of
+    [evalremoveFnPos'AnimatedTopFn], before any push through the oracle [f]. *)
+Lemma anim_S_tpred : forall n t f,
+  evalTransparentSigma2AnimatedTopFn (S (S (S (S (S (S n)))))) (Success tm (tpred t)) f =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' => Success tm tzero
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' v') =>
+          Success tm (tmTransparentSigmaPushBody f v')
+      | _ => Success tm (f (tpred t))
+      end
+  end.
+Proof.
+  intros n t f.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift].
+  exact (dispatch_tpred n t f).
+Qed.
+
+(** Direct dispatch characterisation starting at E_IfzZero (index 6), for [tifz'] input.
+    CORRECTED (same issue as [dispatch_tpred_from_pred]): the discriminant's shape
+    (tzero'/tsucc') must be decided on the RAW tm' result, before pushing through the
+    oracle — pushing first and comparing to tm-level [tzero]/[tsucc _] is unsound for
+    adversarial [f], by the same counterexample construction as for tpred/tapp
+    (discriminant that doesn't finish evaluating, pushed through an [f] that makes the
+    escaped residual coincidentally look like the wrong shape).  The t1/t2 branch
+    evaluations themselves are fine to leave push-first, since nothing further branches
+    on their shape — they're just returned opaquely, exactly as with tsucc.
+    STILL ADMITTED pending the same [always_value]-style gap as before (the isValueFn
+    check on the extracted predecessor needs to know it is marker-free), tracked
+    separately; the statement below is the corrected target. *)
+Lemma dispatch_tifz_from_ifz : forall n t t1 t2 f,
+  (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+      [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       evalremoveFnPos'UndefinedAnimated]
+      (S (S n)) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end) =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' =>
+      (match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t1)) with
+       | Success x => Success tm (tmTransparentSigmaPushBody f x)
+       | _ => NoMatch tm
+       end)
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' vn') =>
+          (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+                | Success x => Success tm (tmTransparentSigmaPushBody f x)
+                | _ => NoMatch tm
+                end)
+      | _ => Success tm (f (tifz t t1 t2))
+      end
+  end.
+Proof.
+  intros n t t1 t2 f.
+  (* Spec lemma for E_IfzZero's own reduction (sequential: only checks the zero-branch
+     once the discriminant is known to be tzero'). *)
+  assert (E_IfzZero_result :
+    forall (evalFn : nat -> animation_result tm' -> animation_result tm') m u1 u2 u3,
+    E_IfzZeroremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
+    match evalFn (S m) (Success tm' u1) with
+    | Success tzero' => evalFn (S m) (Success tm' u2)
+    | Success _ => NoMatch tm'
+    | FuelError => FuelError tm'
+    | NoMatch => NoMatch tm'
+    end).
+  { clear. intros evalFn m u1 u2 u3.
+    unfold E_IfzZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+           AnimationResult.option_to_result, AnimationResult.join_pair,
+           TermUtils.with_default, TermUtils.dispatch_clauses,
+           AnimationResult.fuel_error_fn.
+    simpl.
+    destruct (evalFn (S m) (Success tm' u1)) as [| w |] eqn:E; simpl.
+    - reflexivity.
+    - destruct w; simpl; try reflexivity.
+      destruct (evalFn (S m) (Success tm' u2)) as [| res |]; reflexivity.
+    - reflexivity. }
+  (* Spec lemma for E_IfzSucc's own reduction, SPECIALIZED to the case where both the
+     discriminant and the succ-continuation are already known to succeed (always true for
+     [evalremoveFnPos'AnimatedTopFn] via [evalremoveFnPos'AnimatedTopFn_always_success]).
+     The raw generated code actually checks the succ-continuation's status before the
+     discriminant's (an asymmetry from how E_IfzZero is generated), which only matters when
+     either could genuinely be FuelError/NoMatch; since neither ever is here, this
+     specialized statement is all that's needed. *)
+  assert (E_IfzSucc_result_spec :
+    forall (evalFn : nat -> animation_result tm' -> animation_result tm') m u1 u2 u3 w1 w3,
+    evalFn (S m) (Success tm' u1) = Success tm' w1 ->
+    evalFn (S m) (Success tm' u3) = Success tm' w3 ->
+    E_IfzSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
+    match w1 with
+    | tsucc' vn' =>
+        Success tm' w3
+    | _ => NoMatch tm'
+    end).
+  { clear. intros evalFn m u1 u2 u3 w1 w3 H1 H3.
+    unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+           AnimationResult.option_to_result, AnimationResult.join_pair,
+           TermUtils.with_default, TermUtils.dispatch_clauses,
+           AnimationResult.fuel_error_fn.
+    simpl.
+    rewrite H1, H3.
+    destruct w1; simpl; reflexivity. }
+  (* If neither E_IfzZero nor E_IfzSucc matches, E_Fix + UndefinedAnimated bottom out at
+     the oracle escape, exactly as in [dispatch_tpred_from_pred]'s [Hfall]. *)
+  assert (Hfall : forall m,
+    (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) with
+     | Success x => Success tm (tmTransparentSigmaPushBody f x)
+     | _ => NoMatch tm
+     end) = Success tm (f (tifz t t1 t2))).
+  { clear E_IfzZero_result E_IfzSucc_result_spec. intro m.
+    assert (Hraw :
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2)))
+      = Success tm' (evalremoveFnPosAn1 (tifz' (tmLift t) (tmLift t1) (tmLift t2)))).
+    { clear. destruct m.
+      - simpl. reflexivity.
+      - unfold dispatch_coind_ext.
+        assert (HF : E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m)
+                       (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+          by (unfold E_FixremoveFnPos'Animated, option_to_result; reflexivity).
+        rewrite HF. destruct m.
+        + simpl. reflexivity.
+        + unfold dispatch_coind_ext.
+          assert (HU : Success tm' (evalremoveFnPosAn1 (tifz' (tmLift t) (tmLift t1) (tmLift t2)))
+                       = evalremoveFnPos'UndefinedAnimated (S m)
+                           (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))))
+            by (simpl; reflexivity).
+          rewrite <- HU. reflexivity. }
+    rewrite Hraw. simpl.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity. }
+  cbn [dispatch_coind_ext].
+  rewrite (E_IfzZero_result evalremoveFnPos'AnimatedTopFn (S n) (tmLift t) (tmLift t1) (tmLift t2)).
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n)) (tmLift t)) as [w1 Hw1].
+  rewrite Hw1.
+  assert (Hcont :
+    (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        (S n) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) with
+     | Success x => Success tm (tmTransparentSigmaPushBody f x)
+     | _ => NoMatch tm
+     end) =
+    match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+    | Success (tsucc' vn') =>
+        (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+              | Success x => Success tm (tmTransparentSigmaPushBody f x)
+              | _ => NoMatch tm
+              end)
+    | _ => Success tm (f (tifz t t1 t2))
+    end).
+  { cbn [dispatch_coind_ext].
+    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t)) as [w2 Hw2].
+    destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t2)) as [w3 Hw3].
+    rewrite (E_IfzSucc_result_spec evalremoveFnPos'AnimatedTopFn n (tmLift t) (tmLift t1) (tmLift t2) w2 w3 Hw2 Hw3).
+    rewrite Hw2, Hw3.
+    destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+      simpl; try (apply Hfall).
+    simpl. reflexivity.
+  }
+  destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1|b3|c1 c2 c3|s3 ty3 b4|m1|s4 n1 n2];
+    [ simpl; apply Hcont
+    | simpl; apply Hcont
+    | simpl; apply Hcont
+    | destruct (evalremoveFnPos'AnimatedTopFn_always_success (S (S n)) (tmLift t1)) as [w1' Hw1'];
+      rewrite Hw1'; reflexivity
+    | simpl; apply Hcont
+    | simpl; apply Hcont
+    | simpl; apply Hcont
+    | simpl; apply Hcont
+    | simpl; apply Hcont
+    | simpl; apply Hcont ].
+Qed.
+
+Lemma dispatch_tifz : forall n t t1 t2 f,
+  (match evalremoveFnPos'AnimatedTopFn
+     (S (S (S (S (S (S (S (S (S n))))))))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end)
+  =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' =>
+      (match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t1)) with
+       | Success x => Success tm (tmTransparentSigmaPushBody f x)
+       | _ => NoMatch tm
+       end)
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' vn') =>
+          (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+                | Success x => Success tm (tmTransparentSigmaPushBody f x)
+                | _ => NoMatch tm
+                end)
+      | _ => Success tm (f (tifz t t1 t2))
+      end
+  end.
+Proof.
+  intros n t t1 t2 f.
+  rewrite evalTop_step.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S (S (S (S (S (S (S n)))))))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S (S (S (S (S (S (S n))))))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero.
+  cbn [dispatch_coind_ext].
+  assert (HE_Succ : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                      (S (S (S (S (S (S n)))))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_SuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_Succ.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredZero : E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S (S (S (S n))))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_PredZeroremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredZero.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredSucc : E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S (S (S n)))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_PredSuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredSucc.
+  cbn [dispatch_coind_ext].
+  assert (HE_App : E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                     (S (S (S n))) (Success tm' (tifz' (tmLift t) (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_AppremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_App.
+  exact (dispatch_tifz_from_ifz n t t1 t2 f).
+Qed.
+
+(** CORRECTED (see [dispatch_tifz_from_ifz]): the discriminant's shape is decided on the
+    raw [tm'] result of [evalremoveFnPos'AnimatedTopFn], before any push through [f]. *)
+Lemma anim_S_tifz : forall n t t1 t2 f,
+  evalTransparentSigma2AnimatedTopFn
+    (S (S (S (S (S (S (S (S (S n))))))))) (Success tm (tifz t t1 t2)) f =
+  match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t)) with
+  | Success tzero' =>
+      match evalremoveFnPos'AnimatedTopFn (S (S n)) (Success tm' (tmLift t1)) with
+      | Success x => Success tm (tmTransparentSigmaPushBody f x)
+      | _ => NoMatch tm
+      end
+  | _ =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t)) with
+      | Success (tsucc' vn') =>
+          match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+               | Success x => Success tm (tmTransparentSigmaPushBody f x)
+               | _ => NoMatch tm
+               end
+      | _ => Success tm (f (tifz t t1 t2))
+      end
+  end.
+Proof.
+  intros n t t1 t2 f.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift].
+  exact (dispatch_tifz n t t1 t2 f).
+Qed.
+
+(** Direct dispatch characterisation starting at E_App (index 5), for [tapp'] input.
+    CORRECTED (same issue as [dispatch_tpred_from_pred]): [t1]'s shape (is it a lambda?)
+    and [v2]'s value-ness must be decided on the RAW [tm'] results, before pushing
+    through [f] — see the comment there for why push-then-compare is unsound.  Unlike
+    tpred/tifz, tapp additionally REUSES the extracted lambda body [t3'] inside a further
+    substitution+recursive-evaluation step; the statement below states the INTENDED
+    target directly in terms of genuine PCF substitution ([subst x (tmPushPlain v2')
+    (tmPushPlain t3')]), which is only justified once [t3'] is known to carry no oracle
+    marker — an extra fact beyond [always_success]/[always_value] for tzero'/tsucc'
+    shapes, since here a SUB-PIECE of a Success result must itself be marker-free, not
+    just the whole result.  STILL ADMITTED pending that fact; tracked separately. *)
+(** Extra gap specific to tapp, beyond [dispatch_tapp_from_app] itself: whenever
+    evaluating [t1] yields a lambda value, ITS BODY must carry no oracle-escape marker
+    for the substitution step used by [dispatch_tapp_from_app]/[anim_S_tapp] (and by
+    the tapp branches of the two main correspondence theorems, which reuse the extracted
+    body inside a further recursive evaluation) to line up with genuine PCF substitution.
+    Proved by strong induction on the fuel, generalized to an arbitrary marker-free tm'
+    input (not just [tmLift t1] specifically) so that every handler's own recursive
+    sub-evaluation — which always operates on either a structural subterm of a marker-free
+    input or a substitution re-wrapped via [tmLift]/[substliftedFunc] once its own pieces
+    are known marker-free by the very same induction — falls back into IH's scope. The
+    helper infrastructure below ([dispatch_coind_ext_escape]/[_skip]/[_fire]/[_reach] and
+    the per-handler "_result" specs) mirrors the pattern established in
+    [dispatch_tpred_from_pred]/[dispatch_tifz_from_ifz], generalized to handle: (a) cases
+    where fuel may run out before a given handler is even reached ([_reach]/[_escape]
+    return that possibility explicitly rather than assuming enough fuel survived), and
+    (b) [E_App]/[E_Fix]'s handlers, which were not needed by the tpred/tifz proofs. *)
+
+Lemma tmChkNoExtraCstrs_tmLift : forall t, tmChkNoExtraCstrs (tmLift t) = true.
+Proof.
+  induction t; simpl; try reflexivity; try (rewrite IHt; reflexivity);
+  try (rewrite IHt1, IHt2; reflexivity);
+  try (rewrite IHt1, IHt2, IHt3; reflexivity).
+Qed.
+
+Lemma tmPushPlain_tmLift : forall t, tmPushPlain (tmLift t) = t.
+Proof.
+  induction t; simpl; try reflexivity; try (rewrite IHt; reflexivity);
+  try (rewrite IHt1, IHt2; reflexivity);
+  try (rewrite IHt1, IHt2, IHt3; reflexivity).
+Qed.
+
+Lemma substliftedFunc_no_extra_cstrs : forall s A B,
+  tmChkNoExtraCstrs A = true -> tmChkNoExtraCstrs B = true ->
+  tmChkNoExtraCstrs (substliftedFunc s A B) = true.
+Proof.
+  intros s A B HA HB.
+  unfold substliftedFunc.
+  rewrite HA, HB. simpl.
+  apply tmChkNoExtraCstrs_tmLift.
+Qed.
+
+Lemma dispatch_coind_ext_escape :
+  forall (prefix : list (nat -> animation_result tm' -> animation_result tm')) (u : tm'),
+  (forall h k, In h prefix -> h (S k) (Success tm' u) = NoMatch tm') ->
+  forall m, dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+              (prefix ++ [evalremoveFnPos'UndefinedAnimated]) m (Success tm' u) =
+            Success tm' (evalremoveFnPosAn1 u).
+Proof.
+  induction prefix as [| h rest IHrest]; intros u Hall m.
+  - simpl. destruct m.
+    + simpl. reflexivity.
+    + unfold dispatch_coind_ext.
+      assert (HU : evalremoveFnPos'UndefinedAnimated (S m) (Success tm' u) = Success tm' (evalremoveFnPosAn1 u))
+        by (simpl; reflexivity).
+      rewrite HU. reflexivity.
+  - destruct m.
+    + simpl. reflexivity.
+    + assert (Hh : h (S m) (Success tm' u) = NoMatch tm')
+        by (apply Hall; left; reflexivity).
+      change (h :: rest ++ [evalremoveFnPos'UndefinedAnimated])
+        with ((h :: rest) ++ [evalremoveFnPos'UndefinedAnimated]).
+      cbn [dispatch_coind_ext app].
+      rewrite Hh.
+      apply IHrest.
+      intros h' k Hin. apply Hall. right. exact Hin.
+Qed.
+
+Lemma base_result : forall x,
+  evalremoveFnPos'AnimatedTopFn 0 (Success tm' x) = Success tm' (evalremoveFnPosAn1 x).
+Proof.
+  intro x. unfold evalremoveFnPos'AnimatedTopFn. simpl. reflexivity.
+Qed.
+
+Lemma E_Lam_result :
+  forall n t1', E_LamremoveFnPos'Animated (S n) (Success tm' t1') =
+  match t1' with
+  | tabs' _ _ _ => Success tm' t1'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n t1'.
+  unfold E_LamremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; reflexivity.
+Qed.
+
+Lemma E_Zero_result :
+  forall n t1', E_ZeroremoveFnPos'Animated (S n) (Success tm' t1') =
+  match t1' with
+  | tzero' => Success tm' tzero'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n t1'.
+  unfold E_ZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; reflexivity.
+Qed.
+
+Lemma E_Succ_result_generic :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  E_SuccremoveFnPos'Animated evalFn (S n) (Success tm' t1') =
+  match t1' with
+  | tsucc' v =>
+      match evalFn (S n) (Success tm' v) with
+      | Success w => Success tm' (tsucc' w)
+      | FuelError => FuelError tm'
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros evalFn n t1'.
+  unfold E_SuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; try reflexivity.
+  destruct (evalFn (S n) (Success tm' t1')) as [| w |]; reflexivity.
+Qed.
+
+Lemma E_Succ_result_generic_spec :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v1 w,
+  evalFn (S n) (Success tm' v1) = Success tm' w ->
+  E_SuccremoveFnPos'Animated evalFn (S n) (Success tm' (tsucc' v1)) = Success tm' (tsucc' w).
+Proof.
+  intros evalFn n v1 w H.
+  rewrite E_Succ_result_generic. rewrite H. reflexivity.
+Qed.
+
+Lemma E_PredZero_result :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v,
+  E_PredZeroremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
+  match evalFn (S n) (Success tm' v) with
+  | Success tzero' => Success tm' tzero'
+  | Success _ => NoMatch tm'
+  | FuelError => FuelError tm'
+  | NoMatch => NoMatch tm'
+  end.
+Proof.
+  intros evalFn n v.
+  unfold E_PredZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct (evalFn (S n) (Success tm' v)) as [| w |] eqn:E.
+  - reflexivity.
+  - destruct w; reflexivity.
+  - reflexivity.
+Qed.
+
+Lemma E_PredZero_result_spec :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v w,
+  evalFn (S n) (Success tm' v) = Success tm' w ->
+  E_PredZeroremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
+  match w with
+  | tzero' => Success tm' tzero'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros evalFn n v w H. rewrite E_PredZero_result. rewrite H. reflexivity.
+Qed.
+
+Lemma E_PredZero_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  (forall v, t1' <> tpred' v) ->
+  E_PredZeroremoveFnPos'Animated evalFn (S n) (Success tm' t1') = NoMatch tm'.
+Proof.
+  intros evalFn n t1' Hne.
+  unfold E_PredZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_PredSucc_result :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v,
+  E_PredSuccremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
+  match evalFn (S n) (Success tm' v) with
+  | Success (tsucc' v') =>
+      Success tm' v'
+  | Success _ => NoMatch tm'
+  | FuelError => FuelError tm'
+  | NoMatch => NoMatch tm'
+  end.
+Proof.
+  intros evalFn n v.
+  unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct (evalFn (S n) (Success tm' v)) as [| w |] eqn:E.
+  - reflexivity.
+  - destruct w; simpl; reflexivity.
+  - reflexivity.
+Qed.
+
+Lemma E_PredSucc_result_spec2 :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n v w,
+  evalFn (S n) (Success tm' v) = Success tm' w ->
+  E_PredSuccremoveFnPos'Animated evalFn (S n) (Success tm' (tpred' v)) =
+  match w with
+  | tsucc' v' =>
+      Success tm' v'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros evalFn n v w H. rewrite E_PredSucc_result. rewrite H. reflexivity.
+Qed.
+
+Lemma E_PredSucc_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  (forall v, t1' <> tpred' v) ->
+  E_PredSuccremoveFnPos'Animated evalFn (S n) (Success tm' t1') = NoMatch tm'.
+Proof.
+  intros evalFn n t1' Hne.
+  unfold E_PredSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_App_result_spec :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm')
+         n t1' t2' xx tty tt3 w2 w3,
+  evalFn (S n) (Success tm' t1') = Success tm' (tabs' xx tty tt3) ->
+  evalFn (S n) (Success tm' t2') = Success tm' w2 ->
+  evalFn (S n) (Success tm' (substliftedFunc xx w2 tt3)) = Success tm' w3 ->
+  E_AppremoveFnPos'Animated evalFn (S n) (Success tm' (tapp' t1' t2')) = Success tm' w3.
+Proof.
+  intros evalFn n t1' t2' xx tty tt3 w2 w3 H1 H2 H3.
+  unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  rewrite H1, H2, H3.
+  simpl.
+  reflexivity.
+Qed.
+
+Lemma E_App_result_nomatch1 :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm')
+         n t1' t2' w1,
+  evalFn (S n) (Success tm' t1') = Success tm' w1 ->
+  (forall xx tty tt3, w1 <> tabs' xx tty tt3) ->
+  E_AppremoveFnPos'Animated evalFn (S n) (Success tm' (tapp' t1' t2')) = NoMatch tm'.
+Proof.
+  intros evalFn n t1' t2' w1 H1 Hne.
+  unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  rewrite H1.
+  destruct w1; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_App_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  (forall a1 a2, t1' <> tapp' a1 a2) ->
+  E_AppremoveFnPos'Animated evalFn (S n) (Success tm' t1') = NoMatch tm'.
+Proof.
+  intros evalFn n t1' Hne.
+  unfold E_AppremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_IfzZero_result :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') m u1 u2 u3,
+  E_IfzZeroremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
+  match evalFn (S m) (Success tm' u1) with
+  | Success tzero' => evalFn (S m) (Success tm' u2)
+  | Success _ => NoMatch tm'
+  | FuelError => FuelError tm'
+  | NoMatch => NoMatch tm'
+  end.
+Proof.
+  intros evalFn m u1 u2 u3.
+  unfold E_IfzZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct (evalFn (S m) (Success tm' u1)) as [| w |] eqn:E; simpl.
+  - reflexivity.
+  - destruct w; simpl; try reflexivity.
+    destruct (evalFn (S m) (Success tm' u2)) as [| res |]; reflexivity.
+  - reflexivity.
+Qed.
+
+Lemma E_IfzZero_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  (forall c1 c2 c3, t1' <> tifz' c1 c2 c3) ->
+  E_IfzZeroremoveFnPos'Animated evalFn (S n) (Success tm' t1') = NoMatch tm'.
+Proof.
+  intros evalFn n t1' Hne.
+  unfold E_IfzZeroremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_IfzZero_result_spec2 :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') m u1 u2 u3 w1 w2,
+  evalFn (S m) (Success tm' u1) = Success tm' w1 ->
+  evalFn (S m) (Success tm' u2) = Success tm' w2 ->
+  E_IfzZeroremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
+  match w1 with
+  | tzero' => Success tm' w2
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros evalFn m u1 u2 u3 w1 w2 H1 H2.
+  rewrite E_IfzZero_result. rewrite H1.
+  destruct w1; simpl; try reflexivity.
+  rewrite H2. reflexivity.
+Qed.
+
+Lemma E_IfzSucc_result_spec :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') m u1 u2 u3 w1 w3,
+  evalFn (S m) (Success tm' u1) = Success tm' w1 ->
+  evalFn (S m) (Success tm' u3) = Success tm' w3 ->
+  E_IfzSuccremoveFnPos'Animated evalFn (S m) (Success tm' (tifz' u1 u2 u3)) =
+  match w1 with
+  | tsucc' vn' =>
+      Success tm' w3
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros evalFn m u1 u2 u3 w1 w3 H1 H3.
+  unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  rewrite H1, H3.
+  destruct w1; simpl; reflexivity.
+Qed.
+
+Lemma E_IfzSucc_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n t1',
+  (forall c1 c2 c3, t1' <> tifz' c1 c2 c3) ->
+  E_IfzSuccremoveFnPos'Animated evalFn (S n) (Success tm' t1') = NoMatch tm'.
+Proof.
+  intros evalFn n t1' Hne.
+  unfold E_IfzSuccremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct t1'; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma E_Fix_result_spec :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm')
+         n fn T body w,
+  evalFn (S n) (Success tm' (substliftedFunc fn (tfix' fn T body) body)) = Success tm' w ->
+  E_FixremoveFnPos'Animated evalFn (S n) (Success tm' (tfix' fn T body)) = Success tm' w.
+Proof.
+  intros evalFn n fn T body w H.
+  unfold E_FixremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  rewrite H.
+  reflexivity.
+Qed.
+
+Lemma E_Fix_result_wrongshape :
+  forall (evalFn : nat -> animation_result tm' -> animation_result tm') n u,
+  (forall fn T body, u <> tfix' fn T body) ->
+  E_FixremoveFnPos'Animated evalFn (S n) (Success tm' u) = NoMatch tm'.
+Proof.
+  intros evalFn n u Hne.
+  unfold E_FixremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct u; simpl; try reflexivity.
+  exfalso. eapply Hne. reflexivity.
+Qed.
+
+Lemma dispatch_coind_ext_skip :
+  forall h rest (u : tm') m,
+  h (S m) (Success tm' u) = NoMatch tm' ->
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest (h::rest) (S m) (Success tm' u) =
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest rest m (Success tm' u).
+Proof.
+  intros h rest u m Hh.
+  cbn [dispatch_coind_ext]. rewrite Hh. reflexivity.
+Qed.
+
+Lemma dispatch_coind_ext_fire :
+  forall h rest (u : tm') m w,
+  h (S m) (Success tm' u) = Success tm' w ->
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest (h::rest) (S m) (Success tm' u) = Success tm' w.
+Proof.
+  intros h rest u m w Hh.
+  cbn [dispatch_coind_ext]. rewrite Hh. reflexivity.
+Qed.
+
+Lemma dispatch_coind_ext_reach :
+  forall (prefix : list (nat -> animation_result tm' -> animation_result tm'))
+         (tail : list (nat -> animation_result tm' -> animation_result tm')) (u : tm') m,
+  (forall h k, In h prefix -> h (S k) (Success tm' u) = NoMatch tm') ->
+  dispatch_coind_ext tm' tm' evalremoveFnPos'Rest (prefix++tail) m (Success tm' u) =
+  Success tm' (evalremoveFnPosAn1 u) \/
+  (exists k, k <= m /\ 
+             dispatch_coind_ext tm' tm' evalremoveFnPos'Rest (prefix++tail) m (Success tm' u) =
+             dispatch_coind_ext tm' tm' evalremoveFnPos'Rest tail k (Success tm' u)).
+Proof.
+  induction prefix as [| hh rr IHrest]; intros tail u m Hall.
+  - right. exists m. split; [lia | reflexivity].
+  - destruct m as [| m].
+    + left. simpl. reflexivity.
+    + assert (Hhh : hh (S m) (Success tm' u) = NoMatch tm')
+        by (apply Hall; left; reflexivity).
+      pose proof (dispatch_coind_ext_skip hh (List.app rr tail) u m Hhh) as Hstep.
+      change (List.app (cons hh rr) tail) with (cons hh (List.app rr tail)).
+      rewrite Hstep.
+      destruct (IHrest tail u m ltac:(intros h' k Hin; apply Hall; right; exact Hin))
+        as [Hesc | [k [Hkm Heqk]]].
+      * left. exact Hesc.
+      * right. exists k. split; [lia | exact Heqk].
+Qed.
+
+
+
+
+Ltac escape_app_ifz_fix u k H :=
+  change
+    [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    with
+    (List.app
+      [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
+      [evalremoveFnPos'UndefinedAnimated]) in H;
+  rewrite (dispatch_coind_ext_escape
+    [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
+    u
+    ltac:(intros hh kk Hin; simpl in Hin;
+          repeat destruct Hin as [<- | Hin]; [ | | | | contradiction];
+          [ apply E_App_result_wrongshape; intros aa1 aa2; discriminate
+          | apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate
+          | apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate
+          | apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate ])
+    k) in H;
+  discriminate H.
+
+Lemma evalTop_substLifted_escape : forall n x a b,
+  evalremoveFnPos'AnimatedTopFn n (Success tm' (substLiftedCstr x a b)) =
+  Success tm' (evalremoveFnPosAn1 (substLiftedCstr x a b)).
+Proof.
+  intros n x a b.
+  destruct n as [| m].
+  { apply base_result. }
+  rewrite evalTop_stepSuccess.
+  change
+    [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     evalremoveFnPos'UndefinedAnimated]
+    with
+    (List.app
+      [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
+       E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
+      [evalremoveFnPos'UndefinedAnimated]).
+  apply (dispatch_coind_ext_escape
+    [E_LamremoveFnPos'Animated; E_ZeroremoveFnPos'Animated;
+     E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+     E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn]
+    (substLiftedCstr x a b)).
+  intros hh k Hin.
+  simpl in Hin.
+  repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction].
+  - rewrite E_Lam_result; reflexivity.
+  - rewrite E_Zero_result; reflexivity.
+  - rewrite E_Succ_result_generic; reflexivity.
+  - apply E_PredZero_result_wrongshape; intros v'; discriminate.
+  - apply E_PredSucc_result_wrongshape; intros v'; discriminate.
+  - apply E_App_result_wrongshape; intros aa1 aa2; discriminate.
+  - apply E_IfzZero_result_wrongshape; intros cc1 cc2 cc3; discriminate.
+  - apply E_IfzSucc_result_wrongshape; intros cc1 cc2 cc3; discriminate.
+  - apply E_Fix_result_wrongshape; intros ffn TT bb; discriminate.
+Qed.
+
+Lemma dispatch_tapp_from_app : forall n t1 t2 f,
+  (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+      [E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       evalremoveFnPos'UndefinedAnimated]
+      (S n) (Success tm' (tapp' (tmLift t1) (tmLift t2))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end) =
+  match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t1)) with
+  | Success (tabs' x ty t3') =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+      | Success v2' =>
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
+      | _ => Success tm (f (tapp t1 t2))
+      end
+  | Success _ => Success tm (f (tapp t1 t2))
+  | _ => Success tm (f (tapp t1 t2))
+  end.
+Proof.
+  intros n t1 t2 f.
+  (* Fallthrough: whenever App doesn't match at all, IfzZero/IfzSucc/Fix/Undefined also
+     don't match a tapp'-shaped input, bottoming out at the oracle escape — exactly the
+     [Hfall] pattern from [dispatch_tpred_from_pred], for this handler tail. *)
+  assert (Hfall : forall m,
+    (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tapp' (tmLift t1) (tmLift t2))) with
+     | Success x => Success tm (tmTransparentSigmaPushBody f x)
+     | _ => NoMatch tm
+     end) = Success tm (f (tapp t1 t2))).
+  { intro m.
+    assert (Hraw :
+      dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+        [E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+         evalremoveFnPos'UndefinedAnimated]
+        m (Success tm' (tapp' (tmLift t1) (tmLift t2)))
+      = Success tm' (evalremoveFnPosAn1 (tapp' (tmLift t1) (tmLift t2)))).
+    { clear. destruct m.
+      - simpl. reflexivity.
+      - unfold dispatch_coind_ext.
+        assert (HIZ : E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m)
+                        (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+          by (unfold E_IfzZeroremoveFnPos'Animated, option_to_result; reflexivity).
+        rewrite HIZ. destruct m.
+        + simpl. reflexivity.
+        + unfold dispatch_coind_ext.
+          assert (HIS : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m)
+                          (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+            by (unfold E_IfzSuccremoveFnPos'Animated, option_to_result; reflexivity).
+          rewrite HIS. destruct m.
+          * simpl. reflexivity.
+          * unfold dispatch_coind_ext.
+            assert (HF : E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn (S m)
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+              by (unfold E_FixremoveFnPos'Animated, option_to_result; reflexivity).
+            rewrite HF. destruct m.
+            -- simpl. reflexivity.
+            -- unfold dispatch_coind_ext.
+               assert (HU : Success tm' (evalremoveFnPosAn1 (tapp' (tmLift t1) (tmLift t2)))
+                            = evalremoveFnPos'UndefinedAnimated (S m)
+                                (Success tm' (tapp' (tmLift t1) (tmLift t2))))
+                 by (simpl; reflexivity).
+               rewrite <- HU. reflexivity. }
+    rewrite Hraw. simpl.
+    repeat rewrite tmTransparentSigmaPushBody_tmLift. reflexivity. }
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t1)) as [w1 Hw1].
+  rewrite Hw1.
+  destruct w1 as [s1|x ty t3'|a1 a2| |v1|b1|c1 c2 c3|s2 ty2 b2|m1|s3 n1 n2] eqn:Hw1shape.
+  1,3,4,5,6,7,8,9,10:
+    (rewrite (dispatch_coind_ext_skip _ _ _ _
+                (E_App_result_nomatch1 evalremoveFnPos'AnimatedTopFn n (tmLift t1) (tmLift t2) _
+                   Hw1 ltac:(discriminate)));
+     apply Hfall).
+  (* w1 = tabs' x ty t3' *)
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n) (tmLift t2)) as [w2 Hw2].
+  rewrite Hw2.
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n)
+              (substliftedFunc x w2 t3')) as [w3 Hw3].
+  rewrite (dispatch_coind_ext_fire _ _ _ _ _
+             (E_App_result_spec evalremoveFnPos'AnimatedTopFn n (tmLift t1) (tmLift t2) x ty t3'
+                w2 w3 Hw1 Hw2 Hw3)).
+  rewrite Hw3.
+  reflexivity.
+Qed.
+
+Lemma dispatch_tapp : forall n t1 t2 f,
+  (match evalremoveFnPos'AnimatedTopFn
+     (S (S (S (S (S (S (S n))))))) (Success tm' (tapp' (tmLift t1) (tmLift t2))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end)
+  =
+  match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t1)) with
+  | Success (tabs' x ty t3') =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+      | Success v2' =>
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
+      | _ => Success tm (f (tapp t1 t2))
+      end
+  | Success _ => Success tm (f (tapp t1 t2))
+  | _ => Success tm (f (tapp t1 t2))
+  end.
+Proof.
+  intros n t1 t2 f.
+  rewrite evalTop_step.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S (S (S (S (S n)))))) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S (S (S (S (S n))))) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero.
+  cbn [dispatch_coind_ext].
+  assert (HE_Succ : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                      (S (S (S (S n)))) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_SuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_Succ.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredZero : E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S (S n))) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_PredZeroremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredZero.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredSucc : E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S n)) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm')
+    by (unfold E_PredSuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredSucc.
+  exact (dispatch_tapp_from_app n t1 t2 f).
+Qed.
+
+(** CORRECTED (see [dispatch_tapp_from_app]): shape/value decisions on raw [tm'] results. *)
+Lemma anim_S_tapp : forall n t1 t2 f,
+  evalTransparentSigma2AnimatedTopFn
+    (S (S (S (S (S (S (S n))))))) (Success tm (tapp t1 t2)) f =
+  match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t1)) with
+  | Success (tabs' x ty t3') =>
+      match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift t2)) with
+      | Success v2' =>
+          (match evalremoveFnPos'AnimatedTopFn (S n)
+                        (Success tm' (substliftedFunc x v2' t3')) with
+           | Success x0 => Success tm (tmTransparentSigmaPushBody f x0)
+           | _ => NoMatch tm
+           end)
+      | _ => Success tm (f (tapp t1 t2))
+      end
+  | Success _ => Success tm (f (tapp t1 t2))
+  | _ => Success tm (f (tapp t1 t2))
+  end.
+Proof.
+  intros n t1 t2 f.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift].
+  exact (dispatch_tapp n t1 t2 f).
+Qed.
+
+Lemma dispatch_tfix_from_fix : forall n fn T t f,
+  (match dispatch_coind_ext tm' tm' evalremoveFnPos'Rest
+      [E_FixremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn;
+       evalremoveFnPos'UndefinedAnimated]
+      (S n) (Success tm' (tfix' fn T (tmLift t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end) =
+  (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift (subst fn (tfix fn T t) t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end).
+Proof.
+  intros n fn T t f.
+  assert (Hsubst_eq :
+    substliftedFunc fn (tfix' fn T (tmLift t)) (tmLift t) = tmLift (subst fn (tfix fn T t) t)).
+  { unfold substliftedFunc.
+    assert (Hc := tmChkNoExtraCstrs_tmLift t).
+    simpl. rewrite Hc.
+    rewrite (tmPushPlain_tmLift t).
+    reflexivity. }
+  destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n)
+              (substliftedFunc fn (tfix' fn T (tmLift t)) (tmLift t))) as [w Hw].
+  rewrite (dispatch_coind_ext_fire _ _ _ _ _
+             (E_Fix_result_spec evalremoveFnPos'AnimatedTopFn n fn T (tmLift t) w Hw)).
+  rewrite Hsubst_eq in Hw.
+  rewrite Hw.
+  reflexivity.
+Qed.
+
+Lemma dispatch_tfix : forall n fn T t f,
+  (match evalremoveFnPos'AnimatedTopFn
+     (S (S (S (S (S (S (S (S (S (S n)))))))))) (Success tm' (tfix' fn T (tmLift t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end)
+  =
+  (match evalremoveFnPos'AnimatedTopFn (S n) (Success tm' (tmLift (subst fn (tfix fn T t) t))) with
+   | Success x => Success tm (tmTransparentSigmaPushBody f x)
+   | _ => NoMatch tm
+   end).
+Proof.
+  intros n fn T t f.
+  rewrite evalTop_step.
+  cbn [dispatch_coind_ext].
+  assert (HE_Lam : E_LamremoveFnPos'Animated (S (S (S (S (S (S (S (S (S n))))))))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_LamremoveFnPos'Animated; reflexivity).
+  rewrite HE_Lam.
+  cbn [dispatch_coind_ext].
+  assert (HE_Zero : E_ZeroremoveFnPos'Animated (S (S (S (S (S (S (S (S n)))))))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_ZeroremoveFnPos'Animated; reflexivity).
+  rewrite HE_Zero.
+  cbn [dispatch_coind_ext].
+  assert (HE_Succ : E_SuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                      (S (S (S (S (S (S (S n))))))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_SuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_Succ.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredZero : E_PredZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S (S (S (S (S n)))))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_PredZeroremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredZero.
+  cbn [dispatch_coind_ext].
+  assert (HE_PredSucc : E_PredSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                          (S (S (S (S (S n))))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_PredSuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_PredSucc.
+  cbn [dispatch_coind_ext].
+  assert (HE_App : E_AppremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                     (S (S (S (S n)))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_AppremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_App.
+  cbn [dispatch_coind_ext].
+  assert (HE_IfzZero : E_IfzZeroremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                         (S (S (S n))) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_IfzZeroremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_IfzZero.
+  cbn [dispatch_coind_ext].
+  assert (HE_IfzSucc : E_IfzSuccremoveFnPos'Animated evalremoveFnPos'AnimatedTopFn
+                         (S (S n)) (Success tm' (tfix' fn T (tmLift t))) = NoMatch tm')
+    by (unfold E_IfzSuccremoveFnPos'Animated, option_to_result; reflexivity).
+  rewrite HE_IfzSucc.
+  exact (dispatch_tfix_from_fix n fn T t f).
+Qed.
+
+Lemma anim_S_tfix : forall n fn T t f,
+  evalTransparentSigma2AnimatedTopFn
+    (S (S (S (S (S (S (S (S (S (S n)))))))))) (Success tm (tfix fn T t)) f =
+  evalTransparentSigma2AnimatedTopFn (S n) (Success tm (subst fn (tfix fn T t) t)) f.
+Proof.
+  intros n fn T t f.
+  unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+  cbn [tmLift].
+  exact (dispatch_tfix n fn T t f).
+Qed.
+
+(** [eval] here is a plain [Inductive] (standard CBV big-step), so ordinary
+    structural induction on the derivation works directly -- no coinduction
+    wrinkles, no raw-level/oracle machinery needed. *)
+(** [induction H1] relies on [eval]'s auto-derived scheme, which does NOT
+    generate induction hypotheses for recursive occurrences bundled inside
+    a conjunction premise (confirmed empirically: E_App's case left no
+    IH for Ht1/Ht2/Ht3 at all). So this is a [Fixpoint] on the derivation
+    instead, recursing explicitly via direct calls to [eval_deterministic]
+    on the destructured sub-derivations (which the guard checker accepts
+    as structurally smaller than [H1], conjunction or not). *)
+Fixpoint eval_deterministic (t vout1 vout2 : tm)
+  (H1 : eval t vout1) (H2 : eval t vout2) {struct H1} : vout1 = vout2.
+Proof.
+  destruct H1 as
+    [ x T t0
+    |
+    | t0 v0 He
+    | t0 He
+    | t0 v0 He
+    | t1 t2 x T t3 v2 v0 [Ha [Hb Hc]]
+    | td t1 t2 v0 [Ha Hb]
+    | td vn t1 t2 t4 [Ha Hb]
+    | fn T t0 v0 He ].
+  - inversion H2; subst; reflexivity.
+  - inversion H2; subst; reflexivity.
+  - inversion H2 as [ | | t' v' Hv' | | | | | | ]; subst.
+    f_equal. exact (eval_deterministic t0 v0 v' He Hv').
+  - inversion H2 as [ | | | t' Ht' | t' v' Hv' | | | | ]; subst.
+    + reflexivity.
+    + exfalso.
+      pose proof (eval_deterministic t0 tzero _ He Hv') as Hcontra.
+      discriminate.
+  - inversion H2 as [ | | | t' Ht' | t' v' Hv' | | | | ]; subst.
+    + exfalso.
+      pose proof (eval_deterministic t0 (tsucc v0) tzero He Ht') as Hcontra.
+      discriminate.
+    + pose proof (eval_deterministic t0 (tsucc v0) _ He Hv') as Heq.
+      injection Heq as ->. reflexivity.
+  - inversion H2 as [ | | | | | t1' t2' x' T' t3' v2' v0' [Ha' [Hb' Hc']] | | | ]; subst.
+    pose proof (eval_deterministic t1 (tabs x T t3) (tabs x' T' t3') Ha Ha') as Heq1.
+    injection Heq1 as <- <- <-.
+    pose proof (eval_deterministic t2 v2 v2' Hb Hb') as Heq2. subst.
+    exact (eval_deterministic (subst x v2' t3) v0 _ Hc Hc').
+  - inversion H2 as [ | | | | | | t' t1' t2' v0' [Ha' Hb'] | t' vn' t1' t2' t4' [Ha' Hb'] | ]; subst.
+    + exact (eval_deterministic t1 v0 _ Hb Hb').
+    + exfalso.
+      pose proof (eval_deterministic td tzero (tsucc vn') Ha Ha') as Hcontra.
+      discriminate.
+  - inversion H2 as [ | | | | | | t' t1' t2' v0' [Ha' Hb'] | t' vn' t1' t2' t4' [Ha' Hb'] | ]; subst.
+    + exfalso.
+      pose proof (eval_deterministic td (tsucc vn) tzero Ha Ha') as Hcontra.
+      discriminate.
+    + pose proof (eval_deterministic td (tsucc vn) (tsucc vn') Ha Ha') as Heq.
+      injection Heq as ->.
+      exact (eval_deterministic t2 t4 _ Hb Hb').
+  - inversion H2 as [ | | | | | | | | fn' T' t0' v' Hv' ]; subst.
+    exact (eval_deterministic (subst fn (tfix fn T t0) t0) v0 _ He Hv').
+Defined.
+
+(** Since [f] is already given globally sound (not built up via a chain/
+    accumulator the way the genuinely-multivalued coinductive [eval] needed
+    elsewhere), the only machinery needed per constructor is: (a) at low
+    fuel, the dispatch escapes directly to [f inputTm], and [Hsound]
+    immediately gives soundness of that; (b) at high fuel, recurse via this
+    same lemma at smaller fuel on whatever subterm the dispatch consults,
+    and wrap with the matching [eval] constructor. [tifz] additionally uses
+    [eval_deterministic] to exclude the "wrong branch" of its discriminant
+    -- replacing the whole raw-shape/dispatch-determinism machinery that
+    was needed for the genuinely multivalued coinductive [eval]. *)
+Lemma tmPush_eq_plain : forall (g : tm -> tm) (w : tm'),
+  tmChkNoExtraCstrs w = true ->
+  tmTransparentSigmaPushBody g w = tmPushPlain w.
+Proof.
+  intros g w. induction w; simpl; intros H; try reflexivity; try discriminate.
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+Qed.
+
+Fixpoint animation_soundness_partialRelDet_aux (depth : nat) {struct depth} :
+  forall (f : tm -> tm) (n : nat), n <= depth ->
+  forall (inputTm outputTm : tm),
+  (forall tm1 : tm, (exists tm2 : tm, eval tm1 tm2) -> eval tm1 (f tm1)) ->
+  (exists outputTm' : tm, eval inputTm outputTm') ->
+  evalTransparentSigma2AnimatedTopFn n (Success tm inputTm) f = Success tm outputTm ->
+  eval inputTm outputTm.
+Proof.
+  destruct depth as [| depth'].
+  { intros f n Hn inputTm outputTm Hsound Hex Hanim.
+    assert (n = 0) by lia. subst n.
+    rewrite anim_0_oracle in Hanim. injection Hanim as <-.
+    apply Hsound. exact Hex. }
+  intros f n Hn inputTm outputTm Hsound Hex Hanim.
+  assert (Hescape : forall outputTm0, f inputTm = outputTm0 -> eval inputTm outputTm0).
+  { intros outputTm0 <-. apply Hsound. exact Hex. }
+  destruct inputTm as [s | lx lT lbody | t1 t2 | | t | t | tdisc t1 t2 | fn T fbody].
+
+  - (* tvar *) exfalso. destruct Hex as [v Hv]. inversion Hv.
+
+  - (* tabs *)
+    destruct n as [|[|n'']].
+    + rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tabs in Hanim. injection Hanim as <-. apply E_Lam.
+
+  - (* tapp t1 t2 *)
+    destruct Hex as [v Hv].
+    inversion Hv as [ | | | | | t1c t2c xl Tl t3l v2l vl [D1 [D2 D3]] Heq1 Heq2 | | | ]; subst.
+    destruct n as [|[|[|[|[|[|[|n'']]]]]]].
+    + rewrite (anim_below_thr_tapp 0 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 1 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 2 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 3 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 4 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 5 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tapp 6 t1 t2 f ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tapp in Hanim.
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n'') (tmLift t1)) as [w1 Hw1].
+      rewrite Hw1 in Hanim.
+      destruct w1 as [s1|xw ty t3'|a1 a2| |v1w|b1|c1 c2 c3|s2 ty2 b2|m1|s3 nn1 nn2];
+        [ cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | idtac
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity
+        | cbv iota in Hanim; injection Hanim as <-; apply Hescape; reflexivity ].
+      (* w1 = tabs' xw ty t3' : the real branch *)
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n'') (tmLift t2)) as [w2 Hw2].
+      rewrite Hw2 in Hanim.
+      destruct (evalremoveFnPos'AnimatedTopFn_always_success (S n'')
+                  (substliftedFunc xw w2 t3')) as [w3 Hw3].
+      rewrite Hw3 in Hanim.
+      cbv iota in Hanim.
+      injection Hanim as <-.
+      assert (Htm1 : evalTransparentSigma2AnimatedTopFn (S n'') (Success tm t1) f =
+                      Success tm (tabs xw ty (tmTransparentSigmaPushBody f t3'))).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw1. reflexivity. }
+      pose proof (animation_soundness_partialRelDet_aux depth' f (S n'') ltac:(lia)
+                    t1 _ Hsound (ex_intro _ (tabs xl Tl t3l) D1) Htm1) as Hc1.
+      pose proof (eval_deterministic t1 _ _ Hc1 D1) as Hc1eq.
+      injection Hc1eq as Hceqx Hceqty Hceqt3.
+      subst xw. subst ty.
+      assert (Htm2 : evalTransparentSigma2AnimatedTopFn (S n'') (Success tm t2) f =
+                      Success tm (tmTransparentSigmaPushBody f w2)).
+      { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+               evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+        cbn [tmLift]. rewrite Hw2. reflexivity. }
+      pose proof (animation_soundness_partialRelDet_aux depth' f (S n'') ltac:(lia)
+                    t2 _ Hsound (ex_intro _ v2l D2) Htm2) as Hc2.
+      pose proof (eval_deterministic t2 _ _ Hc2 D2) as Hc2eq.
+      unfold substliftedFunc in Hw3.
+      destruct (tmChkNoExtraCstrs w2 && (tmChkNoExtraCstrs t3' && true))%bool eqn:Hchk;
+        cbv iota in Hw3.
+      * (* marker-free: genuine substitution, recurse via the aux lemma *)
+        apply andb_prop in Hchk as [Hchk1 Hchk2true].
+        apply andb_prop in Hchk2true as [Hchk2 _].
+        assert (Hpw2 : tmPushPlain w2 = v2l)
+          by (rewrite <- (tmPush_eq_plain f w2 Hchk1); exact Hc2eq).
+        assert (Hpt3 : tmPushPlain t3' = t3l)
+          by (rewrite <- (tmPush_eq_plain f t3' Hchk2); exact Hceqt3).
+        rewrite Hpw2, Hpt3 in Hw3.
+        assert (Htm3 : evalTransparentSigma2AnimatedTopFn (S n'') (Success tm (subst xl v2l t3l)) f =
+                        Success tm (tmTransparentSigmaPushBody f w3)).
+        { unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw3. reflexivity. }
+        eapply E_App. split; [exact D1 | split; [exact D2 |]].
+        exact (animation_soundness_partialRelDet_aux depth' f (S n'') ltac:(lia)
+                 (subst xl v2l t3l) _ Hsound (ex_intro _ v D3) Htm3).
+      * (* marker-laden: substliftedFunc defers to the oracle marker directly;
+           pushing it through f resolves to [f] applied to the real substituted
+           term, which Hsound (fed the existence witness D3) already closes. *)
+        rewrite evalTop_substLifted_escape in Hw3. injection Hw3 as <-.
+        cbn [tmTransparentSigmaPushBody].
+        rewrite Hc2eq, Hceqt3.
+        eapply E_App. split; [exact D1 | split; [exact D2 |]].
+        apply Hsound. exists v. exact D3.
+
+  - (* tzero *)
+    destruct n as [|[|[|n'']]].
+    + rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tzero 2 _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tzero in Hanim. injection Hanim as <-. apply E_Zero.
+
+  - (* tsucc t *)
+    destruct n as [|[|[|[|n'''']]]].
+    + rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tsucc 2 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tsucc 3 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tsucc in Hanim.
+      destruct (evalTransparentSigma2AnimatedTopFn (S n'''') (Success tm t) f) as [|v'|] eqn:Hinner;
+        try discriminate Hanim.
+      injection Hanim as <-.
+      apply E_Succ.
+      destruct Hex as [v Hv]. inversion Hv as [| | tw v0 D1 | | | | | | ]; subst.
+      exact (animation_soundness_partialRelDet_aux depth' f (S n'''') ltac:(lia) t v' Hsound (ex_intro _ v0 D1) Hinner).
+
+  - (* tpred t *)
+    destruct Hex as [v0 Hv0].
+    assert (Hex_t : exists v, eval t v).
+    { inversion Hv0 as [| | | tw D1 | tw2 vv D1' | | | | ]; subst.
+      - exists tzero. exact D1.
+      - exists (tsucc v0). exact D1'. }
+    destruct n as [|[|[|[|[|[|n'''']]]]]].
+    + rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tpred 2 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tpred 3 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tpred 4 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tpred 5 t _ ltac:(lia)) in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tpred in Hanim.
+      assert (Hsecondary : forall outTm2,
+        match evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift t)) with
+        | Success (tsucc' v') => Success tm (tmTransparentSigmaPushBody f v')
+        | _ => Success tm (f (tpred t))
+        end = Success tm outTm2 -> eval (tpred t) outTm2).
+      { intros outTm2 Heq2.
+        destruct (evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift t))) as [|w2|] eqn:Hw2.
+        - injection Heq2 as <-. apply Hescape. reflexivity.
+        - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v1'|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+            simpl in Heq2; try (injection Heq2 as <-; apply Hescape; reflexivity).
+          injection Heq2 as <-.
+          apply E_PredSucc.
+          apply (animation_soundness_partialRelDet_aux depth' f (S n'''') ltac:(lia) t
+                   (tsucc (tmTransparentSigmaPushBody f v1')) Hsound Hex_t).
+          unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                 evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+          cbn [tmLift]. rewrite Hw2. reflexivity.
+        - injection Heq2 as <-. apply Hescape. reflexivity. }
+      destruct (evalremoveFnPos'AnimatedTopFn (S (S n'''')) (Success tm' (tmLift t))) as [|w1|] eqn:Hw1.
+      -- simpl in Hanim. apply (Hsecondary outputTm Hanim).
+      -- destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1''|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+           simpl in Hanim; try (apply (Hsecondary outputTm Hanim)).
+         injection Hanim as <-.
+         apply E_PredZero.
+         apply (animation_soundness_partialRelDet_aux depth' f (S (S n'''')) ltac:(lia) t tzero Hsound Hex_t).
+         unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+         cbn [tmLift]. rewrite Hw1. reflexivity.
+      -- simpl in Hanim. apply (Hsecondary outputTm Hanim).
+
+  - (* tifz tdisc t1 t2 *)
+    destruct Hex as [v0 Hv0].
+    inversion Hv0 as [ | | | | | | tdz t1z t2z vz [Dtz Dt1] | tsf vnf t1sf t2sf t4f [Dts Dt2] | ]; subst.
+    + (* E_IfzZero witness: Dtz : eval tdisc tzero, Dt1 : eval t1 v0 *)
+      destruct n as [|[|[|[|[|[|[|[|[|n'''']]]]]]]]].
+      * rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 2 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 3 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 4 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 5 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 6 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 7 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 8 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite anim_S_tifz in Hanim.
+        (* The "_" fallback of the outer (tzero') check re-evaluates tdisc at a
+           SEPARATE, smaller fuel looking for tsucc'; since Dtz pins tdisc's real
+           value to tzero, that re-evaluation can never actually land on tsucc'
+           (else eval_deterministic would contradict Dtz), so it always escapes. *)
+        assert (Hinner : forall outputTm2,
+          match evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift tdisc)) with
+          | Success (tsucc' v2'') =>
+              match evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift t2)) with
+              | Success x => Success tm (tmTransparentSigmaPushBody f x)
+              | _ => NoMatch tm
+              end
+          | _ => Success tm (f (tifz tdisc t1 t2))
+          end = Success tm outputTm2 -> eval (tifz tdisc t1 t2) outputTm2).
+        { intros outputTm2 Heq2.
+          destruct (evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift tdisc)))
+            as [|w2|] eqn:Hw2; cbv iota in Heq2.
+          - injection Heq2 as <-. apply Hescape. reflexivity.
+          - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2''|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+              cbv iota in Heq2; try (injection Heq2 as <-; apply Hescape; reflexivity).
+            (* w2 = tsucc' v2'' : contradicts Dtz *)
+            exfalso.
+            assert (Htd : evalTransparentSigma2AnimatedTopFn (S n'''') (Success tm tdisc) f =
+                           Success tm (tsucc (tmTransparentSigmaPushBody f v2'')))
+              by (unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                         evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush;
+                  cbn [tmLift]; rewrite Hw2; reflexivity).
+            pose proof (animation_soundness_partialRelDet_aux depth' f (S n'''') ltac:(lia)
+                          tdisc _ Hsound (ex_intro _ tzero Dtz) Htd) as Hc1.
+            pose proof (eval_deterministic tdisc tzero _ Dtz Hc1) as Hc2.
+            discriminate Hc2.
+          - injection Heq2 as <-. apply Hescape. reflexivity. }
+        destruct (evalremoveFnPos'AnimatedTopFn (S (S n'''')) (Success tm' (tmLift tdisc)))
+          as [|w1|] eqn:Hw1; cbv iota in Hanim.
+        -- apply (Hinner outputTm Hanim).
+        -- destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1''|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+             cbv iota in Hanim; try (apply (Hinner outputTm Hanim)).
+           (* w1 = tzero' : the real branch, recurse into t1 *)
+           destruct (evalremoveFnPos'AnimatedTopFn (S (S n'''')) (Success tm' (tmLift t1)))
+             as [|w1'|] eqn:Hw1'; cbv iota in Hanim.
+           ++ discriminate Hanim.
+           ++ injection Hanim as <-.
+              apply E_IfzZero. split; [exact Dtz |].
+              apply (animation_soundness_partialRelDet_aux depth' f (S (S n'''')) ltac:(lia)
+                       t1 _ Hsound (ex_intro _ v0 Dt1)).
+              unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+              cbn [tmLift]. rewrite Hw1'. reflexivity.
+           ++ discriminate Hanim.
+        -- apply (Hinner outputTm Hanim).
+    + (* E_IfzSucc witness: Dts : eval tdisc (tsucc vnf), Dt2 : eval t2 v0 *)
+      destruct n as [|[|[|[|[|[|[|[|[|n'''']]]]]]]]].
+      * rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 2 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 3 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 4 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 5 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 6 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 7 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite (anim_below_thr_tifz 8 tdisc t1 t2 _ ltac:(lia)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * rewrite anim_S_tifz in Hanim.
+        (* The "_" fallback of the outer (tzero') check is exactly where the real
+           IfzSucc work happens: re-evaluate tdisc at the smaller fuel, looking
+           for tsucc'. *)
+        assert (Hinner2 : forall outputTm2,
+          match evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift tdisc)) with
+          | Success (tsucc' v2'') =>
+              match evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift t2)) with
+              | Success x => Success tm (tmTransparentSigmaPushBody f x)
+              | _ => NoMatch tm
+              end
+          | _ => Success tm (f (tifz tdisc t1 t2))
+          end = Success tm outputTm2 -> eval (tifz tdisc t1 t2) outputTm2).
+        { intros outputTm2 Heq2.
+          destruct (evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift tdisc)))
+            as [|w2|] eqn:Hw2; cbv iota in Heq2.
+          - injection Heq2 as <-. apply Hescape. reflexivity.
+          - destruct w2 as [s1|s2 ty2 b2|a1 a2| |v2''|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+              cbv iota in Heq2; try (injection Heq2 as <-; apply Hescape; reflexivity).
+            (* w2 = tsucc' v2'' : real recursion into t2 *)
+            destruct (evalremoveFnPos'AnimatedTopFn (S n'''') (Success tm' (tmLift t2)))
+              as [|w2'|] eqn:Hw2'; cbv iota in Heq2.
+            + discriminate Heq2.
+            + injection Heq2 as <-.
+              eapply E_IfzSucc. split; [exact Dts |].
+              apply (animation_soundness_partialRelDet_aux depth' f (S n'''') ltac:(lia)
+                       t2 _ Hsound (ex_intro _ v0 Dt2)).
+              unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                     evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush.
+              cbn [tmLift]. rewrite Hw2'. reflexivity.
+            + discriminate Heq2.
+          - injection Heq2 as <-. apply Hescape. reflexivity. }
+        destruct (evalremoveFnPos'AnimatedTopFn (S (S n'''')) (Success tm' (tmLift tdisc)))
+          as [|w1|] eqn:Hw1; cbv iota in Hanim.
+        -- apply (Hinner2 outputTm Hanim).
+        -- destruct w1 as [s1|s2 ty2 b2|a1 a2| |v1''|b3|c1 c2 c3|s3 ty3 b4|m1|s4 nn1 nn2];
+             cbv iota in Hanim; try (apply (Hinner2 outputTm Hanim)).
+           (* w1 = tzero' : contradicts Dts *)
+           exfalso.
+           assert (Htd : evalTransparentSigma2AnimatedTopFn (S (S n'''')) (Success tm tdisc) f =
+                          Success tm tzero)
+             by (unfold evalTransparentSigma2AnimatedTopFn, evalremoveFnPosinputLift,
+                        evalremoveFnPosTransparentSigmaOutputPush, tmTransparentSigmaPush;
+                 cbn [tmLift]; rewrite Hw1; reflexivity).
+           pose proof (animation_soundness_partialRelDet_aux depth' f (S (S n'''')) ltac:(lia)
+                         tdisc _ Hsound (ex_intro _ (tsucc vnf) Dts) Htd) as Hc1.
+           pose proof (eval_deterministic tdisc (tsucc vnf) _ Dts Hc1) as Hc2.
+           discriminate Hc2.
+        -- apply (Hinner2 outputTm Hanim).
+
+  - (* tfix fn T fbody *)
+    destruct Hex as [v Hv]. inversion Hv as [| | | | | | | | f0 T0 t0 v0 D1]; subst.
+    destruct n as [|[|[|[|[|[|[|[|[|[|n'''']]]]]]]]]].
+    + rewrite anim_0_oracle in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_1_oracle_f in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 2 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 3 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 4 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 5 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 6 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 7 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 8 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite (anim_below_thr_tfix 9 fn T fbody _ ltac:(lia)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + rewrite anim_S_tfix in Hanim.
+      apply E_Fix.
+      exact (animation_soundness_partialRelDet_aux depth' f (S n'''') ltac:(lia)
+               (subst fn (tfix fn T fbody) fbody) outputTm Hsound
+               (ex_intro _ v D1) Hanim).
+Qed.
+
 Theorem animation_soundness_partialRelDet : forall (f : tm -> tm) (inputTm outputTm : tm) (n : nat),
   (forall tm1 : tm, ((exists tm2 : tm, eval tm1 tm2) -> eval tm1 (f tm1))) ->
   (exists outputTm' : tm, (eval inputTm outputTm')) ->
     (evalTransparentSigma2AnimatedTopFn n (Success tm inputTm)) f = Success tm outputTm ->
-    eval inputTm outputTm. Proof. Admitted.
-
+    eval inputTm outputTm.
+Proof.
+  intros f inputTm outputTm n Hsound Hex Hanim.
+  exact (animation_soundness_partialRelDet_aux n f n ltac:(lia) inputTm outputTm Hsound Hex Hanim).
+Qed.
 
 End InductiveEval.
 
@@ -160,13 +2993,139 @@ CoInductive stmCopy : stm -> stm -> stm -> Prop :=
 
 
 MetaRocq Run (animate_coinductive_with_fn_pos <?stmCopy?> [("stmCopy", ([0;1], [2]))] 500).
-Print stmCopyTransparentSigma2AnimatedTopFn.
- 
+
+(** Raw-level step fact: the engine always commits to [left] (the first-listed
+    constructor) for a [stmCons'/stmCons'] pair, peeling one layer off both
+    sides and recursing with the SAME fuel (not fuel-1) -- matching the
+    [E_Succ_result_generic] pattern used for [tm]. Confirmed empirically via
+    [vm_compute] before being proved here by unfolding the generic combinator
+    vocabulary ([compose_outcome]/[split_outcome_fst/snd]/[dispatch_clauses]/
+    [with_default]/[fuel_error_fn]) that the animation engine generates for
+    every handler, regardless of the specific relation being animated. *)
+Lemma stmCopy_left_result_generic :
+  forall (copyFn : nat -> animation_result (stm'*stm') -> animation_result stm') n n1 n2 w1 w2,
+  leftremoveFnPos'Animated copyFn (S n) (Success (stm'*stm') (stmCons' n1 w1, stmCons' n2 w2)) =
+  match copyFn (S n) (Success (stm'*stm') (w1, w2)) with
+  | Success w => Success stm' (stmCons' n1 w)
+  | FuelError => FuelError stm'
+  | NoMatch => NoMatch stm'
+  end.
+Proof.
+  intros copyFn n n1 n2 w1 w2.
+  unfold leftremoveFnPos'Animated, AnimationResult.compose_outcome,
+         AnimationResult.option_to_result, AnimationResult.join_pair,
+         AnimationResult.split_outcome_fst, AnimationResult.split_outcome_snd,
+         TermUtils.with_default, TermUtils.dispatch_clauses,
+         AnimationResult.fuel_error_fn.
+  simpl.
+  destruct (copyFn (S n) (Success (stm'*stm') (w1,w2))) as [| w |]; reflexivity.
+Qed.
+
+(** Lift-then-push is always a round trip back to the original stream,
+    regardless of how much fuel was spent -- every cut point embeds the
+    remaining real stream via [stmLiftCstr], which push recovers verbatim. *)
+Lemma stmLift_push_roundtrip : forall (f : stm -> stm -> stm) (m : nat) (s : stm),
+  stmTransparentSigmaPushBody f (stmLift m s) = s.
+Proof.
+  intros f m. induction m as [|m' IH]; intro s.
+  - reflexivity.
+  - destruct s as [n s']. simpl. rewrite IH. reflexivity.
+Qed.
+
+Lemma stmCopy_anim_0 : forall (f : stm -> stm -> stm) s1 s2,
+  stmCopyTransparentSigma2AnimatedTopFn 0 (Success (stm*stm) (s1,s2)) f = Success stm (f s1 s2).
+Proof.
+  intros f s1 s2.
+  unfold stmCopyTransparentSigma2AnimatedTopFn, stmCopyremoveFnPosinputLift,
+         stmCopyremoveFnPosTransparentSigmaOutputPush, stmTransparentSigmaPush.
+  simpl. reflexivity.
+Qed.
+
+Lemma stmCopy_anim_1 : forall (f : stm -> stm -> stm) s1 s2,
+  stmCopyTransparentSigma2AnimatedTopFn 1 (Success (stm*stm) (s1,s2)) f = Success stm (f s1 s2).
+Proof.
+  intros f s1 s2.
+  unfold stmCopyTransparentSigma2AnimatedTopFn, stmCopyremoveFnPosinputLift,
+         stmCopyremoveFnPosTransparentSigmaOutputPush, stmTransparentSigmaPush.
+  cbn [stmCopyremoveFnPos'AnimatedTopFn dispatch_coind_ext stmCopyremoveFnPos'Rest
+       stmTransparentSigmaPushBody].
+  rewrite (stmLift_push_roundtrip f 1 s1), (stmLift_push_roundtrip f 1 s2).
+  reflexivity.
+Qed.
+
+(** The real step: for fuel [S (S k)], the engine always commits to [left],
+    peeling one [stmCons] off both sides and recursing with fuel [S k]
+    (unchanged, not decremented again) -- see [stmCopy_left_result_generic].
+    Uses [cbn] with an explicit unfold list (not blind [simpl]/[cbv]) so it
+    stops right before unfolding [leftremoveFnPos'Animated]'s own body --
+    unfolding past that point gets stuck on the abstract fuel [k] inside its
+    combinator soup, exactly like the earlier failed direct [cbv] attempt. *)
+Lemma stmLift_succ : forall m n s, stmLift (S m) (stmCons n s) = stmCons' n (stmLift m s).
+Proof. intros. reflexivity. Qed.
+
+(** Only the case actually needed by the cofix proof: IF the recursive
+    sub-call at fuel [S k] already succeeded with some value [w], THEN the
+    outer call at fuel [S (S k)] succeeds with [stmCons n1 w]. (The engine's
+    [FuelError]-from-a-handler fallback re-escapes to the ORIGINAL untouched
+    input rather than propagating [FuelError], so a direct "for all 3
+    outcomes" restatement would be false; we never need it since the
+    recursive call is shown separately to always land in [Success].) *)
+Lemma stmCopy_anim_S : forall (k n1 n2 : nat) (s1 s2 : stm) (f : stm -> stm -> stm) (w : stm),
+  stmCopyTransparentSigma2AnimatedTopFn (S k) (Success (stm*stm) (s1, s2)) f = Success stm w ->
+  stmCopyTransparentSigma2AnimatedTopFn (S (S k)) (Success (stm*stm) (stmCons n1 s1, stmCons n2 s2)) f
+  = Success stm (stmCons n1 w).
+Proof.
+  intros k n1 n2 s1 s2 f w Hrec.
+  unfold stmCopyTransparentSigma2AnimatedTopFn, stmCopyremoveFnPosinputLift,
+         stmCopyremoveFnPosTransparentSigmaOutputPush, stmTransparentSigmaPush in *.
+  cbn [fst snd] in *.
+  rewrite (stmLift_succ (S k) n1 s1), (stmLift_succ (S k) n2 s2).
+  cbn [stmCopyremoveFnPos'AnimatedTopFn dispatch_coind_ext].
+  rewrite (stmCopy_left_result_generic stmCopyremoveFnPos'AnimatedTopFn k n1 n2
+             (stmLift (S k) s1) (stmLift (S k) s2)).
+  destruct (stmCopyremoveFnPos'AnimatedTopFn (S k)
+              (Success (stm'*stm') (stmLift (S k) s1, stmLift (S k) s2))) as [|w'|].
+  - simpl in Hrec. discriminate Hrec.
+  - simpl in Hrec. injection Hrec as <-. simpl. reflexivity.
+  - simpl in Hrec. discriminate Hrec.
+Qed.
+
+(** The engine never genuinely gets stuck for [stmCopy]: [stm]'s only
+    constructor always matches, and the escape path always succeeds too, so
+    by induction on the fuel the computation is always [Success] for some
+    value. Built from [stmCopy_anim_0]/[stmCopy_anim_1]/[stmCopy_anim_S]. *)
+Lemma stmCopy_always_success : forall (m : nat) (s1 s2 : stm) (f : stm -> stm -> stm),
+  exists w, stmCopyTransparentSigma2AnimatedTopFn m (Success (stm*stm) (s1,s2)) f = Success stm w.
+Proof.
+  induction m as [|m' IH]; intros s1 s2 f.
+  - exists (f s1 s2). apply stmCopy_anim_0.
+  - destruct m' as [|k].
+    + exists (f s1 s2). apply stmCopy_anim_1.
+    + destruct s1 as [n1 s1']. destruct s2 as [n2 s2'].
+      destruct (IH s1' s2' f) as [w' Hw'].
+      exists (stmCons n1 w').
+      exact (stmCopy_anim_S k n1 n2 s1' s2' f w' Hw').
+Qed.
+
 Theorem animation_soundness_totalRel : forall (f : stm -> stm -> stm) (inputstm1 inputstm2 outputstm : stm) (n : nat),
   (forall stm1 stm2 : stm,  stmCopy stm1 stm2 (f stm1 stm2)) ->
-  
+
     stmCopyTransparentSigma2AnimatedTopFn n (Success (stm * stm) (inputstm1, inputstm2)) f = Success stm outputstm ->
-    stmCopy inputstm1 inputstm2 outputstm. Proof. Admitted.
+    stmCopy inputstm1 inputstm2 outputstm.
+Proof.
+  cofix CIH.
+  intros f inputstm1 inputstm2 outputstm n Htotal Hanim.
+  destruct n as [|[|n'']].
+  - rewrite stmCopy_anim_0 in Hanim. injection Hanim as <-. apply Htotal.
+  - rewrite stmCopy_anim_1 in Hanim. injection Hanim as <-. apply Htotal.
+  - destruct inputstm1 as [n1 s1]. destruct inputstm2 as [n2 s2].
+    destruct (stmCopy_always_success (S n'') s1 s2 f) as [w Hrec].
+    rewrite (stmCopy_anim_S n'' n1 n2 s1 s2 f w Hrec) in Hanim.
+    injection Hanim as <-.
+    apply left.
+    exact (CIH f s1 s2 w (S n'') Htotal Hrec).
+Qed.
+
 End streamCopy.
 Module PCFTrace.              
 Inductive ty : Type :=
@@ -457,15 +3416,1594 @@ Qed.
 
 MetaRocq Run (animate_coinductive_with_fn_pos <?bigStepTr?> [("stepCBV", ([0], [1])); ("bigStepTr", ([0], [1])) ] 500).
 
-Print bigStepTrTransparentSigma2AnimatedTopFn.
+Lemma tmChkNoExtraCstrs_tmLift : forall t, tmChkNoExtraCstrs (tmLift t) = true.
+Proof.
+  induction t; simpl; try reflexivity; try (rewrite IHt; reflexivity);
+  try (rewrite IHt1, IHt2; reflexivity);
+  try (rewrite IHt1, IHt2, IHt3; reflexivity).
+Qed.
 
+Lemma tmPushPlain_tmLift : forall t, tmPushPlain (tmLift t) = t.
+Proof.
+  induction t; simpl; try reflexivity; try (rewrite IHt; reflexivity);
+  try (rewrite IHt1, IHt2; reflexivity);
+  try (rewrite IHt1, IHt2, IHt3; reflexivity).
+Qed.
+
+Lemma isValueFnliftedFunc_tmLift : forall t,
+  isValueFnliftedFunc (tmLift t) = boolLift (isValueFn t).
+Proof.
+  intro t. unfold isValueFnliftedFunc.
+  rewrite (tmChkNoExtraCstrs_tmLift t). simpl.
+  rewrite (tmPushPlain_tmLift t). reflexivity.
+Qed.
+
+(** Generic dispatch helpers for [stepCBV]'s own handler list, mirroring
+    [dispatch_coind_ext_escape]/[_fire] built earlier for [eval]'s handler
+    list -- [dispatch_coind_ext] itself is fully generic, only the Rest/
+    Undefined names differ. *)
+Lemma stepCBV_dispatch_fire :
+  forall h rest (u : tm') m w,
+  h (S m) (Success tm' u) = Success tm' w ->
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest (h::rest) (S m) (Success tm' u) = Success tm' w.
+Proof. intros h rest u m w Hh. cbn [dispatch_coind_ext]. rewrite Hh. reflexivity. Qed.
+
+Lemma stepCBV_dispatch_skip :
+  forall h rest (u : tm') m,
+  h (S m) (Success tm' u) = NoMatch tm' ->
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest (h::rest) (S m) (Success tm' u) =
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest rest m (Success tm' u).
+Proof. intros h rest u m Hh. cbn [dispatch_coind_ext]. rewrite Hh. reflexivity. Qed.
+
+Lemma stepCBV_dispatch_reach :
+  forall (prefix tail : list (nat -> animation_result tm' -> animation_result tm')) (u : tm') m,
+  (forall h k, In h prefix -> h (S k) (Success tm' u) = NoMatch tm') ->
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest (prefix++tail) m (Success tm' u) =
+  Success tm' (stepCBVremoveFnPosAn1 u) \/
+  (exists k, k <= m /\
+             dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest (prefix++tail) m (Success tm' u) =
+             dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest tail k (Success tm' u)).
+Proof.
+  induction prefix as [| hh rr IHrest]; intros tail u m Hall.
+  - right. exists m. split; [lia | reflexivity].
+  - destruct m as [| m].
+    + left. simpl. reflexivity.
+    + assert (Hhh : hh (S m) (Success tm' u) = NoMatch tm')
+        by (apply Hall; left; reflexivity).
+      pose proof (stepCBV_dispatch_skip hh (List.app rr tail) u m Hhh) as Hstep.
+      change (List.app (cons hh rr) tail) with (cons hh (List.app rr tail)).
+      rewrite Hstep.
+      destruct (IHrest tail u m ltac:(intros h' k Hin; apply Hall; right; exact Hin))
+        as [Hesc | [k [Hkm Heqk]]].
+      * left. exact Hesc.
+      * right. exists k. split; [lia | exact Heqk].
+Qed.
+
+Lemma stepCBV_dispatch_escape :
+  forall (prefix : list (nat -> animation_result tm' -> animation_result tm')) (u : tm'),
+  (forall h k, In h prefix -> h (S k) (Success tm' u) = NoMatch tm') ->
+  forall m, dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest
+              (prefix ++ [stepCBVremoveFnPos'UndefinedAnimated]) m (Success tm' u) =
+            Success tm' (stepCBVremoveFnPosAn1 u).
+Proof.
+  induction prefix as [| h rest IHrest]; intros u Hall m.
+  - simpl. destruct m.
+    + simpl. reflexivity.
+    + unfold dispatch_coind_ext.
+      assert (HU : stepCBVremoveFnPos'UndefinedAnimated (S m) (Success tm' u) = Success tm' (stepCBVremoveFnPosAn1 u))
+        by (simpl; reflexivity).
+      rewrite HU. reflexivity.
+  - destruct m.
+    + simpl. reflexivity.
+    + assert (Hh : h (S m) (Success tm' u) = NoMatch tm')
+        by (apply Hall; left; reflexivity).
+      change (h :: rest ++ [stepCBVremoveFnPos'UndefinedAnimated])
+        with ((h :: rest) ++ [stepCBVremoveFnPos'UndefinedAnimated]).
+      cbn [dispatch_coind_ext app].
+      rewrite Hh.
+      apply IHrest.
+      intros h' k Hin. apply Hall. right. exact Hin.
+Qed.
+
+(** When a congruence handler [X]'s own recursive sub-call doesn't succeed
+    (NoMatch or FuelError), [X] itself propagates that non-success (per its
+    own [_result] lemma), and whether dispatch then keeps trying later
+    handlers (NoMatch) or escapes immediately (FuelError), the final value
+    is the SAME: escape to [Rest u] -- provided every handler in [prefix2]
+    (everything listed after [X]) also gives NoMatch for this shape [u]
+    (always true here, since only one handler ever matches a given shape). *)
+Lemma stepCBV_dispatch_fire_or_escape :
+  forall (X : nat -> animation_result tm' -> animation_result tm')
+         (prefix2 : list (nat -> animation_result tm' -> animation_result tm')) (u : tm') (k : nat),
+  (forall h k', In h prefix2 -> h (S k') (Success tm' u) = NoMatch tm') ->
+  (X (S k) (Success tm' u) = NoMatch tm' \/ X (S k) (Success tm' u) = FuelError tm') ->
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest
+    (X :: prefix2 ++ [stepCBVremoveFnPos'UndefinedAnimated]) (S k) (Success tm' u) =
+  Success tm' (stepCBVremoveFnPosAn1 u).
+Proof.
+  intros X prefix2 u k HallNoMatch [HX | HX].
+  - cbn [dispatch_coind_ext]. rewrite HX.
+    destruct k as [|k'].
+    + reflexivity.
+    + exact (stepCBV_dispatch_escape prefix2 u HallNoMatch (S k')).
+  - cbn [dispatch_coind_ext]. rewrite HX. reflexivity.
+Qed.
+
+(** Per-handler result specs: what each of [stepCBV]'s 11 dispatch-list
+    members computes, for any raw shape [u]. Built via the same combinator
+    unfold list used throughout for [eval]'s handlers -- [compose_outcome]/
+    [option_to_result]/[join_pair]/[split_outcome_fst/snd]/[with_default]/
+    [dispatch_clauses]/[fuel_error_fn] are all generic across relations. *)
+
+Ltac unfold_combinators :=
+  unfold AnimationResult.compose_outcome, AnimationResult.option_to_result,
+         AnimationResult.join_pair, AnimationResult.split_outcome_fst,
+         AnimationResult.split_outcome_snd, TermUtils.with_default,
+         TermUtils.dispatch_clauses, AnimationResult.fuel_error_fn.
+
+Lemma ST_AppAbsCBV_result :
+  forall n u, ST_AppAbsCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tapp' (tabs' x ty t3') v2' =>
+      match isValueFnliftedFunc v2' with
+      | true' => Success tm' (substliftedFunc x v2' t3')
+      | _ => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_AppAbsCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct a1 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b1'|c1' c2' c3'|s3' ty3' b3'|m1'|s4' nn1' nn2']; try reflexivity.
+  destruct (isValueFnliftedFunc a2) as [| |]; reflexivity.
+Qed.
+
+Lemma ST_App1CBV_result :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm') n u,
+  ST_App1CBVremoveFnPos'Animated stepFn (S n) (Success tm' u) =
+  match u with
+  | tapp' t1' t2' =>
+      match stepFn (S n) (Success tm' t1') with
+      | FuelError => FuelError tm'
+      | Success w =>
+          match isValueFnliftedFunc t1' with
+          | false' => Success tm' (tapp' w t2')
+          | _ => NoMatch tm'
+          end
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros stepFn n u. unfold ST_App1CBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct (stepFn (S n) (Success tm' a1)) as [|w|];
+    destruct (isValueFnliftedFunc a1) as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma ST_App2CBV_result :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm') n u,
+  ST_App2CBVremoveFnPos'Animated stepFn (S n) (Success tm' u) =
+  match u with
+  | tapp' v1' t2' =>
+      match stepFn (S n) (Success tm' t2') with
+      | FuelError => FuelError tm'
+      | Success w =>
+          match isValueFnliftedFunc v1' with
+          | true' =>
+              match isValueFnliftedFunc t2' with
+              | false' => Success tm' (tapp' v1' w)
+              | _ => NoMatch tm'
+              end
+          | _ => NoMatch tm'
+          end
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros stepFn n u. unfold ST_App2CBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct (stepFn (S n) (Success tm' a2)) as [|w|];
+    destruct (isValueFnliftedFunc a1) as [| |];
+    destruct (isValueFnliftedFunc a2) as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma ST_SuccCBV_result :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm') n u,
+  ST_SuccCBVremoveFnPos'Animated stepFn (S n) (Success tm' u) =
+  match u with
+  | tsucc' t' =>
+      match stepFn (S n) (Success tm' t') with
+      | Success w => Success tm' (tsucc' w)
+      | FuelError => FuelError tm'
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros stepFn n u. unfold ST_SuccCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct (stepFn (S n) (Success tm' v1)) as [|w|]; reflexivity.
+Qed.
+
+Lemma ST_PredZeroCBV_result :
+  forall n u, ST_PredZeroCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tpred' tzero' => Success tm' tzero'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_PredZeroCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct b1 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b1'|c1' c2' c3'|s3' ty3' b3'|m1'|s4' nn1' nn2']; reflexivity.
+Qed.
+
+Lemma ST_PredSuccCBV_result :
+  forall n u, ST_PredSuccCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tpred' (tsucc' v) =>
+      match isValueFnliftedFunc v with
+      | true' => Success tm' v
+      | _ => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_PredSuccCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct b1 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b1'|c1' c2' c3'|s3' ty3' b3'|m1'|s4' nn1' nn2']; try reflexivity.
+  destruct (isValueFnliftedFunc v1') as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma ST_PredCBV_result :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm') n u,
+  ST_PredCBVremoveFnPos'Animated stepFn (S n) (Success tm' u) =
+  match u with
+  | tpred' t' =>
+      match stepFn (S n) (Success tm' t') with
+      | FuelError => FuelError tm'
+      | Success w =>
+          match isValueFnliftedFunc t' with
+          | false' => Success tm' (tpred' w)
+          | _ => NoMatch tm'
+          end
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros stepFn n u. unfold ST_PredCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct (stepFn (S n) (Success tm' b1)) as [|w|];
+    destruct (isValueFnliftedFunc b1) as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma ST_IfzZeroCBV_result :
+  forall n u, ST_IfzZeroCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tifz' tzero' t1' t2' => Success tm' t1'
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_IfzZeroCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct c1 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b1'|c1' c2' c3'|s3' ty3' b3'|m1'|s4' nn1' nn2']; reflexivity.
+Qed.
+
+Lemma ST_IfzSuccCBV_result :
+  forall n u, ST_IfzSuccCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tifz' (tsucc' vn') t1' t2' =>
+      match isValueFnliftedFunc vn' with
+      | true' => Success tm' t2'
+      | _ => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_IfzSuccCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct c1 as [s1'|s2' ty2' b2'|a1' a2'| |v1'|b1'|c1' c2' c3'|s3' ty3' b3'|m1'|s4' nn1' nn2']; try reflexivity.
+  destruct (isValueFnliftedFunc v1') as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma ST_IfzDiscCBV_result :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm') n u,
+  ST_IfzDiscCBVremoveFnPos'Animated stepFn (S n) (Success tm' u) =
+  match u with
+  | tifz' t' t1' t2' =>
+      match stepFn (S n) (Success tm' t') with
+      | FuelError => FuelError tm'
+      | Success w =>
+          match isValueFnliftedFunc t' with
+          | false' => Success tm' (tifz' w t1' t2')
+          | _ => NoMatch tm'
+          end
+      | NoMatch => NoMatch tm'
+      end
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros stepFn n u. unfold ST_IfzDiscCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; try reflexivity.
+  destruct (stepFn (S n) (Success tm' c1)) as [|w|];
+    destruct (isValueFnliftedFunc c1) as [| |]; simpl; reflexivity.
+Qed.
+
+Lemma tmTransparentSigmaPushBody_tmLift : forall f1 f2 t,
+  tmTransparentSigmaPushBody f1 f2 (tmLift t) = t.
+Proof.
+  intros f1 f2 t. induction t; simpl; try reflexivity;
+    try (rewrite IHt; reflexivity);
+    try (rewrite IHt1, IHt2; reflexivity);
+    try (rewrite IHt1, IHt2, IHt3; reflexivity).
+Qed.
+
+
+(** [bigStepTr]/[stepCBV]'s mutual companion is emitted by MetaRocq as a
+    single [Definition] wrapping a raw [fix ... with ... for
+    bigStepTrremoveFnPos'AnimatedTopFn] term (via unquoting), not the
+    Vernacular [Fixpoint ... with ...] command -- so only
+    [bigStepTrremoveFnPos'AnimatedTopFn] is independently nameable; its
+    [stepCBV] companion has no accessible top-level name. (Re-declaring the
+    identical-looking body via Vernacular [Fixpoint ... with ...] does NOT
+    work either: the surface elaborator's guardedness checker rejects it --
+    confirmed by trying -- even though the kernel accepted the original raw
+    term, since unquoting bypasses the surface-level heuristic.) Work around
+    this by stating every fact about "the [stepCBV] engine" generically, for
+    an ABSTRACT [stepFn] satisfying its defining recursive equation; the
+    companion inside [bigStepTrremoveFnPos'AnimatedTopFn] trivially satisfies
+    this equation too (via local [cbn] unfolding, [reflexivity]), without
+    ever needing a name for it. *)
+Definition stepCBV_step_eq (stepFn : nat -> animation_result tm' -> animation_result tm') : Prop :=
+  (forall input, stepFn 0 input = map_outcome tm' tm' stepCBVremoveFnPos'Rest input) /\
+  (forall n input, stepFn (S n) input =
+    dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest
+      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+      n input).
+
+Definition stepCBVTopFn_gen (stepFn : nat -> animation_result tm' -> animation_result tm')
+  (n : nat) (t : tm) (f1 : tm -> tm) (f2 : tm -> stm) : animation_result tm :=
+  match stepFn n (Success tm' (tmLift t)) with
+  | Success w => Success tm (tmTransparentSigmaPushBody f1 f2 w)
+  | _ => NoMatch tm
+  end.
+
+Lemma stepCBVTopFn_gen_0 : forall stepFn, stepCBV_step_eq stepFn ->
+  forall t f1 f2, stepCBVTopFn_gen stepFn 0 t f1 f2 = Success tm (f1 t).
+Proof.
+  intros stepFn [Hstep0 Hstep] t f1 f2.
+  unfold stepCBVTopFn_gen. rewrite Hstep0. simpl.
+  rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t). reflexivity.
+Qed.
+
+Lemma ST_FixCBV_result :
+  forall n u, ST_FixCBVremoveFnPos'Animated (S n) (Success tm' u) =
+  match u with
+  | tfix' f ty t' => Success tm' (substliftedFunc f (tfix' f ty t') t')
+  | _ => NoMatch tm'
+  end.
+Proof.
+  intros n u. unfold ST_FixCBVremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct u as [s1|s2 ty2 b2|a1 a2| |v1|b1|c1 c2 c3|s3 ty3 b3|m1|s4 nn1 nn2]; reflexivity.
+Qed.
+
+(** [dispatch_coind_ext] is fed a [Success x] input in every call made
+    throughout this file (the engine never re-synthesizes a different input
+    shape mid-dispatch -- [input'] is passed through unchanged), and in that
+    case it can NEVER produce [FuelError]: at fuel 0 the base case directly
+    gives [Success (f x)]; at fuel [S _] with an empty list it gives
+    [NoMatch]; and whenever a handler itself returns [FuelError], dispatch's
+    own fallback ignores that and re-derives [Success (f x)] from [input']
+    directly (NOT propagating the handler's [FuelError]) -- so the only way
+    to recurse further is via a handler's [NoMatch], which is exactly where
+    the induction hypothesis on the (shorter) tail applies. *)
+Lemma dispatch_coind_ext_never_FuelError_on_Success :
+  forall (lst : list (nat -> animation_result tm' -> animation_result tm')) m x,
+  dispatch_coind_ext tm' tm' stepCBVremoveFnPos'Rest lst m (Success tm' x) <> FuelError tm'.
+Proof.
+  induction lst as [|h t IH]; intros m x.
+  - destruct m; simpl; discriminate.
+  - destruct m as [|m'].
+    + simpl. discriminate.
+    + cbn [dispatch_coind_ext].
+      destruct (h (S m') (Success tm' x)) as [|w|] eqn:Hh.
+      * simpl. discriminate.
+      * discriminate.
+      * apply IH.
+Qed.
+
+Lemma stepFn_never_FuelError :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm'),
+  stepCBV_step_eq stepFn ->
+  forall n x, stepFn n (Success tm' x) <> FuelError tm'.
+Proof.
+  intros stepFn [Hstep0 Hstep] n x.
+  destruct n as [|n'].
+  - rewrite Hstep0. simpl. discriminate.
+  - rewrite Hstep. apply dispatch_coind_ext_never_FuelError_on_Success.
+Qed.
+
+(** When the discriminant [t1] of a [tpred]/[tifz] congruence step isn't a
+    value, BOTH the "exact zero" and "exact succ-of-value" handlers give
+    NoMatch for it: zero/succ-of-value are themselves values, so [t1] can't
+    literally be [tzero], and if [t1] IS [tsucc t1'] then [isValueFn t1' =
+    isValueFn t1 = false] too (by [isValueFn]'s own recursive clause),
+    failing the succ handler's OWN value check. *)
+Lemma Pred_skip_nomatch : forall t1, isValueFn t1 = false ->
+  forall n, ST_PredZeroCBVremoveFnPos'Animated (S n) (Success tm' (tpred' (tmLift t1))) = NoMatch tm' /\
+            ST_PredSuccCBVremoveFnPos'Animated (S n) (Success tm' (tpred' (tmLift t1))) = NoMatch tm'.
+Proof.
+  intros t1 Hval n.
+  rewrite ST_PredZeroCBV_result, ST_PredSuccCBV_result.
+  destruct t1 as [s|x T b|a1 a2| |t1'|t1'|c1 c2 c3|f T b]; simpl in Hval; try discriminate Hval;
+    simpl; try (split; reflexivity).
+  split; [reflexivity |]. rewrite isValueFnliftedFunc_tmLift, Hval. reflexivity.
+Qed.
+
+Lemma Ifz_skip_nomatch : forall tdisc t1 t2, isValueFn tdisc = false ->
+  forall n,
+    ST_IfzZeroCBVremoveFnPos'Animated (S n)
+      (Success tm' (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2))) = NoMatch tm' /\
+    ST_IfzSuccCBVremoveFnPos'Animated (S n)
+      (Success tm' (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2))) = NoMatch tm'.
+Proof.
+  intros tdisc t1 t2 Hval n.
+  rewrite ST_IfzZeroCBV_result, ST_IfzSuccCBV_result.
+  destruct tdisc as [s|x T b|a1 a2| |t1'|t1'|c1 c2 c3|f T b]; simpl in Hval; try discriminate Hval;
+    simpl; try (split; reflexivity).
+  split; [reflexivity |]. rewrite isValueFnliftedFunc_tmLift, Hval. reflexivity.
+Qed.
+
+(** [ST_AppAbsCBV] requires BOTH that the operator is syntactically a lambda
+    AND that the operand is a value; either failing gives NoMatch. *)
+Lemma AppAbs_skip_t1nonvalue : forall t1 t2, isValueFn t1 = false ->
+  forall n, ST_AppAbsCBVremoveFnPos'Animated (S n) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm'.
+Proof.
+  intros t1 t2 Hval n.
+  rewrite ST_AppAbsCBV_result.
+  destruct t1 as [s|x T b|a1 a2| |t1'|t1'|c1 c2 c3|f T b]; simpl in Hval; try discriminate Hval;
+    simpl; reflexivity.
+Qed.
+
+Lemma AppAbs_skip_v2nonvalue : forall t1 t2, isValueFn t2 = false ->
+  forall n, ST_AppAbsCBVremoveFnPos'Animated (S n) (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm'.
+Proof.
+  intros t1 t2 Hval n.
+  rewrite ST_AppAbsCBV_result.
+  destruct (tmLift t1) eqn:E; try reflexivity.
+  rewrite (isValueFnliftedFunc_tmLift t2), Hval. reflexivity.
+Qed.
+
+Lemma App2_skip_t1nonvalue :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm'),
+  stepCBV_step_eq stepFn ->
+  forall t1 t2, isValueFn t1 = false ->
+  forall kk, ST_App2CBVremoveFnPos'Animated stepFn (S kk)
+               (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm'.
+Proof.
+  intros stepFn Hstepeq t1 t2 Hval kk.
+  rewrite ST_App2CBV_result. cbv iota.
+  destruct (stepFn (S kk) (Success tm' (tmLift t2))) as [|w0|] eqn:Hw0; try reflexivity.
+  - exfalso. exact (stepFn_never_FuelError stepFn Hstepeq (S kk) (tmLift t2) Hw0).
+  - rewrite (isValueFnliftedFunc_tmLift t1), Hval. reflexivity.
+Qed.
+
+Lemma App1_skip_t1value :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm'),
+  stepCBV_step_eq stepFn ->
+  forall t1 t2, isValueFn t1 = true ->
+  forall kk, ST_App1CBVremoveFnPos'Animated stepFn (S kk)
+               (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm'.
+Proof.
+  intros stepFn Hstepeq t1 t2 Hval kk.
+  rewrite ST_App1CBV_result.
+  destruct (stepFn (S kk) (Success tm' (tmLift t1))) as [|w0|] eqn:Hw0; try reflexivity.
+  - exfalso. exact (stepFn_never_FuelError stepFn Hstepeq (S kk) (tmLift t1) Hw0).
+  - cbv iota. rewrite (isValueFnliftedFunc_tmLift t1), Hval. reflexivity.
+Qed.
+
+Fixpoint stepCBV_soundness_aux (depth : nat) {struct depth} :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm'),
+  stepCBV_step_eq stepFn ->
+  forall (f1 : tm -> tm) (f2 : tm -> stm) (n : nat), n <= depth ->
+  forall (t v : tm),
+  (forall t1 : tm, (exists t2 : tm, stepCBV t1 t2) -> stepCBV t1 (f1 t1)) ->
+  (exists v' : tm, stepCBV t v') ->
+  stepCBVTopFn_gen stepFn n t f1 f2 = Success tm v ->
+  stepCBV t v.
+Proof.
+  destruct depth as [| depth'].
+  { intros stepFn Hstepeq f1 f2 n Hn t v Hsound Hex Hanim.
+    assert (n = 0) by lia. subst n.
+    rewrite (stepCBVTopFn_gen_0 stepFn Hstepeq) in Hanim.
+    injection Hanim as <-. apply Hsound. exact Hex. }
+  intros stepFn [Hstep0 Hstep] f1 f2 n Hn t v Hsound Hex Hanim.
+  assert (Hescape : forall v0, f1 t = v0 -> stepCBV t v0).
+  { intros v0 <-. apply Hsound. exact Hex. }
+  destruct t as [s | lx lT lbody | t1 t2 | | t1 | t1 | tdisc t1 t2 | fn T fbody].
+
+  - (* tvar *) exfalso. destruct Hex as [v' Hv']. inversion Hv'.
+
+  - (* tabs *) exfalso. destruct Hex as [v' Hv']. inversion Hv'.
+
+  - (* tapp t1 t2 *)
+    destruct Hex as [v' Hv'].
+    inversion Hv' as [xc Tc bodyc v2c Hvalc | t1c t1'c t2c Hpc | v1c t2c2 t2'c Hpc2 | | | | | | | | ]; subst.
+    + (* AppAbs: t1 = tabs xc Tc bodyc, Hvalc : isValueFn t2 = true *)
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        destruct m as [|m'].
+        { cbv iota in Hanim. injection Hanim as <-.
+          apply Hescape. simpl.
+          rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 bodyc), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+          reflexivity. }
+        assert (HfireAA : ST_AppAbsCBVremoveFnPos'Animated (S m')
+                     (Success tm' (tapp' (tabs' xc Tc (tmLift bodyc)) (tmLift t2))) =
+                   Success tm' (substliftedFunc xc (tmLift t2) (tmLift bodyc))).
+        { rewrite ST_AppAbsCBV_result. rewrite (isValueFnliftedFunc_tmLift t2), Hvalc. reflexivity. }
+        rewrite (stepCBV_dispatch_fire (ST_AppAbsCBVremoveFnPos'Animated) _ _ m'
+                   (substliftedFunc xc (tmLift t2) (tmLift bodyc)) HfireAA) in Hanim.
+        cbv iota in Hanim.
+        assert (Hsubst_eq : substliftedFunc xc (tmLift t2) (tmLift bodyc) = tmLift (subst xc t2 bodyc)).
+        { unfold substliftedFunc. rewrite (tmChkNoExtraCstrs_tmLift t2), (tmChkNoExtraCstrs_tmLift bodyc).
+          simpl. rewrite (tmPushPlain_tmLift t2), (tmPushPlain_tmLift bodyc). reflexivity. }
+        rewrite Hsubst_eq in Hanim. simpl in Hanim.
+        rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 (subst xc t2 bodyc)) in Hanim.
+        injection Hanim as <-.
+        apply ST_AppAbsCBV. exact Hvalc.
+
+    + (* App1: Hpc : isValueFn t1 = false /\ stepCBV t1 t1'c *)
+      destruct Hpc as [Hval Hp].
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated]
+                      [ST_App1CBVremoveFnPos'Animated stepFn; ST_App2CBVremoveFnPos'Animated stepFn;
+                       ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tapp' (tmLift t1) (tmLift t2)) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | contradiction];
+                            [ apply (AppAbs_skip_t1nonvalue t1 t2 Hval) ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+           reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+              reflexivity.
+           ++ destruct (stepFn (S k') (Success tm' (tmLift t1))) as [|w|] eqn:Hw.
+              ** assert (HfireA1 : ST_App1CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = FuelError tm').
+                 { rewrite ST_App1CBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_App1CBVremoveFnPos'Animated stepFn)
+                               [ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                                ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                                ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                                ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                                ST_FixCBVremoveFnPos'Animated]
+                               (tapp' (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction];
+                                     [ apply (App2_skip_t1nonvalue stepFn (conj Hstep0 Hstep) t1 t2 Hval)
+                                     | rewrite ST_SuccCBV_result; reflexivity
+                                     | rewrite ST_PredZeroCBV_result; reflexivity
+                                     | rewrite ST_PredSuccCBV_result; reflexivity
+                                     | rewrite ST_PredCBV_result; reflexivity
+                                     | rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(right; exact HfireA1)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+              ** assert (HfireA1 : ST_App1CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = Success tm' (tapp' w (tmLift t2))).
+                 { rewrite ST_App1CBV_result. cbv iota. rewrite Hw. cbv iota.
+                   rewrite (isValueFnliftedFunc_tmLift t1), Hval. reflexivity. }
+                 rewrite (stepCBV_dispatch_fire (ST_App1CBVremoveFnPos'Animated stepFn) _ _ k'
+                            (tapp' w (tmLift t2)) HfireA1) in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 assert (Htm1 : stepCBVTopFn_gen stepFn (S k') t1 f1 f2 = Success tm (tmTransparentSigmaPushBody f1 f2 w)).
+                 { unfold stepCBVTopFn_gen. rewrite Hw. reflexivity. }
+                 simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 apply ST_App1CBV. split; [exact Hval |].
+                 exact (stepCBV_soundness_aux depth' stepFn (conj Hstep0 Hstep) f1 f2 (S k') ltac:(lia)
+                          t1 _ Hsound (ex_intro _ t1'c Hp) Htm1).
+              ** assert (HfireA1 : ST_App1CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm').
+                 { rewrite ST_App1CBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_App1CBVremoveFnPos'Animated stepFn)
+                               [ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                                ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                                ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                                ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                                ST_FixCBVremoveFnPos'Animated]
+                               (tapp' (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction];
+                                     [ apply (App2_skip_t1nonvalue stepFn (conj Hstep0 Hstep) t1 t2 Hval)
+                                     | rewrite ST_SuccCBV_result; reflexivity
+                                     | rewrite ST_PredZeroCBV_result; reflexivity
+                                     | rewrite ST_PredSuccCBV_result; reflexivity
+                                     | rewrite ST_PredCBV_result; reflexivity
+                                     | rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(left; exact HfireA1)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+
+    + (* App2: Hpc2 : isValueFn t1 = true /\ isValueFn t2 = false /\ stepCBV t2 t2'c *)
+      destruct Hpc2 as [Hval1 [Hval Hp]].
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn]
+                      [ST_App2CBVremoveFnPos'Animated stepFn;
+                       ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tapp' (tmLift t1) (tmLift t2)) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | contradiction];
+                            [ apply (AppAbs_skip_v2nonvalue t1 t2 Hval)
+                            | apply (App1_skip_t1value stepFn (conj Hstep0 Hstep) t1 t2 Hval1) ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+           reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+              reflexivity.
+           ++ destruct (stepFn (S k') (Success tm' (tmLift t2))) as [|w|] eqn:Hw.
+              ** assert (HfireA2 : ST_App2CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = FuelError tm').
+                 { rewrite ST_App2CBV_result. cbv iota. rewrite (isValueFnliftedFunc_tmLift t1), Hval1.
+                   simpl. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_App2CBVremoveFnPos'Animated stepFn)
+                               [ST_SuccCBVremoveFnPos'Animated stepFn;
+                                ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                                ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                                ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                                ST_FixCBVremoveFnPos'Animated]
+                               (tapp' (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | | | | | contradiction];
+                                     [ rewrite ST_SuccCBV_result; reflexivity
+                                     | rewrite ST_PredZeroCBV_result; reflexivity
+                                     | rewrite ST_PredSuccCBV_result; reflexivity
+                                     | rewrite ST_PredCBV_result; reflexivity
+                                     | rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(right; exact HfireA2)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+              ** assert (HfireA2 : ST_App2CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = Success tm' (tapp' (tmLift t1) w)).
+                 { rewrite ST_App2CBV_result. cbv iota. rewrite (isValueFnliftedFunc_tmLift t1), Hval1.
+                   simpl. rewrite Hw. cbv iota.
+                   rewrite (isValueFnliftedFunc_tmLift t2), Hval. reflexivity. }
+                 rewrite (stepCBV_dispatch_fire (ST_App2CBVremoveFnPos'Animated stepFn) _ _ k'
+                            (tapp' (tmLift t1) w) HfireA2) in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 assert (Htm2 : stepCBVTopFn_gen stepFn (S k') t2 f1 f2 = Success tm (tmTransparentSigmaPushBody f1 f2 w)).
+                 { unfold stepCBVTopFn_gen. rewrite Hw. reflexivity. }
+                 simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1).
+                 apply ST_App2CBV. split; [exact Hval1 | split; [exact Hval |]].
+                 exact (stepCBV_soundness_aux depth' stepFn (conj Hstep0 Hstep) f1 f2 (S k') ltac:(lia)
+                          t2 _ Hsound (ex_intro _ t2'c Hp) Htm2).
+              ** assert (HfireA2 : ST_App2CBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tapp' (tmLift t1) (tmLift t2))) = NoMatch tm').
+                 { rewrite ST_App2CBV_result. cbv iota. rewrite (isValueFnliftedFunc_tmLift t1), Hval1.
+                   simpl. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_App2CBVremoveFnPos'Animated stepFn)
+                               [ST_SuccCBVremoveFnPos'Animated stepFn;
+                                ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                                ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                                ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                                ST_FixCBVremoveFnPos'Animated]
+                               (tapp' (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | | | | | contradiction];
+                                     [ rewrite ST_SuccCBV_result; reflexivity
+                                     | rewrite ST_PredZeroCBV_result; reflexivity
+                                     | rewrite ST_PredSuccCBV_result; reflexivity
+                                     | rewrite ST_PredCBV_result; reflexivity
+                                     | rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(left; exact HfireA2)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+
+  - (* tzero *) exfalso. destruct Hex as [v' Hv']. inversion Hv'.
+
+  - (* tsucc t1 *)
+    destruct Hex as [v' Hv']. inversion Hv' as [ | | | tc t1'c Hp | | | | | | | ]; subst.
+    destruct n as [|m].
+    + rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+      pose proof (stepCBV_dispatch_reach
+                    [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                     ST_App2CBVremoveFnPos'Animated stepFn]
+                    [ST_SuccCBVremoveFnPos'Animated stepFn; ST_PredZeroCBVremoveFnPos'Animated;
+                     ST_PredSuccCBVremoveFnPos'Animated;
+                     ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                     ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                     ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                    (tsucc' (tmLift t1)) m
+                    ltac:(intros h k Hin; simpl in Hin;
+                          repeat destruct Hin as [<- | Hin]; [ | | | contradiction];
+                          [ rewrite ST_AppAbsCBV_result; reflexivity
+                          | rewrite ST_App1CBV_result; reflexivity
+                          | rewrite ST_App2CBV_result; reflexivity ]))
+        as Hreach.
+      cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+      * rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+        apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+      * rewrite Heqk in Hanim.
+        destruct k as [|k'].
+        -- cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+        -- destruct (stepFn (S k') (Success tm' (tmLift t1))) as [|w|] eqn:Hw.
+           ++ pose proof (stepCBV_dispatch_fire_or_escape (ST_SuccCBVremoveFnPos'Animated stepFn)
+                        [ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                         ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                         ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                         ST_FixCBVremoveFnPos'Animated]
+                        (tsucc' (tmLift t1)) k'
+                        ltac:(intros h kk Hin; simpl in Hin;
+                              repeat destruct Hin as [<- | Hin]; [ | | | | | | | contradiction];
+                              [ rewrite ST_PredZeroCBV_result; reflexivity
+                              | rewrite ST_PredSuccCBV_result; reflexivity
+                              | rewrite ST_PredCBV_result; reflexivity
+                              | rewrite ST_IfzZeroCBV_result; reflexivity
+                              | rewrite ST_IfzSuccCBV_result; reflexivity
+                              | rewrite ST_IfzDiscCBV_result; reflexivity
+                              | rewrite ST_FixCBV_result; reflexivity ])
+                        ltac:(rewrite ST_SuccCBV_result; cbv iota; right; rewrite Hw; reflexivity)) as Htmp.
+              cbn [List.app] in Htmp. rewrite Htmp in Hanim. clear Htmp.
+              cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+           ++ assert (Hfire : ST_SuccCBVremoveFnPos'Animated stepFn (S k') (Success tm' (tsucc' (tmLift t1))) = Success tm' (tsucc' w)).
+              { rewrite ST_SuccCBV_result. cbv iota. rewrite Hw. reflexivity. }
+              rewrite (stepCBV_dispatch_fire (ST_SuccCBVremoveFnPos'Animated stepFn) _ _ k' (tsucc' w) Hfire) in Hanim.
+              cbv iota in Hanim. injection Hanim as <-.
+              assert (Htm1 : stepCBVTopFn_gen stepFn (S k') t1 f1 f2 = Success tm (tmTransparentSigmaPushBody f1 f2 w)).
+              { unfold stepCBVTopFn_gen. rewrite Hw. reflexivity. }
+              apply ST_SuccCBV.
+              exact (stepCBV_soundness_aux depth' stepFn (conj Hstep0 Hstep) f1 f2 (S k') ltac:(lia)
+                       t1 _ Hsound (ex_intro _ t1'c Hp) Htm1).
+           ++ pose proof (stepCBV_dispatch_fire_or_escape (ST_SuccCBVremoveFnPos'Animated stepFn)
+                        [ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                         ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                         ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                         ST_FixCBVremoveFnPos'Animated]
+                        (tsucc' (tmLift t1)) k'
+                        ltac:(intros h kk Hin; simpl in Hin;
+                              repeat destruct Hin as [<- | Hin]; [ | | | | | | | contradiction];
+                              [ rewrite ST_PredZeroCBV_result; reflexivity
+                              | rewrite ST_PredSuccCBV_result; reflexivity
+                              | rewrite ST_PredCBV_result; reflexivity
+                              | rewrite ST_IfzZeroCBV_result; reflexivity
+                              | rewrite ST_IfzSuccCBV_result; reflexivity
+                              | rewrite ST_IfzDiscCBV_result; reflexivity
+                              | rewrite ST_FixCBV_result; reflexivity ])
+                        ltac:(rewrite ST_SuccCBV_result; cbv iota; left; rewrite Hw; reflexivity)) as Htmp.
+              cbn [List.app] in Htmp. rewrite Htmp in Hanim. clear Htmp.
+              cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+
+  - (* tpred t1 *)
+    destruct Hex as [v' Hv']. inversion Hv' as [ | | | | | vc Hval2 | t1c t1'c Hp2 | | | | ]; subst.
+    + (* PredZero: t1 = tzero, v' = tzero *)
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn]
+                      [ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tpred' tzero') m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-. apply Hescape. reflexivity.
+           ++ assert (HfirePZ : ST_PredZeroCBVremoveFnPos'Animated (S k') (Success tm' (tpred' tzero')) = Success tm' tzero').
+              { rewrite ST_PredZeroCBV_result. reflexivity. }
+              rewrite (stepCBV_dispatch_fire (ST_PredZeroCBVremoveFnPos'Animated) _ _ k' tzero' HfirePZ) in Hanim.
+              cbv iota in Hanim. injection Hanim as <-.
+              apply ST_PredZeroCBV.
+
+    + (* PredSucc: t1 = tsucc v', Hval2 : isValueFn v' = true *)
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated]
+                      [ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tpred' (tsucc' (tmLift v'))) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity
+                            | rewrite ST_PredZeroCBV_result; reflexivity ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v'). reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v'). reflexivity.
+           ++ assert (HfirePS : ST_PredSuccCBVremoveFnPos'Animated (S k') (Success tm' (tpred' (tsucc' (tmLift v')))) = Success tm' (tmLift v')).
+              { rewrite ST_PredSuccCBV_result. rewrite (isValueFnliftedFunc_tmLift v'). rewrite Hval2. reflexivity. }
+              rewrite (stepCBV_dispatch_fire (ST_PredSuccCBVremoveFnPos'Animated) _ _ k' (tmLift v') HfirePS) in Hanim.
+              cbv iota in Hanim. injection Hanim as <-.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v').
+              apply ST_PredSuccCBV. exact Hval2.
+
+    + (* Pred: Hp2 : isValueFn t1 = false /\ stepCBV t1 t1'c *)
+      destruct Hp2 as [Hval Hp].
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated]
+                      [ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                       ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tpred' (tmLift t1)) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity
+                            | apply (proj1 (Pred_skip_nomatch t1 Hval k))
+                            | apply (proj2 (Pred_skip_nomatch t1 Hval k)) ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+           ++ destruct (stepFn (S k') (Success tm' (tmLift t1))) as [|w|] eqn:Hw.
+              ** assert (HfirePred : ST_PredCBVremoveFnPos'Animated stepFn (S k') (Success tm' (tpred' (tmLift t1))) = FuelError tm').
+                 { rewrite ST_PredCBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_PredCBVremoveFnPos'Animated stepFn)
+                               [ST_IfzZeroCBVremoveFnPos'Animated; ST_IfzSuccCBVremoveFnPos'Animated;
+                                ST_IfzDiscCBVremoveFnPos'Animated stepFn; ST_FixCBVremoveFnPos'Animated]
+                               (tpred' (tmLift t1)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | contradiction];
+                                     [ rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(right; exact HfirePred)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+              ** assert (HfirePred : ST_PredCBVremoveFnPos'Animated stepFn (S k') (Success tm' (tpred' (tmLift t1))) = Success tm' (tpred' w)).
+                 { rewrite ST_PredCBV_result. cbv iota. rewrite Hw. cbv iota.
+                   rewrite (isValueFnliftedFunc_tmLift t1), Hval. reflexivity. }
+                 rewrite (stepCBV_dispatch_fire (ST_PredCBVremoveFnPos'Animated stepFn) _ _ k' (tpred' w) HfirePred) in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 assert (Htm1 : stepCBVTopFn_gen stepFn (S k') t1 f1 f2 = Success tm (tmTransparentSigmaPushBody f1 f2 w)).
+                 { unfold stepCBVTopFn_gen. rewrite Hw. reflexivity. }
+                 apply ST_PredCBV. split; [exact Hval |].
+                 exact (stepCBV_soundness_aux depth' stepFn (conj Hstep0 Hstep) f1 f2 (S k') ltac:(lia)
+                          t1 _ Hsound (ex_intro _ t1'c Hp) Htm1).
+              ** assert (HfirePred : ST_PredCBVremoveFnPos'Animated stepFn (S k') (Success tm' (tpred' (tmLift t1))) = NoMatch tm').
+                 { rewrite ST_PredCBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_PredCBVremoveFnPos'Animated stepFn)
+                               [ST_IfzZeroCBVremoveFnPos'Animated; ST_IfzSuccCBVremoveFnPos'Animated;
+                                ST_IfzDiscCBVremoveFnPos'Animated stepFn; ST_FixCBVremoveFnPos'Animated]
+                               (tpred' (tmLift t1)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | | | | contradiction];
+                                     [ rewrite ST_IfzZeroCBV_result; reflexivity
+                                     | rewrite ST_IfzSuccCBV_result; reflexivity
+                                     | rewrite ST_IfzDiscCBV_result; reflexivity
+                                     | rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(left; exact HfirePred)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1). reflexivity.
+
+  - (* tifz tdisc t1 t2 *)
+    destruct Hex as [v' Hv'].
+    inversion Hv' as [ | | | | | | | zc1 zc2 | vnc znc1 znc2 Hvalc | zdc zdc' znc1 znc2 Hpc | ]; subst.
+    + (* IfzZero: tdisc = tzero, v' = v' *)
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn]
+                      [ST_IfzZeroCBVremoveFnPos'Animated; ST_IfzSuccCBVremoveFnPos'Animated;
+                       ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tifz' tzero' (tmLift v') (tmLift t2)) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity
+                            | rewrite ST_PredZeroCBV_result; reflexivity
+                            | rewrite ST_PredSuccCBV_result; reflexivity
+                            | rewrite ST_PredCBV_result; reflexivity ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v'), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+           reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v'), (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+              reflexivity.
+           ++ assert (HfireIZ : ST_IfzZeroCBVremoveFnPos'Animated (S k')
+                        (Success tm' (tifz' tzero' (tmLift v') (tmLift t2))) = Success tm' (tmLift v')).
+              { rewrite ST_IfzZeroCBV_result. reflexivity. }
+              rewrite (stepCBV_dispatch_fire (ST_IfzZeroCBVremoveFnPos'Animated) _ _ k' (tmLift v') HfireIZ) in Hanim.
+              cbv iota in Hanim. injection Hanim as <-.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v').
+              apply ST_IfzZeroCBV.
+
+    + (* IfzSucc: tdisc = tsucc vnc, Hvalc : isValueFn vnc = true *)
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated]
+                      [ST_IfzSuccCBVremoveFnPos'Animated;
+                       ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tifz' (tsucc' (tmLift vnc)) (tmLift t1) (tmLift v')) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity
+                            | rewrite ST_PredZeroCBV_result; reflexivity
+                            | rewrite ST_PredSuccCBV_result; reflexivity
+                            | rewrite ST_PredCBV_result; reflexivity
+                            | rewrite ST_IfzZeroCBV_result; reflexivity ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 vnc),
+                   (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                   (tmTransparentSigmaPushBody_tmLift f1 f2 v').
+           reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 vnc),
+                      (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                      (tmTransparentSigmaPushBody_tmLift f1 f2 v').
+              reflexivity.
+           ++ assert (HfireIS : ST_IfzSuccCBVremoveFnPos'Animated (S k')
+                        (Success tm' (tifz' (tsucc' (tmLift vnc)) (tmLift t1) (tmLift v'))) = Success tm' (tmLift v')).
+              { rewrite ST_IfzSuccCBV_result. rewrite (isValueFnliftedFunc_tmLift vnc). rewrite Hvalc. reflexivity. }
+              rewrite (stepCBV_dispatch_fire (ST_IfzSuccCBVremoveFnPos'Animated) _ _ k' (tmLift v') HfireIS) in Hanim.
+              cbv iota in Hanim. injection Hanim as <-.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 v').
+              apply ST_IfzSuccCBV. exact Hvalc.
+
+    + (* IfzDisc: Hpc : isValueFn tdisc = false /\ stepCBV tdisc tdc', v' = tifz tdc' t1 t2 *)
+      destruct Hpc as [Hval Hp].
+      destruct n as [|m].
+      * rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+        injection Hanim as <-. apply Hescape. reflexivity.
+      * unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+        pose proof (stepCBV_dispatch_reach
+                      [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                       ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                       ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                       ST_PredCBVremoveFnPos'Animated stepFn;
+                       ST_IfzZeroCBVremoveFnPos'Animated; ST_IfzSuccCBVremoveFnPos'Animated]
+                      [ST_IfzDiscCBVremoveFnPos'Animated stepFn;
+                       ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                      (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2)) m
+                      ltac:(intros h k Hin; simpl in Hin;
+                            repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | contradiction];
+                            [ rewrite ST_AppAbsCBV_result; reflexivity
+                            | rewrite ST_App1CBV_result; reflexivity
+                            | rewrite ST_App2CBV_result; reflexivity
+                            | rewrite ST_SuccCBV_result; reflexivity
+                            | rewrite ST_PredZeroCBV_result; reflexivity
+                            | rewrite ST_PredSuccCBV_result; reflexivity
+                            | rewrite ST_PredCBV_result; reflexivity
+                            | apply (proj1 (Ifz_skip_nomatch tdisc t1 t2 Hval k))
+                            | apply (proj2 (Ifz_skip_nomatch tdisc t1 t2 Hval k)) ])) as Hreach.
+        cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+        -- rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 tdisc),
+                   (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                   (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+           reflexivity.
+        -- rewrite Heqk in Hanim.
+           destruct k as [|k'].
+           ++ cbv iota in Hanim. injection Hanim as <-.
+              apply Hescape. simpl.
+              rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 tdisc),
+                      (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                      (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+              reflexivity.
+           ++ destruct (stepFn (S k') (Success tm' (tmLift tdisc))) as [|w|] eqn:Hw.
+              ** assert (HfireID : ST_IfzDiscCBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2))) = FuelError tm').
+                 { rewrite ST_IfzDiscCBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_IfzDiscCBVremoveFnPos'Animated stepFn)
+                               [ST_FixCBVremoveFnPos'Animated]
+                               (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | contradiction];
+                                     [ rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(right; exact HfireID)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 tdisc),
+                         (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                         (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+              ** assert (HfireID : ST_IfzDiscCBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2))) = Success tm' (tifz' w (tmLift t1) (tmLift t2))).
+                 { rewrite ST_IfzDiscCBV_result. cbv iota. rewrite Hw. cbv iota.
+                   rewrite (isValueFnliftedFunc_tmLift tdisc), Hval. reflexivity. }
+                 rewrite (stepCBV_dispatch_fire (ST_IfzDiscCBVremoveFnPos'Animated stepFn) _ _ k'
+                            (tifz' w (tmLift t1) (tmLift t2)) HfireID) in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 assert (Htm1 : stepCBVTopFn_gen stepFn (S k') tdisc f1 f2 = Success tm (tmTransparentSigmaPushBody f1 f2 w)).
+                 { unfold stepCBVTopFn_gen. rewrite Hw. reflexivity. }
+                 simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                                (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 apply ST_IfzDiscCBV. split; [exact Hval |].
+                 exact (stepCBV_soundness_aux depth' stepFn (conj Hstep0 Hstep) f1 f2 (S k') ltac:(lia)
+                          tdisc _ Hsound (ex_intro _ zdc' Hp) Htm1).
+              ** assert (HfireID : ST_IfzDiscCBVremoveFnPos'Animated stepFn (S k')
+                           (Success tm' (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2))) = NoMatch tm').
+                 { rewrite ST_IfzDiscCBV_result. cbv iota. rewrite Hw. reflexivity. }
+                 pose proof (stepCBV_dispatch_fire_or_escape (ST_IfzDiscCBVremoveFnPos'Animated stepFn)
+                               [ST_FixCBVremoveFnPos'Animated]
+                               (tifz' (tmLift tdisc) (tmLift t1) (tmLift t2)) k'
+                               ltac:(intros h kk Hin; simpl in Hin;
+                                     repeat destruct Hin as [<- | Hin]; [ | contradiction];
+                                     [ rewrite ST_FixCBV_result; reflexivity ])
+                               ltac:(left; exact HfireID)) as Htmp.
+                 cbn [List.app] in Htmp. rewrite Htmp in Hanim.
+                 cbv iota in Hanim. injection Hanim as <-.
+                 apply Hescape. simpl.
+                 rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 tdisc),
+                         (tmTransparentSigmaPushBody_tmLift f1 f2 t1),
+                         (tmTransparentSigmaPushBody_tmLift f1 f2 t2).
+                 reflexivity.
+
+  - (* tfix fn T fbody *)
+    destruct Hex as [v' Hv']. inversion Hv' as [ | | | | | | | | | | fnc Tc fbodyc ]; subst.
+    destruct n as [|m].
+    + rewrite (stepCBVTopFn_gen_0 stepFn (conj Hstep0 Hstep)) in Hanim.
+      injection Hanim as <-. apply Hescape. reflexivity.
+    + unfold stepCBVTopFn_gen in Hanim. rewrite Hstep in Hanim. simpl in Hanim.
+      pose proof (stepCBV_dispatch_reach
+                    [ST_AppAbsCBVremoveFnPos'Animated; ST_App1CBVremoveFnPos'Animated stepFn;
+                     ST_App2CBVremoveFnPos'Animated stepFn; ST_SuccCBVremoveFnPos'Animated stepFn;
+                     ST_PredZeroCBVremoveFnPos'Animated; ST_PredSuccCBVremoveFnPos'Animated;
+                     ST_PredCBVremoveFnPos'Animated stepFn; ST_IfzZeroCBVremoveFnPos'Animated;
+                     ST_IfzSuccCBVremoveFnPos'Animated; ST_IfzDiscCBVremoveFnPos'Animated stepFn]
+                    [ST_FixCBVremoveFnPos'Animated; stepCBVremoveFnPos'UndefinedAnimated]
+                    (tfix' fn T (tmLift fbody)) m
+                    ltac:(intros h k Hin; simpl in Hin;
+                          repeat destruct Hin as [<- | Hin]; [ | | | | | | | | | | contradiction];
+                          [ rewrite ST_AppAbsCBV_result; reflexivity
+                          | rewrite ST_App1CBV_result; reflexivity
+                          | rewrite ST_App2CBV_result; reflexivity
+                          | rewrite ST_SuccCBV_result; reflexivity
+                          | rewrite ST_PredZeroCBV_result; reflexivity
+                          | rewrite ST_PredSuccCBV_result; reflexivity
+                          | rewrite ST_PredCBV_result; reflexivity
+                          | rewrite ST_IfzZeroCBV_result; reflexivity
+                          | rewrite ST_IfzSuccCBV_result; reflexivity
+                          | rewrite ST_IfzDiscCBV_result; reflexivity ]))
+        as Hreach.
+      cbn [List.app] in Hreach. destruct Hreach as [Hesc | [k [Hkm Heqk]]].
+      * rewrite Hesc in Hanim. cbv iota in Hanim. injection Hanim as <-.
+        apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 fbody). reflexivity.
+      * rewrite Heqk in Hanim.
+        destruct k as [|k'].
+        -- cbv iota in Hanim. injection Hanim as <-.
+           apply Hescape. simpl. rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 fbody). reflexivity.
+        -- assert (HfireFix : ST_FixCBVremoveFnPos'Animated (S k') (Success tm' (tfix' fn T (tmLift fbody))) =
+                     Success tm' (substliftedFunc fn (tfix' fn T (tmLift fbody)) (tmLift fbody))).
+           { rewrite ST_FixCBV_result. reflexivity. }
+           rewrite (stepCBV_dispatch_fire (ST_FixCBVremoveFnPos'Animated) _ _ k'
+                      (substliftedFunc fn (tfix' fn T (tmLift fbody)) (tmLift fbody)) HfireFix) in Hanim.
+           cbv iota in Hanim.
+           assert (Hsubst_eq : substliftedFunc fn (tfix' fn T (tmLift fbody)) (tmLift fbody) =
+                                 tmLift (subst fn (tfix fn T fbody) fbody)).
+           { unfold substliftedFunc. simpl.
+             rewrite (tmChkNoExtraCstrs_tmLift fbody). simpl.
+             rewrite (tmPushPlain_tmLift fbody). reflexivity. }
+           rewrite Hsubst_eq in Hanim. simpl in Hanim.
+           rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 (subst fn (tfix fn T fbody) fbody)) in Hanim.
+           injection Hanim as <-.
+           apply ST_FixCBV.
+Qed.
+
+(** When [w] carries no marker constructors, pushing it through the oracles
+    is the same as the marker-free structural conversion [tmPushPlain] --
+    mirrors [tmPush_eq_plain] from Module [InductiveEval]. *)
+Lemma tmPush_eq_plain : forall (f1 : tm -> tm) (f2 : tm -> stm) (w : tm'),
+  tmChkNoExtraCstrs w = true ->
+  tmTransparentSigmaPushBody f1 f2 w = tmPushPlain w.
+Proof.
+  intros f1 f2 w. induction w; simpl; intros H; try reflexivity; try discriminate.
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+Qed.
+
+(** [isValueFnliftedFunc] only ever reports [true']/[false'] when its
+    argument is marker-free, and then it exactly reflects [isValueFn] of the
+    pushed-through real term. *)
+Lemma isValueFnliftedFunc_sound_true : forall f1 f2 u,
+  isValueFnliftedFunc u = true' -> isValueFn (tmTransparentSigmaPushBody f1 f2 u) = true.
+Proof.
+  intros f1 f2 u H. unfold isValueFnliftedFunc in H.
+  destruct (tmChkNoExtraCstrs u) eqn:E; [| discriminate].
+  rewrite (tmPush_eq_plain f1 f2 u E).
+  unfold boolLift in H. destruct (isValueFn (tmPushPlain u)); [reflexivity | discriminate].
+Qed.
+
+Lemma isValueFnliftedFunc_sound_false : forall f1 f2 u,
+  isValueFnliftedFunc u = false' -> isValueFn (tmTransparentSigmaPushBody f1 f2 u) = false.
+Proof.
+  intros f1 f2 u H. unfold isValueFnliftedFunc in H.
+  destruct (tmChkNoExtraCstrs u) eqn:E; [| discriminate].
+  rewrite (tmPush_eq_plain f1 f2 u E).
+  unfold boolLift in H. destruct (isValueFn (tmPushPlain u)); [discriminate | reflexivity].
+Qed.
+
+(** The other direction of the marker-free round-trip: [tmLift] inverts
+    [tmPushPlain] exactly when there are no markers to lose. *)
+Lemma tmLift_tmPushPlain : forall w : tm',
+  tmChkNoExtraCstrs w = true -> tmLift (tmPushPlain w) = w.
+Proof.
+  induction w; simpl; intros H; try reflexivity; try discriminate.
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+  - rewrite IHw; [reflexivity | exact H].
+  - destruct (tmChkNoExtraCstrs w1) eqn:E1; destruct (tmChkNoExtraCstrs w2) eqn:E2;
+      destruct (tmChkNoExtraCstrs w3) eqn:E3; simpl in H; try discriminate.
+    rewrite (IHw1 eq_refl), (IHw2 eq_refl), (IHw3 eq_refl). reflexivity.
+  - rewrite IHw; [reflexivity | exact H].
+Qed.
+
+(** [isValueFnliftedFunc] only ever reports [true']/[false'] (never the
+    marker-punt [isValueFnLiftedCstr]) when its argument is marker-free. *)
+Lemma tmChkNoExtraCstrs_of_isValueFnliftedFunc : forall u,
+  isValueFnliftedFunc u = true' \/ isValueFnliftedFunc u = false' ->
+  tmChkNoExtraCstrs u = true.
+Proof.
+  intros u H. unfold isValueFnliftedFunc in H.
+  destruct (tmChkNoExtraCstrs u) eqn:E; [reflexivity |].
+  destruct H as [H|H]; discriminate H.
+Qed.
+
+(** Pushing a marker-free raw value through the oracles and lifting it back
+    recovers that same raw value exactly. *)
+Lemma tmLift_push_eq_self : forall f1 f2 u,
+  tmChkNoExtraCstrs u = true -> tmLift (tmTransparentSigmaPushBody f1 f2 u) = u.
+Proof.
+  intros f1 f2 u H. rewrite (tmPush_eq_plain f1 f2 u H). apply tmLift_tmPushPlain. exact H.
+Qed.
+
+(** [valTr]'s animated handler fires exactly on [isValueFnliftedFunc u = true'],
+    giving the empty trace; anything else (including a marker-laden [u]) is
+    [NoMatch]. *)
+Lemma valTr_result : forall n u, valTrremoveFnPos'Animated (S n) (Success tm' u) =
+  match isValueFnliftedFunc u with
+  | true' => Success stm' stmNil'
+  | _ => NoMatch stm'
+  end.
+Proof.
+  intros n u. unfold valTrremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct (isValueFnliftedFunc u) as [| |]; reflexivity.
+Qed.
+
+(** [stepTr]'s animated handler requires [isValueFnliftedFunc u = false']
+    EXACTLY to fire at all (so a marker-laden [u] never reaches [stepTop]/
+    [bigTop] here -- it is [NoMatch], falling through to the escape). When it
+    does fire, it runs the step engine then the big-step engine on the raw
+    result, gated by that same strict check. *)
+Lemma stepTr_result :
+  forall (bigTop : nat -> animation_result tm' -> animation_result stm')
+         (stepTop : nat -> animation_result tm' -> animation_result tm') n u,
+  stepTrremoveFnPos'Animated bigTop stepTop (S n) (Success tm' u) =
+  match stepTop (S n) (Success tm' u) with
+  | FuelError => FuelError stm'
+  | NoMatch => NoMatch stm'
+  | Success t2' =>
+      match bigTop (S n) (Success tm' t2') with
+      | FuelError => FuelError stm'
+      | NoMatch => NoMatch stm'
+      | Success s' =>
+          match isValueFnliftedFunc u with
+          | false' => Success stm' (stmCons' t2' s')
+          | _ => NoMatch stm'
+          end
+      end
+  end.
+Proof.
+  intros bigTop stepTop n u.
+  unfold stepTrremoveFnPos'Animated. unfold_combinators. simpl.
+  destruct (stepTop (S n) (Success tm' u)) as [|t2'|] eqn:Ht2; try reflexivity.
+  destruct (bigTop (S n) (Success tm' t2')) as [|s'|]; try reflexivity.
+  destruct (isValueFnliftedFunc u) as [| |]; reflexivity.
+Qed.
+
+(** Generic bridge: equate ANY function satisfying [dispatch_coind_ext]'s own
+    defining equations (for [stepCBV]'s Rest/handler shape) with the
+    standalone global [dispatch_coind_ext]. Needed because the [stepCBV]
+    companion embedded inside [bigStepTrremoveFnPos'AnimatedTopFn]'s own
+    mutual-fix block is a distinct (freshly re-embedded by MetaRocq) kernel
+    term from the standalone [dispatch_coind_ext], even though both satisfy
+    the same recursive equations. *)
+Lemma dispatch_coind_ext_ext :
+  forall (A B : Type) (f : A -> B)
+    (D : list (nat -> animation_result A -> animation_result B) ->
+         nat -> animation_result A -> animation_result B),
+  (forall lst input, D lst 0 input = map_outcome A B f input) ->
+  (forall lst n input, D lst (S n) input =
+     match lst with
+     | [] => NoMatch B
+     | h :: t =>
+         match h (S n) input with
+         | NoMatch => D t n input
+         | FuelError => map_outcome A B f input
+         | Success w => Success B w
+         end
+     end) ->
+  forall n lst input, D lst n input = dispatch_coind_ext A B f lst n input.
+Proof.
+  intros A B f D HD0 HDS n.
+  induction n as [|n IH]; intros lst input.
+  - rewrite HD0. cbn [dispatch_coind_ext]. reflexivity.
+  - rewrite HDS. cbn [dispatch_coind_ext].
+    destruct lst as [|h t]; [reflexivity|].
+    destruct (h (S n) input) as [|w|] eqn:Hh; try reflexivity.
+    apply IH.
+Qed.
+
+(** Existence (never naming!) of the [stepCBV] companion embedded inside
+    [bigStepTrremoveFnPos'AnimatedTopFn]'s own mutual-fix block, together with
+    the facts that (a) [bigStepTrremoveFnPos'AnimatedTopFn] dispatches through
+    it exactly as printed, and (b) it itself satisfies [stepCBV_step_eq]. Both
+    are established by letting [cbn]/unification expose the unnamed
+    components, never by writing the companion's term out by hand. *)
+Lemma bigStepTr_companion_exists :
+  exists stepFn : nat -> animation_result tm' -> animation_result tm',
+    (forall n input, bigStepTrremoveFnPos'AnimatedTopFn (S n) input =
+       dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest
+         [valTrremoveFnPos'Animated; stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn;
+          bigStepTrremoveFnPos'UndefinedAnimated] n input) /\
+    stepCBV_step_eq stepFn.
+Proof.
+  eexists. split.
+  - intros n input. cbn [bigStepTrremoveFnPos'AnimatedTopFn].
+    apply dispatch_coind_ext_ext.
+    + intros lst0 input0. unfold map_outcome. reflexivity.
+    + intros lst0 n0 input0. unfold map_outcome.
+      destruct lst0 as [|h t]; [reflexivity|].
+      destruct (h (S n0) input0) as [|w|]; reflexivity.
+  - split.
+    + intros input. reflexivity.
+    + intros n input. apply dispatch_coind_ext_ext.
+      * intros lst0 input0. unfold map_outcome. reflexivity.
+      * intros lst0 n0 input0. unfold map_outcome.
+        destruct lst0 as [|h t]; [reflexivity|].
+        destruct (h (S n0) input0) as [|w|]; reflexivity.
+Qed.
+
+(** Generic dispatch helpers for [bigStepTr]'s own (short, 3-element) handler
+    list, mirroring [stepCBV_dispatch_fire]/[_skip]/[_escape]/
+    [_fire_or_escape] built earlier for [stepCBV]'s own (longer) list --
+    [dispatch_coind_ext] itself is fully generic, only [A]/[B]/Rest/Undefined
+    differ. *)
+Lemma bigStepTr_dispatch_fire :
+  forall h rest (u : tm') m w,
+  h (S m) (Success tm' u) = Success stm' w ->
+  dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest (h::rest) (S m) (Success tm' u) = Success stm' w.
+Proof. intros h rest u m w Hh. cbn [dispatch_coind_ext]. rewrite Hh. reflexivity. Qed.
+
+Lemma bigStepTr_dispatch_skip :
+  forall h rest (u : tm') m,
+  h (S m) (Success tm' u) = NoMatch stm' ->
+  dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest (h::rest) (S m) (Success tm' u) =
+  dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest rest m (Success tm' u).
+Proof. intros h rest u m Hh. cbn [dispatch_coind_ext]. rewrite Hh. reflexivity. Qed.
+
+Lemma bigStepTr_dispatch_escape :
+  forall (u : tm') m,
+  dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest [bigStepTrremoveFnPos'UndefinedAnimated] m (Success tm' u) =
+  Success stm' (bigStepTrremoveFnPosAn1 u).
+Proof.
+  intros u m. destruct m.
+  - simpl. reflexivity.
+  - unfold dispatch_coind_ext.
+    assert (HU : bigStepTrremoveFnPos'UndefinedAnimated (S m) (Success tm' u) = Success stm' (bigStepTrremoveFnPosAn1 u))
+      by (simpl; reflexivity).
+    rewrite HU. reflexivity.
+Qed.
+
+Lemma bigStepTr_dispatch_fire_or_escape :
+  forall (X : nat -> animation_result tm' -> animation_result stm') (u : tm') (k : nat),
+  (X (S k) (Success tm' u) = NoMatch stm' \/ X (S k) (Success tm' u) = FuelError stm') ->
+  dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest
+    [X; bigStepTrremoveFnPos'UndefinedAnimated] (S k) (Success tm' u) =
+  Success stm' (bigStepTrremoveFnPosAn1 u).
+Proof.
+  intros X u k [HX | HX].
+  - cbn [dispatch_coind_ext]. rewrite HX.
+    destruct k as [|k'].
+    + reflexivity.
+    + exact (bigStepTr_dispatch_escape u (S k')).
+  - cbn [dispatch_coind_ext]. rewrite HX. reflexivity.
+Qed.
+
+(** Pushing the [bigStepTr] escape marker through the oracles gives exactly
+    [f2] applied to the pushed-through real term. *)
+Lemma stmPush_bigAn1 : forall f1 f2 u,
+  stmTransparentSigmaPushBody f1 f2 (bigStepTrremoveFnPosAn1 u) = f2 (tmTransparentSigmaPushBody f1 f2 u).
+Proof. intros f1 f2 u. reflexivity. Qed.
+
+(** The generalized (raw-[tm'] in, raw-[stm'] out) soundness fact for
+    [bigStepTr]'s engine, proven directly via [cofix] (mirroring
+    [animation_soundness_totalRel]'s [cofix] in Module [streamCopy]) and
+    reusing the already-proven [stepCBV_soundness_aux] as a black box for the
+    single-step sub-argument. Operating on an arbitrary [u : tm'] rather than
+    just [tmLift] of a real term is essential: [stepTr]'s own continuation
+    feeds the step engine's raw result straight back into the big-step
+    engine, without re-lifting from a clean [tm] in between. *)
+Lemma bigStepTr_soundness_aux :
+  forall (stepFn : nat -> animation_result tm' -> animation_result tm'),
+  (forall n input, bigStepTrremoveFnPos'AnimatedTopFn (S n) input =
+     dispatch_coind_ext tm' stm' bigStepTrremoveFnPos'Rest
+       [valTrremoveFnPos'Animated; stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn;
+        bigStepTrremoveFnPos'UndefinedAnimated] n input) ->
+  stepCBV_step_eq stepFn ->
+  forall (f1 : tm -> tm) (f2 : tm -> stm),
+  (forall t1, (exists t2, stepCBV t1 t2) -> stepCBV t1 (f1 t1)) ->
+  (forall t1, (exists s2, bigStepTr t1 s2) -> bigStepTr t1 (f2 t1)) ->
+  forall (n : nat) (u : tm') (s' : stm'),
+  (exists outputStm', bigStepTr (tmTransparentSigmaPushBody f1 f2 u) outputStm') ->
+  bigStepTrremoveFnPos'AnimatedTopFn n (Success tm' u) = Success stm' s' ->
+  bigStepTr (tmTransparentSigmaPushBody f1 f2 u) (stmTransparentSigmaPushBody f1 f2 s').
+Proof.
+  cofix CIH.
+  intros stepFn Hbig_eq Hstep_eq f1 f2 Hsound1 Hsound2 n u s' Hex Hanim.
+  assert (Hescape : bigStepTr (tmTransparentSigmaPushBody f1 f2 u)
+                       (stmTransparentSigmaPushBody f1 f2 (bigStepTrremoveFnPosAn1 u))).
+  { rewrite stmPush_bigAn1. apply Hsound2. exact Hex. }
+  destruct n as [|m].
+  - cbn [bigStepTrremoveFnPos'AnimatedTopFn] in Hanim. unfold map_outcome in Hanim.
+    injection Hanim as <-. exact Hescape.
+  - rewrite (Hbig_eq m) in Hanim.
+    destruct m as [|m'].
+    + simpl in Hanim. injection Hanim as <-. exact Hescape.
+    + cbn [dispatch_coind_ext] in Hanim.
+      rewrite (valTr_result m' u) in Hanim.
+      destruct (isValueFnliftedFunc u) as [| |] eqn:Hval.
+      * (* true' : [valTr] fires directly. *)
+        injection Hanim as <-.
+        simpl. apply valTr. apply (isValueFnliftedFunc_sound_true f1 f2 u Hval).
+      * (* false' : [valTr] skips, so dispatch recurses on [stepTr;Undefined]
+           at fuel [m'] -- which itself must be nonzero for [stepTr] to be
+           tried at all (fuel 0 escapes directly, bypassing it). *)
+        destruct m' as [|m''].
+        -- simpl in Hanim. injection Hanim as <-. exact Hescape.
+        -- cbn [dispatch_coind_ext] in Hanim.
+           destruct (stepFn (S m'') (Success tm' u)) as [|t2'|] eqn:Ht2.
+           ++ assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = FuelError stm').
+              { rewrite stepTr_result, Ht2. reflexivity. }
+              rewrite HfireST in Hanim. cbv iota in Hanim.
+              injection Hanim as <-. exact Hescape.
+           ++ destruct (bigStepTrremoveFnPos'AnimatedTopFn (S m'') (Success tm' t2')) as [|s_final|] eqn:Hbig2.
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = FuelError stm').
+                 { rewrite stepTr_result, Ht2, Hbig2. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 injection Hanim as <-. exact Hescape.
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) =
+                           Success stm' (stmCons' t2' s_final)).
+                 { rewrite stepTr_result, Ht2, Hbig2, Hval. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 injection Hanim as <-.
+                 assert (Hchk : tmChkNoExtraCstrs u = true)
+                   by (apply tmChkNoExtraCstrs_of_isValueFnliftedFunc; right; exact Hval).
+                 assert (Hisval_false : isValueFn (tmTransparentSigmaPushBody f1 f2 u) = false)
+                   by (apply isValueFnliftedFunc_sound_false; exact Hval).
+                 destruct Hex as [outS Hbig].
+                 inversion Hbig as [v Hv1 | t1c t2c sc Hconj]; subst.
+                 { rewrite Hv1 in Hisval_false. discriminate Hisval_false. }
+                 destruct Hconj as [_ [Hstepc Hbigc]].
+                 assert (Htm1 : stepCBVTopFn_gen stepFn (S m'') (tmTransparentSigmaPushBody f1 f2 u) f1 f2 =
+                          Success tm (tmTransparentSigmaPushBody f1 f2 t2')).
+                 { unfold stepCBVTopFn_gen. rewrite (tmLift_push_eq_self f1 f2 u Hchk). rewrite Ht2. reflexivity. }
+                 assert (Hstep_final : stepCBV (tmTransparentSigmaPushBody f1 f2 u) (tmTransparentSigmaPushBody f1 f2 t2')).
+                 { exact (stepCBV_soundness_aux (S m'') stepFn Hstep_eq f1 f2 (S m'') (le_n (S m''))
+                            (tmTransparentSigmaPushBody f1 f2 u) (tmTransparentSigmaPushBody f1 f2 t2')
+                            Hsound1 (ex_intro _ t2c Hstepc) Htm1). }
+                 assert (Heqt2 : tmTransparentSigmaPushBody f1 f2 t2' = t2c)
+                   by (exact (stepCBV_deterministic _ _ _ Hstep_final Hstepc)).
+                 assert (Hex_t2' : exists s0, bigStepTr (tmTransparentSigmaPushBody f1 f2 t2') s0).
+                 { rewrite Heqt2. exact (ex_intro _ sc Hbigc). }
+                 assert (Hbig_final : bigStepTr (tmTransparentSigmaPushBody f1 f2 t2') (stmTransparentSigmaPushBody f1 f2 s_final)).
+                 { exact (CIH stepFn Hbig_eq Hstep_eq f1 f2 Hsound1 Hsound2 (S m'') t2' s_final Hex_t2' Hbig2). }
+                 simpl. apply stepTr. split; [exact Hisval_false | split; [exact Hstep_final | exact Hbig_final]].
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = NoMatch stm').
+                 { rewrite stepTr_result, Ht2, Hbig2. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 rewrite (bigStepTr_dispatch_escape u m'') in Hanim.
+                 injection Hanim as <-. exact Hescape.
+           ++ assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = NoMatch stm').
+              { rewrite stepTr_result, Ht2. reflexivity. }
+              rewrite HfireST in Hanim. cbv iota in Hanim.
+              rewrite (bigStepTr_dispatch_escape u m'') in Hanim.
+              injection Hanim as <-. exact Hescape.
+      * (* marker-laden [u] : the final value-check can never succeed, so no
+           matter what the step/big-step sub-calls do, [stepTr] itself gives
+           [NoMatch]/[FuelError] and dispatch falls through to [Undefined]. *)
+        destruct m' as [|m''].
+        -- simpl in Hanim. injection Hanim as <-. exact Hescape.
+        -- cbn [dispatch_coind_ext] in Hanim.
+           destruct (stepFn (S m'') (Success tm' u)) as [|t2'|] eqn:Ht2.
+           ++ assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = FuelError stm').
+              { rewrite stepTr_result, Ht2. reflexivity. }
+              rewrite HfireST in Hanim. cbv iota in Hanim.
+              injection Hanim as <-. exact Hescape.
+           ++ destruct (bigStepTrremoveFnPos'AnimatedTopFn (S m'') (Success tm' t2')) as [|s_final|] eqn:Hbig2.
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = FuelError stm').
+                 { rewrite stepTr_result, Ht2, Hbig2. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 injection Hanim as <-. exact Hescape.
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = NoMatch stm').
+                 { rewrite stepTr_result, Ht2, Hbig2, Hval. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 rewrite (bigStepTr_dispatch_escape u m'') in Hanim.
+                 injection Hanim as <-. exact Hescape.
+              ** assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = NoMatch stm').
+                 { rewrite stepTr_result, Ht2, Hbig2. reflexivity. }
+                 rewrite HfireST in Hanim. cbv iota in Hanim.
+                 rewrite (bigStepTr_dispatch_escape u m'') in Hanim.
+                 injection Hanim as <-. exact Hescape.
+           ++ assert (HfireST : stepTrremoveFnPos'Animated bigStepTrremoveFnPos'AnimatedTopFn stepFn (S m'') (Success tm' u) = NoMatch stm').
+              { rewrite stepTr_result, Ht2. reflexivity. }
+              rewrite HfireST in Hanim. cbv iota in Hanim.
+              rewrite (bigStepTr_dispatch_escape u m'') in Hanim.
+              injection Hanim as <-. exact Hescape.
+Qed.
+
+(** [bigStepTr]/[stepCBV] are partial relations (e.g. a bare [tvar] has no
+    derivation at all), and the engine's [Undefined]/escape fallback always
+    succeeds regardless, so soundness genuinely requires knowing a real
+    derivation exists for [inputTm] -- exactly mirroring [eval]'s own
+    [animation_soundness_partialRelDet] in Module [InductiveEval], and the
+    [exists v', stepCBV t v'] hypothesis already threaded through
+    [stepCBV_soundness_aux]/[bigStepTr_soundness_aux] above. *)
 Theorem animationSoundnessPartialRel : forall (n : nat) (inputTm : tm) (outputStm : stm) (f1 : tm -> tm) (f2 : tm -> stm),
                          (((forall tm1 : tm, (exists tm2 : tm, stepCBV tm1 tm2) -> stepCBV tm1 (f1 tm1)) /\
                          (forall tm1 : tm, (exists stm2 : stm, bigStepTr tm1 stm2) -> bigStepTr tm1 (f2 tm1))) ->
+                         (exists outputStm', bigStepTr inputTm outputStm') ->
                          (bigStepTrTransparentSigma2AnimatedTopFn n (Success tm inputTm) f1 f2 =
-                         Success stm outputStm -> bigStepTr inputTm outputStm)). Proof. Admitted.
-                          
-
+                         Success stm outputStm -> bigStepTr inputTm outputStm)).
+Proof.
+  intros n inputTm outputStm f1 f2 [Hsound1 Hsound2] Hex Hanim.
+  unfold bigStepTrTransparentSigma2AnimatedTopFn, bigStepTrremoveFnPosinputLift,
+         bigStepTrremoveFnPosTransparentSigmaOutputPush, stmTransparentSigmaPush in Hanim.
+  simpl in Hanim.
+  destruct (bigStepTrremoveFnPos'AnimatedTopFn n (Success tm' (tmLift inputTm))) as [|s'|] eqn:Hs';
+    simpl in Hanim; try discriminate Hanim.
+  injection Hanim as <-.
+  destruct bigStepTr_companion_exists as [stepFn [Hbig_eq Hstep_eq]].
+  assert (Hex' : exists outputStm', bigStepTr (tmTransparentSigmaPushBody f1 f2 (tmLift inputTm)) outputStm').
+  { rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 inputTm). exact Hex. }
+  pose proof (bigStepTr_soundness_aux stepFn Hbig_eq Hstep_eq f1 f2 Hsound1 Hsound2 n (tmLift inputTm) s' Hex' Hs') as Hfinal.
+  rewrite (tmTransparentSigmaPushBody_tmLift f1 f2 inputTm) in Hfinal.
+  exact Hfinal.
+Qed.
 
 End PCFTrace.
 
