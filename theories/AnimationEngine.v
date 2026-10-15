@@ -1425,10 +1425,56 @@ match knLst with
   tmReturn (prod_in_out (fixpoint_data all_cdata_merged))
 end.
 
+(** Emit a standalone top-level definition for each AUXILIARY relation's own
+    arm of the mutual fixpoint block built by [mk_all_ind]/[mk_rec_fn], so
+    that e.g. a relation [lookup] bundled into [typing]'s mutual block
+    (because [typing]'s clauses call it) still comes out as an
+    independently callable [lookupAnimatedTopFn], not just an un-nameable
+    copy embedded inside [typingAnimatedTopFn]'s own body.
+
+    [defs] is the full list built by [mk_all_ind] ([kn]'s own arm first, at
+    index 0; then one arm per auxiliary relation, in the same order as
+    [knLst]; then the shared [dispatch_ind_ext] arm last). [idx] is the
+    index of the next arm to emit, and [rest] is the remaining tail of
+    [knLst] walked down in lockstep with it -- purely to know when to stop,
+    one arm per auxiliary relation, never reaching the trailing
+    [dispatch_ind_ext] arm (which already has its own standalone name
+    elsewhere in this file and must NOT be redefined here). The caller
+    starts this at [idx = 1], skipping index [0] ([kn]'s own arm, which it
+    already defines separately via its own, unchanged [tmDefinitionRed_]
+    call). *)
+Fixpoint emit_aux_topfns (defs : list (def term)) (idx : nat) (rest : list kername)
+  : TemplateMonad unit :=
+  match rest with
+  | [] => tmReturn tt
+  | _ :: rest' =>
+      match nth_error defs idx with
+      | None => tmFail "emit_aux_topfns: index out of range"
+      | Some d =>
+          match d.(dname).(binder_name) with
+          | nNamed nm =>
+              let u := mk_rec_fn defs idx in
+              match DB.de_bruijn_option u with
+              | Some db_u =>
+                  t' <- tmEval all db_u ;;
+                  f  <- tmUnquote t' ;;
+                  tmEval hnf (my_projT2 f) >>=
+                  tmDefinitionRed_ false nm (Some hnf) ;;
+                  emit_aux_topfns defs (S idx) rest'
+              | None => tmFail "emit_aux_topfns: de Bruijn conversion failed"
+              end
+          | nAnon => tmFail "emit_aux_topfns: anonymous auxiliary fixpoint name"
+          end
+      end
+  end.
+
 (** Main entry point: animate an inductive relation into an executable function.
     Infers any auxiliary relations referenced in [kn]'s constructors (filtering
     by [modes]) and compiles all blocks together via a two-phase approach.
-    Works for single-block, mutual-inductive ([with]), and separate-block relations. *)
+    Works for single-block, mutual-inductive ([with]), and separate-block relations.
+    Besides [kn]'s own [AnimatedTopFn] (as before), ALSO emits a standalone
+    [AnimatedTopFn] for every auxiliary relation bundled in via [knLst] --
+    see [emit_aux_topfns]. *)
 Definition animate_inductive
   (kn : kername)
   (modes : mode_map) (fuel : nat)
@@ -1450,6 +1496,7 @@ match mk_all_ind ind_data kn modes with
     f  <- tmUnquote t' ;;
     tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
+    emit_aux_topfns defs 1 knLst ;;
     tmReturn db_u
   | None => tmFail "de Bruijn conversion failed in animate_inductive"
   end

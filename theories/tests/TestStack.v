@@ -10,7 +10,6 @@ Require Import Animation.AnimationEngine.
 Require Import Animation.EqualityResolution.
 Require Import Animation.MetaRocqUtils.
 Require Import Animation.PatternCompilation.
-Require Import Animation.coIndPreProc.
 
 From Stdlib Require Import List.
 Require Import MetaRocq.Template.All.
