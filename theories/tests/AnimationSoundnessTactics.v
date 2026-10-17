@@ -24,40 +24,47 @@ Import MetaRocqNotations.
 Local Open Scope nat_scope.
 Open Scope bs.
 
-(** Hint database for [eqFn] soundness facts (e.g. [eqFnty_sound] in
-    TestSoundnessSTLC.v) -- per the design discussion, a custom type's
-    [eqFn] is user-supplied, so its soundness lemma must be supplied too;
-    populate this with [Hint Resolve <eqFn_sound_lemma> : eqfn_sound.] per
-    custom type. [close_clause] below always falls back to [eauto with
-    eqfn_sound] rather than failing outright when a guard needs one. *)
-Create HintDb eqfn_sound.
-
-(** Every [eqFn] seen so far (e.g. [eqFnty], [eqFnsinstr]) is generated
+(** Most [eqFn]s seen so far (e.g. [eqFnty], [eqFnsinstr]) are generated
     the SAME mechanical way: [Definition eqFn (a b : T) : bool := if
     decEq a b then true else false] wrapping a [decide equality]-derived
-    decision procedure. That means its soundness proof has exactly one
-    fixed shape every time -- so, same as the clause proofs themselves,
-    it shouldn't need a hand-written one either. Given a goal
-    [forall a b, eqFn a b = true -> a = b], this closes it fully
-    generically: unfold whatever [eqFn] turns out to be (read off the
-    hypothesis, not hardcoded), destruct the underlying decision
-    procedure, and the [true]/[false] branches are [exact]/[discriminate]
-    respectively. A hand-written, non-[decide-equality] [eqFn] is the one
-    case this can't handle -- rare in practice, and still just an
-    ordinary lemma if it comes up. *)
-Ltac eqfn_sound_proof :=
-  let a := fresh "a" in
-  let b := fresh "b" in
-  let H := fresh "H" in
-  intros a b H;
+    decision procedure. That means its soundness fact has exactly one
+    fixed shape every time, decidable straight from whatever hypothesis
+    [H : eqFn a b = true] is already sitting in context: unfold whatever
+    [eqFn] turns out to be (read off [H], not hardcoded), destruct the
+    underlying decision procedure, and the [true]/[false] branches are
+    [exact]/[discriminate] respectively. So for THAT shape there's no
+    need to ever state or prove a standing [Lemma eqFn_sound : forall a
+    b, eqFn a b = true -> a = b] -- [eqfn_sound_inline H] discharges the
+    fact INLINE, on the spot, wherever a guard's hypothesis is already
+    in hand (see [resolve_eqfn_guards] below). *)
+Ltac eqfn_sound_inline H :=
   match type of H with
-  | ?eqFn a b = true =>
+  | ?eqFn ?a ?b = true =>
       unfold eqFn in H;
       match type of H with
       | (if ?dec a b then true else false) = true =>
           destruct (dec a b) as [Heq | Hneq]; [ exact Heq | discriminate H ]
       end
   end.
+
+(** A hand-written, non-[decide-equality] [eqFn] (e.g. one built from
+    [andb]/[Nat.leb] rather than [if decEq a b then true else false])
+    is the one case [eqfn_sound_inline] genuinely can't handle -- its
+    inner [match] simply has no clause for whatever shape the body
+    unfolds to, and that failure is NOT silently swallowed: it surfaces
+    as a hard, visible proof failure at the enclosing [Qed] (confirmed:
+    "No matching clauses for match"), not a silently-wrong or
+    vacuously-passing proof. For exactly that case, [eqfn_sound] is an
+    OPT-IN escape hatch, not the default path: prove your own ordinary
+    [Lemma my_eqFn_sound : forall a b, my_eqFn a b = true -> a = b] by
+    whatever means the hand-written definition actually needs, register
+    it with [Hint Resolve my_eqFn_sound : eqfn_sound], and
+    [resolve_eqfn_guards]/[try_constructors] below automatically fall
+    back to it whenever [eqfn_sound_inline] doesn't apply. Every
+    [decide-equality]-shaped [eqFn] still needs nothing registered here
+    at all -- this database stays empty unless a hand-written case
+    actually comes up. *)
+Create HintDb eqfn_sound.
 
 (* ==================================================================== *)
 (** ** Part 1: generic, relation-independent facts about [dispatch_ind_ext].
@@ -147,29 +154,12 @@ Ltac bridge_dispatch_ind_ext :=
       [h], [m], [Hlt : m < rem_fuel], [H : h m input = Success _ out],
       [Hin : In h [Clause1; Clause2Animated TopFn; ...]]
     one goal per list element -- [TopFn] is a named global, delta-unfolded
-    by plain [cbn].
-
-    [unfold_dispatch_step_eqn HLS H] is the variant for the OTHER case: a
-    hypothesis-bound local function [L] satisfying a GIVEN defining
-    equation [HLS : forall k inp, L (S k) inp = dispatch_ind_ext _ _ lst k
-    inp] (the un-nameable-embedded-sibling case, e.g. [lookup] inside
-    [typing]'s own mutual fix block -- there is no global name for [cbn]
-    to unfold, so the step must instead [rewrite] with whatever equation
-    the caller already proved about [L]). Both variants converge on the
-    same [finish_dispatch_unfold] once [H]'s head is exposed as a
-    [dispatch_ind_ext]-shaped application. *)
+    by plain [cbn], converging on [finish_dispatch_unfold] once [H]'s
+    head is exposed as a [dispatch_ind_ext]-shaped application. *)
 (* ==================================================================== *)
 
 Ltac finish_dispatch_unfold H :=
   match type of H with
-  (* [unfold_dispatch_step_eqn]'s [HLS] already states its RHS in terms
-     of the GLOBAL [dispatch_ind_ext] (not an embedded copy), so after
-     [rewrite HLS in H], [H]'s head is already literally that constant --
-     bridging a term against itself is trivially true but, confusingly,
-     NOT the same unification problem as bridging a genuine embedded
-     copy, so skip it entirely rather than let [bridge_dispatch_ind_ext]
-     have to re-derive a no-op. *)
-  | dispatch_ind_ext _ _ _ _ _ = _ => idtac
   | ?D ?A ?B ?lst ?fl ?inp = _ =>
       let Hbridge := fresh "Hbridge" in
       assert (Hbridge : D A B lst fl inp = dispatch_ind_ext A B lst fl inp)
@@ -187,8 +177,6 @@ Ltac finish_dispatch_unfold H :=
   try (exfalso; exact Hin).
 
 Ltac unfold_dispatch_step H := cbn in H; finish_dispatch_unfold H.
-
-Ltac unfold_dispatch_step_eqn HLS H := rewrite HLS in H; finish_dispatch_unfold H.
 
 (* ==================================================================== *)
 (** ** Part 3: saturating one clause's hypothesis.
@@ -280,18 +268,16 @@ Ltac saturate_clause H :=
   repeat saturate_step H.
 
 (* ==================================================================== *)
-(** ** Part 4: closing a saturated clause -- applying the induction
-    hypothesis to same-relation recursive calls, then picking the source
-    relation's constructor. [close_clause IH] is deliberately narrow: it
-    only ever touches hypotheses of the exact shape
-      [H : <SomeTopFn> <fuel> <input> = Success _ <v>]
+(** ** Part 4: shared primitives for closing a saturated clause once its
+    recursive-call hypotheses have been resolved into facts about the
+    source relation(s) -- picking the matching constructor, discharging
+    [eqFn] guards first. The "resolve recursive calls via the induction
+    hypothesis" loop itself lives next to whichever entry point needs it
+    (see [close_clause_joint] in Part 5): it only ever touches hypotheses
+    of the exact shape [H : <SomeTopFn> <fuel> <input> = Success _ <v>]
     via [repeat], which terminates gracefully (not in an infinite loop,
     not with a propagated error) as soon as no remaining such hypothesis
-    unifies against [IH] -- same-relation calls get consumed one by one
-    (each successful [eapply] changes that hypothesis's shape, so it can
-    never be re-matched), and whatever's left (cross-relation calls,
-    requiring extraction) is simply left alone for the caller to handle
-    explicitly. *)
+    unifies against the induction hypothesis. *)
 (* ==================================================================== *)
 
 (** Plain [econstructor] commits to the first constructor whose
@@ -328,29 +314,28 @@ Ltac try_constructors :=
     | econstructor 7; solve [ eauto with eqfn_sound ]
     | econstructor 8; solve [ eauto with eqfn_sound ] ].
 
-(** The common tail shared by [close_clause] and (in TestSoundnessSTLC-
-    style validations) whatever per-relation glue handles a cross-relation
-    call into an un-nameable embedded sibling: once every recursive
-    premise has been turned into a fact about the SOURCE relation, this
-    is just "discriminate the impossible branch, or inject+pick a
-    constructor". *)
+(** The common tail shared by every [close_clause*] variant: once every
+    recursive premise has been turned into a fact about the SOURCE
+    relation, this is just "discriminate the impossible branch, or
+    inject+pick a constructor". *)
 (** For each still-boolean [eqFn] guard fact in context (e.g. [Heqb :
-    eqFnty TBool t = true]), [eauto with eqfn_sound] CAN derive the
-    propositional equality ([TBool = t], via [eqFnty_sound]) as a goal in
-    isolation, but it will NOT then go back and rewrite that equality
-    into some other, already-established recursive-call fact (e.g.
-    turning [typing cxt t2 t] into [typing cxt t2 TBool]) -- hint-based
-    [eauto] chains applications, it doesn't perform substitution. So
-    this has to be done as an explicit step, before constructor
-    selection: turn every [eqFn a b = true] into [a = b] (via whatever
-    soundness lemma is in the [eqfn_sound] hint db) and [subst] it in,
-    just like the hand-proof's explicit [apply eqFnty_sound in ...]
-    calls. *)
+    eqFnty TBool t = true]), the derived propositional equality ([TBool
+    = t]) alone won't get rewritten back into some other, already-
+    established recursive-call fact (e.g. turning [typing cxt t2 t]
+    into [typing cxt t2 TBool]) -- so this has to be an explicit step,
+    before constructor selection: turn every [eqFn a b = true] into
+    [a = b] and [subst] it in, just like the hand-proof's explicit
+    [apply eqFnty_sound in ...] calls used to. [eqfn_sound_inline H] is
+    tried FIRST (no lemma needed, covers the common [decide-equality]
+    case), falling back to [eauto with eqfn_sound] -- empty by default,
+    populated only if a hand-written [eqFn] needed its own registered
+    lemma (see the comment above [Create HintDb eqfn_sound] for why
+    that's rare and opt-in, not the default path). *)
 Ltac resolve_eqfn_guards :=
   repeat match goal with
   | H : ?eqFn ?a ?b = true |- _ =>
       let Heq := fresh "Heq" in
-      assert (Heq : a = b) by (eauto with eqfn_sound);
+      assert (Heq : a = b) by (first [ eqfn_sound_inline H | eauto with eqfn_sound ]);
       clear H; subst
   end.
 
@@ -360,12 +345,6 @@ Ltac finish_success H :=
     [ discriminate H
     | injection H as ?; subst; try_constructors
     | try_constructors ].
-
-Ltac close_clause H IH :=
-  repeat match goal with
-  | H' : _ = Success _ _ |- _ => eapply IH in H'; [ | lia ]
-  end;
-  finish_success H.
 
 (* ==================================================================== *)
 (** ** Part 5: one-shot entry points for the common case -- EVERY
@@ -384,81 +363,21 @@ Ltac close_clause H IH :=
     comment just above [animation_soundness_proof_joint]'s definition
     for the full design rationale (including the genuinely-cyclic case).
 
-    The ONE case this still cannot collapse to a single call: a relation
-    animated by a truly SEPARATE [animate_inductive] call (see
-    [close_sibling_clause], Part 6) that some OTHER bundle's clause
-    calls into -- that one still needs the explicit extraction glue
-    (and the older [animation_soundness_proof]/[animation_soundness_proof_eqn]
-    below, kept for exactly that purpose), since each separate call
-    re-derives an unrelated, un-nameable copy from scratch. *)
+    The ONE case this doesn't cover: a relation animated by a truly
+    SEPARATE [animate_inductive] call that some OTHER bundle's clause
+    calls into -- each separate call re-derives its own unrelated,
+    un-nameable mutual block from scratch, so the callee's embedded copy
+    inside the caller's dispatch has no name [animation_soundness_proof_joint]
+    (or anything else in this file) can refer to. Nothing here currently
+    handles that case; see git history for the [close_sibling_clause]
+    extraction technique this file used to carry for exactly that
+    situation, if it comes up again. *)
 (* ==================================================================== *)
 
-(** [zerotac] discharges [Hanim] when the fuel is syntactically [0]: for
-    a NAMED global [TopFn], that's [simpl in Hanim] (iota-reduces
-    [TopFn 0 input] to [FuelError _] directly); for a hypothesis-bound
-    local [L] (the un-nameable-sibling case), [simpl] can't see through
-    an opaque hypothesis, so it has to be [rewrite HL0 in Hanim] instead,
-    using whatever defining equation the caller already has for [L]. *)
 Ltac simpl_discriminate H := simpl in H; discriminate H.
-Ltac rewrite_discriminate HL0 H := rewrite HL0 in H; discriminate H.
-
-(** NOTE: [animation_soundness_base_case] through [animation_soundness_proof_eqn]
-    below are the OLDER depth-bounded-[Fixpoint] machinery. No validation
-    in this file uses them anymore -- see [animation_soundness_proof_joint]
-    further down for the current default entry point for an entire
-    [modes] bundle. They are kept only because [close_sibling_clause]
-    (Part 6) still needs [animation_soundness_proof]/[_eqn]'s style to
-    build the soundness proof of a relation animated by a genuinely
-    SEPARATE [animate_inductive] call (the one case that doesn't collapse
-    into one bundle-wide joint statement). *)
-Ltac animation_soundness_base_case zerotac :=
-  intros;
-  match goal with
-  | Hn : ?n0 <= 0 |- _ => assert (n0 = 0) as -> by lia
-  end;
-  match goal with
-  | Hanim : _ = Success _ _ |- _ => zerotac Hanim
-  end.
-
-(** [IHdepth'] here is already the FULLY-APPLIED "[IH depth']" term, not
-    the bare Fixpoint name -- a bare Ltac identifier referencing a
-    Coq-level name (like "depth'") is resolved at the Ltac DEFINITION
-    site, not at each call site, so this tactic cannot reach back into
-    its caller's "destruct depth as [|depth']" to find "depth'" by name
-    itself. The caller (below) applies "depth'" to [IH] right where
-    "depth'" is actually in scope, and hands this tactic the resulting
-    term as one opaque argument. *)
-Ltac animation_soundness_step unfoldtac zerotac IHdepth' :=
-  intros;
-  match goal with
-  | Hanim : ?F ?n0 _ = Success _ _ |- _ =>
-      destruct n0 as [|rem_fuel];
-      [ zerotac Hanim
-      | unfoldtac Hanim; saturate_clause Hanim; close_clause Hanim IHdepth' ]
-  end.
-
-(** [depth] is passed in explicitly, not referenced by bare name inside
-    this tactic's own body -- same reason as [animation_soundness_step]'s
-    [IHdepth'] above: it has to be resolved at the CALL site (where it's
-    a genuine hypothesis already in the proof, namely the enclosing
-    [Fixpoint]'s own depth parameter), not at this tactic's definition
-    site, where no such thing exists yet. *)
-Ltac animation_soundness_proof depth IH :=
-  destruct depth as [|depth'];
-  [ animation_soundness_base_case simpl_discriminate
-  | animation_soundness_step unfold_dispatch_step simpl_discriminate (IH depth') ].
-
-Ltac animation_soundness_proof_eqn depth HL0 HLS IH :=
-  destruct depth as [|depth'];
-  [ animation_soundness_base_case ltac:(rewrite_discriminate HL0)
-  | animation_soundness_step ltac:(unfold_dispatch_step_eqn HLS)
-      ltac:(rewrite_discriminate HL0) (IH depth') ].
 
 (** [animation_soundness_proof_joint]/[animation_soundness_project]: the
-    REAL push-button form, superseding everything above
-    ([animation_soundness_proof]/[close_clause]/[animation_soundness_wrapper]
-    and the arity-many [_many] variants they used to need) for the
-    common case of proving soundness for every relation in ONE [modes]
+    push-button form for proving soundness for every relation in ONE [modes]
     bundle together. Rather than one artificial depth-bounded [Fixpoint]
     PER relation (needing a separate wrapper [Theorem] to strip the
     bound, and -- for bundled siblings -- some way to hand multiple IHs
@@ -486,7 +405,26 @@ Ltac animation_soundness_proof_eqn depth HL0 HLS IH :=
     induction on the shared fuel gives ONE joint IH covering every
     relation at every smaller fuel value in a single step, with no need
     to manually chase a "soundness of A at n depends on B at n-1 depends
-    on A at n-2..." chain by hand. *)
+    on A at n-2..." chain by hand.
+
+    When the bundle has only ONE relation (e.g. [add], [stack_step]
+    below), there is no [_aux]/wrapper split at all: with no artificial
+    bound to strip, the joint statement and the one relation's final
+    user-facing statement are THE SAME TYPE, so
+    [animation_soundness_proof_joint] goes directly on the [Theorem].
+    [animation_soundness_project] (and a separately-named [_aux]
+    [Lemma]) is only needed when TWO OR MORE user-facing [Theorem]s in
+    the same bundle must share one proof -- e.g. [typing_soundness] and
+    [lookup_soundness] below both projecting out of
+    [typing_lookup_soundness_aux] -- since Coq has no way to reuse a
+    proof across multiple top-level statements other than giving the
+    shared proof its own name once. (Plain Ltac also has no way to
+    introduce that shared name as a side effect of proving one of the
+    two [Theorem]s -- a tactic only ever transforms the goal it's
+    already inside, it can't emit a new top-level declaration -- so for
+    a genuinely multi-relation bundle, the one extra [Lemma] line here
+    is the minimum needed to avoid re-deriving the whole induction once
+    per sibling [Theorem].) *)
 
 (** [try_ih_conjuncts H ih] tries, in order: (1) [ih] itself is already
     the exact fact needed (the bundle has only one relation, so [IH] is
@@ -494,9 +432,8 @@ Ltac animation_soundness_proof_eqn depth HL0 HLS IH :=
     conjunct is the one needed; (3) recurse into [ih]'s remaining
     conjuncts. Each alternative instantiates [ih]'s own leading [forall
     m, m < n -> ...] with metavariables and lets [eapply ... in H]
-    unify them against whatever fuel/shape [H] already has -- exactly
-    like the earlier single- and multi-IH tactics, [m] is never chosen
-    up front, it's always discovered by unification. A guess that's
+    unify them against whatever fuel/shape [H] already has -- [m] is
+    never chosen up front, it's always discovered by unification. A guess that's
     the wrong shape (e.g. trying [proj1] on a fact that isn't actually a
     conjunction, or on the wrong relation) is a normal, recoverable
     elaboration/unification failure, so [first] just falls through. *)
@@ -531,7 +468,7 @@ Ltac animation_soundness_proof_joint :=
 (** [animation_soundness_project joint_lemma] is the user-facing
     [Theorem]'s whole proof: instantiate the joint [Lemma] at this
     [Theorem]'s own fuel value (read off [Hanim], not a hardcoded name,
-    same discipline as [animation_soundness_base_case]/[_step] above),
+    same discipline as [animation_soundness_step_joint] above),
     then [finish_from_conjunct] walks down the resulting conjunction
     exactly like [try_ih_conjuncts] does mid-proof, until it finds the
     one conjunct matching the current goal. *)
@@ -560,20 +497,17 @@ Inductive add : nat -> nat -> nat -> Prop :=
 
 MetaRocq Run (animate_inductive <?add?> [("add", ([0;1], [2]))] 100).
 
-(** A bundle of exactly one relation: the joint [Lemma] is just [add]'s
-    own statement, no [/\] at all -- [animation_soundness_proof_joint]
-    handles this with zero special-casing ([repeat split] is a no-op
-    when there's nothing to split). *)
-Lemma add_soundness_aux : forall (n : nat),
-  forall (v0 x v1 : nat),
-  addAnimatedTopFn n (Success (nat * nat) (v0, x)) = Success nat v1 ->
-  add v0 x v1.
-Proof. animation_soundness_proof_joint. Qed.
-
+(** A bundle of exactly one relation: no [/\] to split at all, and
+    [animation_soundness_proof_joint] -- unlike the old depth-[Fixpoint]
+    design -- introduces no artificial bound that a separate wrapper
+    [Theorem] would need to strip. So there's nothing a second
+    declaration could add; the one, final, user-facing statement is
+    exactly [animation_soundness_proof_joint]'s own goal shape, proved
+    directly, no [_aux] needed. *)
 Theorem add_soundness : forall (n v0 x v1 : nat),
   addAnimatedTopFn n (Success (nat * nat) (v0, x)) = Success nat v1 ->
   add v0 x v1.
-Proof. animation_soundness_project add_soundness_aux. Qed.
+Proof. animation_soundness_proof_joint. Qed.
 
 End AddValidation.
 
@@ -629,15 +563,9 @@ Inductive stack_step : state -> list sinstr * list nat -> list sinstr * list nat
 MetaRocq Run (animate_inductive <? stack_step ?>
   [("stack_step", ([0;1], [2]))] 200).
 
-Lemma stack_step_soundness_aux : forall (n : nat),
-  forall (st : state) (p_list : list sinstr) (stk : list nat)
-         (ps1 : list sinstr * list nat),
-  stack_stepAnimatedTopFn n
-    (Success (state * (list sinstr * list nat)) (st, (p_list, stk))) =
-  Success (list sinstr * list nat) ps1 ->
-  stack_step st (p_list, stk) ps1.
-Proof. animation_soundness_proof_joint. Qed.
-
+(** Same reasoning as [add_soundness] -- a one-relation bundle has no
+    artificial bound to strip, so no [_aux] is needed; see the comment
+    there. *)
 Theorem stack_step_soundness :
   forall (n : nat) (st : state) (p_list : list sinstr) (stk : list nat)
          (ps1 : list sinstr * list nat),
@@ -645,7 +573,7 @@ Theorem stack_step_soundness :
     (Success (state * (list sinstr * list nat)) (st, (p_list, stk))) =
   Success (list sinstr * list nat) ps1 ->
   stack_step st (p_list, stk) ps1.
-Proof. animation_soundness_project stack_step_soundness_aux. Qed.
+Proof. animation_soundness_proof_joint. Qed.
 
 End StackValidation.
 
@@ -664,62 +592,6 @@ End StackValidation.
     hypothesis belongs to, it just tries each conjunct. Originally
     copied verbatim from TestSoundnessSTLC.v. *)
 (* ==================================================================== *)
-
-(* ==================================================================== *)
-(** ** Part 6: [close_sibling_clause] -- NO LONGER NEEDED by any of the
-    three validations below, now that [animate_inductive] itself emits a
-    standalone [AnimatedTopFn] for every relation bundled into one
-    mutual block (see [emit_aux_topfns] in AnimationEngine.v): [lookup]
-    inside [typing]'s block is now just a named global, handled by the
-    same bundle-wide joint [Lemma]/[animation_soundness_proof_joint] as
-    every other relation in [STLCValidation] below.
-
-    Kept here for the one case that genuinely remains: a relation
-    animated via a truly SEPARATE, independent [animate_inductive] call
-    (not bundled into the same [modes] map) that some OTHER relation's
-    clause still calls. That case was shown NOT to collapse into a named
-    global the same way -- each separate call re-derives its own,
-    unrelated mutual block from scratch, so the callee's embedded copy
-    inside the caller is still a fresh, un-nameable term needing this
-    same extraction. This tactic is NOT fully generic -- it still needs,
-    as EXPLICIT arguments, the three things no amount of genericity can
-    discover on its own:
-    - [ClauseName]: which dispatch-list clause function to extract the
-      sibling from (e.g. [TVarAnimated]);
-    - [AuxSoundnessAux]: the sibling relation's OWN generic
-      soundness Fixpoint, built the generic-[L] way (see git history /
-      the design-discussion summary for [lookup_fn_soundness_aux], the
-      version of [lookup]'s own proof this tactic used to be paired
-      with, before the engine fix made it unnecessary for THIS case);
-    - [AuxClauses]: a FUNCTION from the (not-yet-bound) sibling copy to
-      its own clause list (e.g. [fun L => [LookupHereAnimated;
-      LookupThereAnimated L]]) -- written as a function because the
-      clause list mentions the sibling recursively, and the sibling
-      doesn't have a name to write down until after extraction.
-    Everything else ([set]-ing the huge raw term short first for
-    performance, deriving [HL0]/[HLS], the fuel-argument/name-collision
-    care from the original hand-written version) is internal. *)
-(* ==================================================================== *)
-
-Ltac close_sibling_clause H ClauseName AuxSoundnessAux AuxClauses depth' :=
-  let L := fresh "L" in
-  match type of H with
-  | ClauseName ?Lraw _ _ = _ => set (L := Lraw) in H
-  end;
-  saturate_clause H;
-  (try (match goal with
-        | Hc : L ?fl _ = Success ?B _ |- _ =>
-            let HL0 := fresh "HL0" in
-            let HLS := fresh "HLS" in
-            assert (HL0 : forall inp, L 0 inp = FuelError B)
-              by (unfold L; reflexivity);
-            assert (HLS : forall k inp, L (S k) inp =
-                       dispatch_ind_ext _ B (AuxClauses L) k inp)
-              by (unfold L; intros k inp; cbn beta iota zeta;
-                  bridge_dispatch_ind_ext);
-            eapply (AuxSoundnessAux L HL0 HLS depth' fl) in Hc; [ | lia ]
-        end));
-  finish_success H.
 
 Module STLCValidation.
 
@@ -771,10 +643,9 @@ Inductive typing : list ty -> tm -> ty -> Prop :=
 
 MetaRocq Run (animate_inductive <?typing?> [("typing", ([0;1], [2])); ("lookup", ([0;1], [2]))] 100).
 
-Lemma eqFnty_sound : forall t1 t2, eqFnty t1 t2 = true -> t1 = t2.
-Proof. eqfn_sound_proof. Qed.
-
-Hint Resolve eqFnty_sound : eqfn_sound.
+(** No [eqFnty_sound] lemma needed: [resolve_eqfn_guards] discharges the
+    [eqFnty TBool t = true]-shaped guards in [TAdd]/[TApp]'s clauses
+    inline via [eqfn_sound_inline], the moment they're encountered. *)
 
 (** [typing] and [lookup] were fed to the SAME [animate_inductive] call
     above, so they're one bundle: ONE joint [Lemma], one conjunct each,
