@@ -1433,21 +1433,28 @@ end.
     copy embedded inside [typingAnimatedTopFn]'s own body.
 
     [defs] is the full list built by [mk_all_ind] ([kn]'s own arm first, at
-    index 0; then one arm per auxiliary relation, in the same order as
-    [knLst]; then the shared [dispatch_ind_ext] arm last). [idx] is the
-    index of the next arm to emit, and [rest] is the remaining tail of
-    [knLst] walked down in lockstep with it -- purely to know when to stop,
-    one arm per auxiliary relation, never reaching the trailing
-    [dispatch_ind_ext] arm (which already has its own standalone name
-    elsewhere in this file and must NOT be redefined here). The caller
-    starts this at [idx = 1], skipping index [0] ([kn]'s own arm, which it
-    already defines separately via its own, unchanged [tmDefinitionRed_]
-    call). *)
-Fixpoint emit_aux_topfns (defs : list (def term)) (idx : nat) (rest : list kername)
+    index 0; then one arm per auxiliary relation; then the shared
+    [dispatch_ind_ext] arm last). [idx] is the index of the next arm to
+    emit, and [remaining] counts down the number of arms still to go --
+    driven by [length defs], NOT by [length knLst]: [knLst] (from
+    [infer_aux_knames]) only ever discovers an auxiliary relation
+    referenced via an absolute [tInd] in [kn]'s own constructors, which
+    misses a sibling referenced via a bare [tRel] from WITHIN the same
+    native mutual [with] block (e.g. [odd] from inside [even]'s own
+    constructor) -- but [defs] itself already has the right number of
+    arms regardless of whether [infer_aux_knames] found them all, so
+    counting down from [length defs] instead reaches every real arm no
+    matter how it got into [defs]. Stops two short of the end: index
+    [0] ([kn]'s own arm) is skipped (the caller already defines it
+    separately via its own, unchanged [tmDefinitionRed_] call), and the
+    trailing [dispatch_ind_ext] arm must NOT be redefined (it already
+    has its own standalone name elsewhere in this file). The caller
+    starts this at [idx = 1] with [remaining = length defs - 2]. *)
+Fixpoint emit_aux_topfns (defs : list (def term)) (idx : nat) (remaining : nat)
   : TemplateMonad unit :=
-  match rest with
-  | [] => tmReturn tt
-  | _ :: rest' =>
+  match remaining with
+  | 0 => tmReturn tt
+  | S remaining' =>
       match nth_error defs idx with
       | None => tmFail "emit_aux_topfns: index out of range"
       | Some d =>
@@ -1460,7 +1467,7 @@ Fixpoint emit_aux_topfns (defs : list (def term)) (idx : nat) (rest : list kerna
                   f  <- tmUnquote t' ;;
                   tmEval hnf (my_projT2 f) >>=
                   tmDefinitionRed_ false nm (Some hnf) ;;
-                  emit_aux_topfns defs (S idx) rest'
+                  emit_aux_topfns defs (S idx) remaining'
               | None => tmFail "emit_aux_topfns: de Bruijn conversion failed"
               end
           | nAnon => tmFail "emit_aux_topfns: anonymous auxiliary fixpoint name"
@@ -1473,8 +1480,13 @@ Fixpoint emit_aux_topfns (defs : list (def term)) (idx : nat) (rest : list kerna
     by [modes]) and compiles all blocks together via a two-phase approach.
     Works for single-block, mutual-inductive ([with]), and separate-block relations.
     Besides [kn]'s own [AnimatedTopFn] (as before), ALSO emits a standalone
-    [AnimatedTopFn] for every auxiliary relation bundled in via [knLst] --
-    see [emit_aux_topfns]. *)
+    [AnimatedTopFn] for every OTHER real arm of the resulting mutual
+    fixpoint block (every entry of [defs] except index [0] and the
+    trailing [dispatch_ind_ext] arm) -- see [emit_aux_topfns]. Driven by
+    [length defs], not [length knLst]: a relation bundled in only via a
+    native mutual [with] block (not discovered by [infer_aux_knames],
+    which only scans for absolute [tInd] references) still gets its own
+    arm in [defs], so it's still reached. *)
 Definition animate_inductive
   (kn : kername)
   (modes : mode_map) (fuel : nat)
@@ -1496,7 +1508,7 @@ match mk_all_ind ind_data kn modes with
     f  <- tmUnquote t' ;;
     tmEval hnf (my_projT2 f) >>=
     tmDefinitionRed_ false (snd kn ++ top_fn_suffix) (Some hnf) ;;
-    emit_aux_topfns defs 1 knLst ;;
+    emit_aux_topfns defs 1 (length defs - 2) ;;
     tmReturn db_u
   | None => tmFail "de Bruijn conversion failed in animate_inductive"
   end

@@ -66,6 +66,50 @@ Ltac eqfn_sound_inline H :=
     actually comes up. *)
 Create HintDb eqfn_sound.
 
+(** One case is NOT a per-relation hand-written [eqFn] at all, but comes
+    up constantly: whenever a clause's pattern uses the SAME bound
+    variable in two argument positions (e.g. [suffixCons]'s [w] heading
+    both the input list and the adjacent output-side list), the engine
+    has to compile that into a RUNTIME equality check between whatever
+    the two positions actually hold at animation time -- for [nat], that
+    check is literally [Nat.eqb]/[=?], which (being an ordinary
+    structurally-recursive [Fixpoint], not a [decide-equality] wrapper)
+    [eqfn_sound_inline] can't unfold either. Since this is fundamental
+    and ubiquitous (not something a user writes per custom type), its
+    soundness fact is registered HERE, once, permanently, rather than
+    re-derived in every validation that happens to pattern-match on
+    repeated [nat] variables. *)
+Lemma Nat_eqb_sound : forall n m : nat, (n =? m) = true -> n = m.
+Proof. apply PeanoNat.Nat.eqb_eq. Qed.
+
+Hint Resolve Nat_eqb_sound : eqfn_sound.
+
+(** Same story one level up: when the REPEATED variable's type is a
+    [list], e.g. two independently-animated calls that both have to
+    agree on some shared list-valued argument (because they were fed to
+    SEPARATE, empty-input-mode relations with no way to pass that list
+    in as a common input), the engine checks equality via MetaRocq's
+    own [eqb_list] (parametrized by the element type's own [eqb]) --
+    structurally recursive, not [decide-equality]-shaped, same gap as
+    [Nat.eqb]. This lemma is deliberately generic (any element type [A]
+    with its OWN soundness fact as a hypothesis) rather than hardcoded
+    to [nat], so [eauto with eqfn_sound] can chain it with
+    [Nat_eqb_sound] (or any other registered element-soundness lemma)
+    automatically to cover [list nat], [list (list nat)], etc. without
+    a separate registration per element type. *)
+Lemma eqb_list_sound : forall (A : Type) (eqA : A -> A -> bool),
+  (forall a b : A, eqA a b = true -> a = b) ->
+  forall l1 l2 : list A, eqb_list eqA l1 l2 = true -> l1 = l2.
+Proof.
+  intros A eqA Hsound.
+  induction l1 as [|a l1 IH]; intros [|b l2] H; simpl in H; try discriminate H.
+  - reflexivity.
+  - destruct (eqA a b) eqn:Hab; try discriminate H.
+    f_equal; [apply Hsound; assumption | apply IH; assumption].
+Qed.
+
+Hint Resolve eqb_list_sound : eqfn_sound.
+
 (* ==================================================================== *)
 (** ** Part 1: generic, relation-independent facts about [dispatch_ind_ext].
     Proven once; every generated [<Rel>AnimatedTopFn] re-embeds its own
@@ -210,13 +254,25 @@ Ltac unfold_dispatch_step H := cbn in H; finish_dispatch_unfold H.
     [cbn]'s delta (unfolding of NAMED constants) to nothing, while still
     performing the beta/iota/zeta reduction needed to collapse a [match]
     once its scrutinee is concrete -- exactly the two things wanted. *)
-Ltac saturate_step H :=
+(** NOT restricted to [type of H]: destructuring one stuck subterm can
+    spawn a BRAND NEW, separate hypothesis (via [destruct ... eqn:Heq])
+    that itself still has a further stuck subterm inside IT -- confirmed
+    twice now (a [reduceToBool]-wrapped sibling call left stuck inside a
+    freshly-made [Heq], and a ground-pattern [match] on [wrap_nat n]
+    left stuck inside a freshly-made [Heqo]) -- and a version of this
+    tactic tied to one fixed [H] can never see those, since they are NOT
+    part of [H]'s own type anymore once spawned. Scanning the whole
+    goal's hypotheses (via [match goal with _ : context[...] |- _ =>])
+    instead of just [type of H] means a newly-spawned hypothesis is
+    exactly as reachable on the NEXT [repeat] iteration as the original
+    [H] was, with no special-casing needed. *)
+Ltac saturate_step :=
   first
-    [ match type of H with
-      | context [ match ?x with _ => _ end ] => is_var x; destruct x eqn:?
+    [ match goal with
+      | _ : context [ match ?x with _ => _ end ] |- _ => is_var x; destruct x eqn:?
       end
-    | match type of H with
-      | context [ match ?call with _ => _ end ] =>
+    | match goal with
+      | _ : context [ match ?call with _ => _ end ] |- _ =>
           lazymatch type of call with
           | animation_result _ =>
               (* Exclude candidates that are themselves a bare [match]: those
@@ -232,10 +288,31 @@ Ltac saturate_step H :=
               end
           end
       end
-    | match type of H with
-      | context [ if ?cond then _ else _ ] => destruct cond eqn:?
+    | match goal with
+      | _ : context [ if ?cond then _ else _ ] |- _ => destruct cond eqn:?
       end
-    ]; cbn beta iota zeta in H.
+    | (* A ground-pattern/function-application equality guard (e.g.
+         [nulCon = wrap_nat n]) compiles to a bare [match] on a
+         user-defined function's result -- NOT a bare variable (so the
+         first alternative above doesn't apply), NOT [animation_result]-
+         typed (so the second alternative doesn't apply either, it's
+         some other custom inductive like [newTp]), and not an [if].
+         Same "exclude an outer not-yet-reduced bare [match]" guard as
+         the stuck-call case, for the same reason: don't grab a
+         premature outer combinator result instead of the true
+         innermost stuck scrutinee. *)
+      match goal with
+      | _ : context [ match ?scrut with _ => _ end ] |- _ =>
+          lazymatch type of scrut with
+          | animation_result _ => fail
+          | _ =>
+              lazymatch scrut with
+              | match _ with _ => _ end => fail
+              | _ => destruct scrut eqn:?
+              end
+          end
+      end
+    ]; cbn beta iota zeta in *.
 
 (** [cbn]/[simpl] without an explicit name list are conservative: they
     won't delta-unfold a clause function whose body would still be stuck
@@ -244,28 +321,51 @@ Ltac saturate_step H :=
     generic tactic can't hard-code that name, but [H]'s own head symbol
     IS that name, so [match type of H with ?F _ _ = _ => unfold F in H
     end] reads it off and unfolds it by reference -- tried at a few
-    arities since a clause may take a leading recursive-function
-    argument (e.g. [add_succAnimated f m input]) or not
-    (e.g. [add_zeroAnimated m input]). *)
+    arities since a clause may take leading higher-order arguments
+    before fuel/input: ONE for a self-recursive clause (e.g.
+    [add_succAnimated f m input]), but potentially MORE when a single
+    clause's premise calls several DIFFERENT sibling relations (e.g.
+    [isG2Animated]'s clause needs both [isGoodEmptyInAnimatedTopFn] and
+    [isGoodEmptyIn'AnimatedTopFn] passed in, for arity 4 overall) --
+    confirmed empirically that arity 1-3, tried SMALLEST FIRST, is not
+    enough and not even safe in general: a too-small arity still lets
+    [?F] bind to a genuinely partially-applied (not bare) term -- e.g.
+    for [isG2Animated sib1 sib2 fuel input] (arity 4: two leading
+    sibling-relation calls, then fuel/input), the arity-1 pattern binds
+    [?F] to [isG2Animated sib1 sib2 fuel], and [unfold F in H] on THAT
+    doesn't error, it just does something useless, so [first] stops
+    there and never reaches the arity that actually matches the bare
+    head. Trying LARGEST arity first instead fixes this soundly: a
+    too-LARGE arity has no way to unify at all (there aren't that many
+    real arguments to peel off), so it fails cleanly and [first] moves
+    down, meaning the exact matching arity -- the only one where [?F]
+    is forced to be the bare, genuinely-unfoldable head -- is always
+    reached before any smaller, partially-applied false match gets a
+    chance. Tried up to 6 (comfortably more leading sibling calls than
+    any relation needs in one clause); extend further if a future
+    relation's clause ever calls more siblings than that in one go. *)
 Ltac unfold_clause_head H :=
   first
-    [ match type of H with ?F _ = _ => unfold F in H end
-    | match type of H with ?F _ _ = _ => unfold F in H end
+    [ match type of H with ?F _ _ _ _ _ _ = _ => unfold F in H end
+    | match type of H with ?F _ _ _ _ _ = _ => unfold F in H end
+    | match type of H with ?F _ _ _ _ = _ => unfold F in H end
     | match type of H with ?F _ _ _ = _ => unfold F in H end
+    | match type of H with ?F _ _ = _ => unfold F in H end
+    | match type of H with ?F _ = _ => unfold F in H end
     | idtac ].
 
 (** These library-level combinator names ARE fixed (not per-relation), so
     unlike the clause function's own name, the generic tactic can just
     hard-code them -- same list as the hand-proofs' [unfold_combinators]. *)
 Ltac unfold_combinators_in H :=
-  unfold compose_outcome, option_to_result, join_pair, join_unit,
+  unfold compose_outcome, compose_outcome_no_in, option_to_result, join_pair, join_unit,
          split_outcome_fst, split_outcome_snd,
          with_default, dispatch_clauses, fuel_error_fn,
-         and_outcome_bool, eq_outcome, id_fn in H.
+         and_outcome_bool, eq_outcome, id_fn, reduceToBool, Bool.eqb in H.
 
 Ltac saturate_clause H :=
   unfold_clause_head H; unfold_combinators_in H; cbn beta iota zeta in H;
-  repeat saturate_step H.
+  repeat saturate_step.
 
 (* ==================================================================== *)
 (** ** Part 4: shared primitives for closing a saturated clause once its
@@ -339,8 +439,32 @@ Ltac resolve_eqfn_guards :=
       clear H; subst
   end.
 
+(** [saturate_clause] only ever tracks and simplifies ONE hypothesis
+    ([H]/[Hanim]) -- but [saturate_step]'s [if cond then _ else _]
+    branch, when [cond] itself contains a nested not-yet-resolved call
+    (e.g. a ground-equality guard compiled as [Bool.eqb true
+    (reduceToBool (SiblingAnimatedTopFn ...))]), commits to a case split
+    on [cond] via [destruct cond eqn:Heq] BEFORE that nested call has a
+    chance to be resolved to something concrete -- leaving [Heq] (a
+    SEPARATE hypothesis, not part of [H]'s own type) holding whatever
+    [cond] turned out to actually equal once the sibling call's outcome
+    becomes known (confirmed: e.g. [Heq : true = Bool.eqb true false]
+    once [reduceToBool]/[Bool.eqb] are unfolded and the sibling call's
+    own outcome is substituted in). [saturate_clause]/[close_clause_joint]
+    never look at [Heq], only [H], so a branch that's ACTUALLY impossible
+    this way is never discriminated away. This sweeps every equality
+    hypothesis in context (not just [H]) and discharges whichever ones
+    are already-contradictory [discriminate]-style facts; [discriminate]
+    failing on a genuinely consistent equality is a normal, recoverable
+    failure, so [match goal]'s backtracking just moves on. *)
+Ltac discriminate_stray_contras :=
+  repeat match goal with
+  | H' : _ = _ |- _ => discriminate H'
+  end.
+
 Ltac finish_success H :=
   resolve_eqfn_guards;
+  discriminate_stray_contras;
   first
     [ discriminate H
     | injection H as ?; subst; try_constructors
@@ -458,11 +582,34 @@ Ltac animation_soundness_step_joint unfoldtac zerotac IH :=
       | unfoldtac Hanim; saturate_clause Hanim; close_clause_joint Hanim IH ]
   end.
 
+(** Guarded [split], NOT bare [repeat split]: plain [split] is not
+    safely restricted to the joint statement's own top-level [/\]
+    chain. Coq's [split] is really "intro whatever's needed, then apply
+    the sole constructor of a single-constructor inductive" -- so on a
+    goal like [forall l m, TopFn ... -> SomeRel l m] where [SomeRel]
+    itself happens to have EXACTLY ONE constructor
+    (e.g. a relation like [isGood2] whose one constructor's premise is
+    itself a [/\]), bare [split] will silently intro through the
+    [forall]/arrow AND apply [SomeRel]'s own constructor, confirmed via
+    a minimal reproduction -- completely bypassing the fuel-dispatch
+    reasoning [animation_soundness_step_joint] is supposed to run on
+    that goal. Every relation in this file with 2+ constructors masked
+    this (bare [split] can't touch a goal headed by an un-introduced
+    [forall], so with 2+ constructors there's no single-constructor
+    goal for it to eagerly unfold) -- a single-constructor relation
+    bundled with others (like [isGood2]/[isGoodEmptyIn]/[isGoodEmptyIn'])
+    exposes it immediately. The fix: GUARD [split] so it only ever fires
+    when the CURRENT goal is ALREADY, syntactically, [_ /\ _] at the top
+    -- that's always true for the joint conjunction's own structure
+    (right after [induction ... using lt_wf_ind], there is no leading
+    [forall] left to hide behind), and never true for an individual
+    relation's still-forall-headed goal, so this can never reach into
+    unfolding some OTHER relation's constructor by accident. *)
 Ltac animation_soundness_proof_joint :=
   let n := fresh "n" in
   let IH := fresh "IH" in
   intros n; induction n as [n IH] using lt_wf_ind;
-  repeat split;
+  repeat match goal with |- _ /\ _ => split end;
   animation_soundness_step_joint unfold_dispatch_step simpl_discriminate IH.
 
 (** [animation_soundness_project joint_lemma] is the user-facing
@@ -675,3 +822,491 @@ Theorem lookup_soundness : forall (n : nat) (cxt : list ty) (j : nat) (out : ty)
 Proof. animation_soundness_project typing_lookup_soundness_aux. Qed.
 
 End STLCValidation.
+
+(* ==================================================================== *)
+(** ** Validation 4: list relations ([append]/[length_rel]/[suffix]/
+    [rev_acc], from TestList.v) -- all four are self-recursive only, no
+    [eqFn] guards, no cross-relation calls, each its own single-relation
+    [modes] bundle. Every one collapses to the exact same one-line
+    pattern as [add]. *)
+(* ==================================================================== *)
+
+Module ListValidation.
+
+Inductive append : list nat -> list nat -> list nat -> Prop :=
+| appendNil : forall (l2 : list nat), append [] l2 l2
+| appendCons : forall (w : nat) (l2 l3 l4 : list nat),
+    append l2 l3 l4 -> append (w :: l2) l3 (w :: l4).
+
+MetaRocq Run (animate_inductive <?append?> [("append", ([0;1], [2]))] 100).
+
+Theorem append_soundness : forall (n : nat) (l1 l2 l3 : list nat),
+  appendAnimatedTopFn n (Success (list nat * list nat) (l1, l2)) = Success (list nat) l3 ->
+  append l1 l2 l3.
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive length_rel : list nat -> nat -> Prop :=
+| length_nil : length_rel [] 0
+| length_cons : forall (w : nat) (l : list nat) (n : nat),
+    length_rel l n -> length_rel (w :: l) (S n).
+
+MetaRocq Run (animate_inductive <?length_rel?> [("length_rel", ([0], [1]))] 100).
+
+Theorem length_rel_soundness : forall (n : nat) (l : list nat) (len : nat),
+  length_relAnimatedTopFn n (Success (list nat) l) = Success nat len ->
+  length_rel l len.
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive suffix : list nat -> list nat -> list nat -> Prop :=
+| suffixNil : forall (l2 : list nat), suffix [] l2 l2
+| suffixCons : forall (w : nat) (l2 l3 l4 : list nat),
+    suffix l2 l3 l4 -> suffix (w :: l2) l3 (w :: l4).
+
+MetaRocq Run (animate_inductive <?suffix?> [("suffix", ([0;2], [1]))] 100).
+
+Theorem suffix_soundness : forall (n : nat) (pre full suf : list nat),
+  suffixAnimatedTopFn n (Success (list nat * list nat) (pre, full)) = Success (list nat) suf ->
+  suffix pre suf full.
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive rev_acc : list nat -> list nat -> list nat -> Prop :=
+| rev_nil : forall (acc : list nat), rev_acc [] acc acc
+| rev_cons : forall (w : nat) (l acc res : list nat),
+    rev_acc l (w :: acc) res -> rev_acc (w :: l) acc res.
+
+MetaRocq Run (animate_inductive <?rev_acc?> [("rev_acc", ([0;1], [2]))] 100).
+
+Theorem rev_acc_soundness : forall (n : nat) (l acc res : list nat),
+  rev_accAnimatedTopFn n (Success (list nat * list nat) (l, acc)) = Success (list nat) res ->
+  rev_acc l acc res.
+Proof. animation_soundness_proof_joint. Qed.
+
+End ListValidation.
+
+(* ==================================================================== *)
+(** ** Validation 5: [lam_step] (untyped lambda calculus CBN step, from
+    TestLambdaCalc.v) -- one base case with no recursion ([LS_Beta]),
+    one self-recursive case ([LS_App]), single-relation bundle. *)
+(* ==================================================================== *)
+
+Module LambdaCalcValidation.
+
+Inductive lam_tm : Type :=
+| lvar : nat -> lam_tm
+| lapp : lam_tm -> lam_tm -> lam_tm
+| labs : lam_tm -> lam_tm.
+
+Fixpoint lshift (d c : nat) (t : lam_tm) : lam_tm :=
+  match t with
+  | lvar n => if Nat.leb c n then lvar (n + d) else lvar n
+  | lapp t1 t2 => lapp (lshift d c t1) (lshift d c t2)
+  | labs t1 => labs (lshift d (S c) t1)
+  end.
+
+Fixpoint lsubst (n : nat) (s : lam_tm) (t : lam_tm) : lam_tm :=
+  match t with
+  | lvar m => if Nat.eqb m n then s else t
+  | lapp t1 t2 => lapp (lsubst n s t1) (lsubst n s t2)
+  | labs t1 => labs (lsubst (S n) (lshift 1 0 s) t1)
+  end.
+
+Inductive lam_step : lam_tm -> lam_tm -> Prop :=
+| LS_Beta : forall (t1 t2 : lam_tm),
+    lam_step (lapp (labs t1) t2) (lsubst 0 t2 t1)
+| LS_App : forall (e1 e1' e2 : lam_tm),
+    lam_step e1 e1' ->
+    lam_step (lapp e1 e2) (lapp e1' e2).
+
+MetaRocq Run (animate_inductive <?lam_step?> [("lam_step", ([0], [1]))] 200).
+
+Theorem lam_step_soundness : forall (n : nat) (t1 t2 : lam_tm),
+  lam_stepAnimatedTopFn n (Success lam_tm t1) = Success lam_tm t2 ->
+  lam_step t1 t2.
+Proof. animation_soundness_proof_joint. Qed.
+
+End LambdaCalcValidation.
+
+(* ==================================================================== *)
+(** ** Validation 6+: the remaining examples from TestNat.v, in file
+    order. [add]/[mul] are plain self-recursive -- skipping [add] here
+    since it's identical to [AddValidation.add] above. *)
+(* ==================================================================== *)
+
+Module NatMiscValidation.
+
+Inductive tripleIn : nat -> nat -> bool -> nat -> nat -> bool -> Prop :=
+| tInC : forall a b c, tripleIn a b c a b c.
+
+MetaRocq Run (animate_inductive <?tripleIn?> [("tripleIn", ([0;1;2], [3;4;5]))] 200).
+
+Theorem tripleIn_soundness : forall (n : nat) (a b : nat) (c : bool) (a' b' : nat) (c' : bool),
+  tripleInAnimatedTopFn n (Success (nat * (nat * bool)) (a, (b, c))) =
+  Success (nat * (nat * bool)) (a', (b', c')) ->
+  tripleIn a b c a' b' c'.
+Proof. animation_soundness_proof_joint. Qed.
+
+(** [isGood2] bundle: empty INPUT mode (all three relations take a bare
+    [bool true] "go" trigger, no real data in). *)
+Inductive isGoodEmptyIn : list nat -> nat -> Prop :=
+| zeroCEmptyIn : isGoodEmptyIn [] 0.
+
+Inductive isGoodEmptyIn' : list nat -> nat -> Prop :=
+| zeroCEmptyIn' : isGoodEmptyIn' [] 1.
+
+Inductive isGood2 : list nat -> nat -> Prop :=
+| isG2 : forall n l, isGoodEmptyIn' l n /\ isGoodEmptyIn l n -> isGood2 l n.
+
+MetaRocq Run (animate_inductive <? isGood2 ?>
+  [("isGood2", ([], [0;1]));
+   ("isGoodEmptyIn", ([], [0;1]));
+   ("isGoodEmptyIn'", ([], [0;1]))] 100).
+
+Lemma isGood2_bundle_soundness_aux : forall (n : nat),
+  (forall (l : list nat) (m : nat),
+    isGood2AnimatedTopFn n (Success bool true) = Success (list nat * nat) (l, m) -> isGood2 l m)
+  /\
+  (forall (l : list nat) (m : nat),
+    isGoodEmptyInAnimatedTopFn n (Success bool true) = Success (list nat * nat) (l, m) -> isGoodEmptyIn l m)
+  /\
+  (forall (l : list nat) (m : nat),
+    isGoodEmptyIn'AnimatedTopFn n (Success bool true) = Success (list nat * nat) (l, m) -> isGoodEmptyIn' l m).
+Proof. animation_soundness_proof_joint. Qed.
+
+(** [isGood3] bundle: empty OUTPUT mode (all three just return a bare
+    success/fail [bool], no real data out). *)
+Inductive isGoodEmptyIn3 : list nat -> nat -> Prop :=
+| zeroCEmptyIn3 : isGoodEmptyIn3 [] 0.
+
+Inductive isGoodEmptyIn'3 : list nat -> nat -> Prop :=
+| zeroCEmptyIn'3 : isGoodEmptyIn'3 [] 0.
+
+Inductive isGood3 : list nat -> nat -> Prop :=
+| isG3 : forall n l, isGoodEmptyIn'3 l n /\ isGoodEmptyIn3 l n -> isGood3 l n.
+
+MetaRocq Run (animate_inductive <? isGood3 ?>
+  [("isGood3", ([0;1], []));
+   ("isGoodEmptyIn3", ([0;1], []));
+   ("isGoodEmptyIn'3", ([0;1], []))] 100).
+
+Lemma isGood3_bundle_soundness_aux : forall (n : nat),
+  (forall (l : list nat) (m : nat),
+    isGood3AnimatedTopFn n (Success (list nat * nat) (l, m)) = Success bool true -> isGood3 l m)
+  /\
+  (forall (l : list nat) (m : nat),
+    isGoodEmptyIn3AnimatedTopFn n (Success (list nat * nat) (l, m)) = Success bool true -> isGoodEmptyIn3 l m)
+  /\
+  (forall (l : list nat) (m : nat),
+    isGoodEmptyIn'3AnimatedTopFn n (Success (list nat * nat) (l, m)) = Success bool true -> isGoodEmptyIn'3 l m).
+Proof. animation_soundness_proof_joint. Qed.
+
+(** [isGood]/[isGood'] bundle: reversed usual mode (input is position 1,
+    output is position 0). *)
+Inductive isGood' : list nat -> nat -> Prop :=
+| zeroC : isGood' [] 0.
+
+Inductive isGood : list nat -> nat -> Prop :=
+| isG : forall n l, isGood' l n -> isGood l n.
+
+MetaRocq Run (animate_inductive <? isGood ?>
+  [("isGood", ([1], [0])); ("isGood'", ([1], [0]))] 100).
+
+Lemma isGood_bundle_soundness_aux : forall (n : nat),
+  (forall (m : nat) (l : list nat), isGoodAnimatedTopFn n (Success nat m) = Success (list nat) l -> isGood l m)
+  /\
+  (forall (m : nat) (l : list nat), isGood'AnimatedTopFn n (Success nat m) = Success (list nat) l -> isGood' l m).
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive mul : nat -> nat -> nat -> Prop :=
+| mul_zero : forall (n : nat), mul 0 n 0
+| mul_succ : forall (m n k : nat), mul m n k -> mul (S m) n (n + k).
+
+MetaRocq Run (animate_inductive <?mul?> [("mul", ([0;1], [2]))] 100).
+
+Theorem mul_soundness : forall (n : nat) (m k p : nat),
+  mulAnimatedTopFn n (Success (nat * nat) (m, k)) = Success nat p ->
+  mul m k p.
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive leq : nat -> nat -> bool -> Prop :=
+| leq_zero : forall (n : nat), leq 0 n true
+| leq_succ : forall (m n : nat) (b : bool), leq m n b -> leq (S m) (S n) b
+| leq_fail : forall (m : nat), leq (S m) 0 false.
+
+MetaRocq Run (animate_inductive <?leq?> [("leq", ([0;1], [2]))] 100).
+
+Theorem leq_soundness : forall (n : nat) (m k : nat) (b : bool),
+  leqAnimatedTopFn n (Success (nat * nat) (m, k)) = Success bool b ->
+  leq m k b.
+Proof. animation_soundness_proof_joint. Qed.
+
+End NatMiscValidation.
+
+(* ==================================================================== *)
+(** ** Validation 7: [even]/[odd] -- a GENUINE CYCLE in one mutual
+    [with] block ([even] calls [odd] and vice versa), not an acyclic DAG
+    like [typing]/[lookup]. Exactly the case the joint well-founded-
+    induction design was built for: both conjuncts share one [IH]
+    covering BOTH relations at every smaller fuel, so neither needs to
+    be "finished" before the other. *)
+(* ==================================================================== *)
+
+Module ParityValidation.
+
+Inductive even : nat -> bool -> Prop :=
+| even0 : even 0 true
+| evenSucc : forall (w : nat), odd w true -> even (S w) true
+with odd : nat -> bool -> Prop :=
+| oddSucc : forall (w : nat), even w true -> odd (S w) true.
+
+MetaRocq Run (animate_inductive <?even?> [("even", ([0], [1])); ("odd", ([0], [1]))] 100).
+
+(** Previously blocked by an [AnimationEngine.v] gap: [emit_aux_topfns]'s
+    emission loop used to be bounded by [length knLst], and [knLst]
+    (from [infer_aux_knames]) never discovered [odd] at all, since a
+    cross-reference WITHIN a native mutual [with] block is a bare
+    [tRel], not the [tInd] [infer_aux_knames] scans for. Fixed by
+    driving the loop from [length defs] instead (the real arm count,
+    regardless of how each arm got into [defs]) -- see [emit_aux_topfns]
+    in AnimationEngine.v. Confirmed fixed: [oddAnimatedTopFn] now exists
+    standalone, and this is a one-liner like every other bundle. *)
+Lemma even_odd_soundness_aux : forall (n : nat),
+  (forall (w : nat) (b : bool), evenAnimatedTopFn n (Success nat w) = Success bool b -> even w b)
+  /\
+  (forall (w : nat) (b : bool), oddAnimatedTopFn n (Success nat w) = Success bool b -> odd w b).
+Proof. animation_soundness_proof_joint. Qed.
+
+End ParityValidation.
+
+(* ==================================================================== *)
+(** ** Validation 7b: [tripled_parity]/[triple2]/[evn4]/[od4] -- a
+    standalone relation ([triple2]) MIXED with a native mutual pair
+    ([evn4]/[od4]) in one bundle. Previously blocked a SECOND, nastier
+    way: [od4] sneaking into [defs] via [evn4]'s own native-mutual
+    quoting used to shift every later index, so the old
+    [length knLst]-bounded loop undershot and [triple2] -- an ordinary,
+    otherwise trivially provable relation with nothing to do with any
+    of this -- never got a name at all. Same engine fix resolves both
+    at once: driving the loop from [length defs] reaches every real
+    arm regardless of how it got there. *)
+(* ==================================================================== *)
+
+Module MixedBlocksSoloValidation.
+
+Inductive triple2 : nat -> nat -> Prop :=
+| t2_zero : triple2 0 0
+| t2_succ : forall n m, triple2 n m -> triple2 (S n) (S (S (S m))).
+
+Inductive evn4 : nat -> bool -> Prop :=
+| evn4_zero : evn4 0 true
+| evn4_succ : forall n, od4 n true -> evn4 (S n) true
+with od4 : nat -> bool -> Prop :=
+| od4_succ : forall n, evn4 n true -> od4 (S n) true.
+
+Inductive tripled_parity : nat -> (nat * bool) -> Prop :=
+| tp_rule : forall n t b,
+    triple2 n t /\ evn4 t b -> tripled_parity n (t, b).
+
+MetaRocq Run (animate_inductive <?tripled_parity?>
+  [("tripled_parity", ([0], [1]));
+   ("triple2",        ([0], [1]));
+   ("evn4",           ([0], [1]));
+   ("od4",            ([0], [1]))] 50).
+
+Lemma tripled_parity_bundle_soundness_aux : forall (n : nat),
+  (forall (a : nat) (t : nat) (b : bool),
+    tripled_parityAnimatedTopFn n (Success nat a) = Success (nat * bool) (t, b) ->
+    tripled_parity a (t, b))
+  /\
+  (forall (a c : nat), triple2AnimatedTopFn n (Success nat a) = Success nat c -> triple2 a c)
+  /\
+  (forall (w : nat) (b : bool), evn4AnimatedTopFn n (Success nat w) = Success bool b -> evn4 w b)
+  /\
+  (forall (w : nat) (b : bool), od4AnimatedTopFn n (Success nat w) = Success bool b -> od4 w b).
+Proof. animation_soundness_proof_joint. Qed.
+
+End MixedBlocksSoloValidation.
+
+(* ==================================================================== *)
+(** ** Validation 7c: [even_ident]/[evn5]/[od5]/[val_check]/[val_helper]
+    -- TWO SEPARATE native mutual blocks ([evn5]/[od5], and
+    [even_ident]/[val_check]/[val_helper] -- note [even_ident] is
+    natively mutual with its OWN two auxiliary relations) combined into
+    ONE 5-relation animation bundle. Same engine fix; same one-liner. *)
+(* ==================================================================== *)
+
+Module TwoMutualBlocksValidation.
+
+Inductive evn5 : nat -> bool -> Prop :=
+| evn5_zero : evn5 0 true
+| evn5_succ : forall n, od5 n true -> evn5 (S n) true
+with od5 : nat -> bool -> Prop :=
+| od5_succ : forall n, evn5 n true -> od5 (S n) true.
+
+Inductive even_ident : nat -> nat -> Prop :=
+| ei_rule : forall n m,
+    evn5 n true /\ val_check n m -> even_ident n m
+with val_check : nat -> nat -> Prop :=
+| vc_zero : val_check 0 0
+| vc_succ : forall n m, val_helper n m -> val_check (S n) (S m)
+with val_helper : nat -> nat -> Prop :=
+| vh_zero : val_helper 0 0
+| vh_succ : forall n m, val_check n m -> val_helper (S n) (S m).
+
+MetaRocq Run (animate_inductive <?even_ident?>
+  [("even_ident",  ([0], [1]));
+   ("evn5",        ([0], [1]));
+   ("od5",         ([0], [1]));
+   ("val_check",   ([0], [1]));
+   ("val_helper",  ([0], [1]))] 30).
+
+Lemma even_ident_bundle_soundness_aux : forall (n : nat),
+  (forall (a c : nat), even_identAnimatedTopFn n (Success nat a) = Success nat c -> even_ident a c)
+  /\
+  (forall (w : nat) (b : bool), evn5AnimatedTopFn n (Success nat w) = Success bool b -> evn5 w b)
+  /\
+  (forall (w : nat) (b : bool), od5AnimatedTopFn n (Success nat w) = Success bool b -> od5 w b)
+  /\
+  (forall (a c : nat), val_checkAnimatedTopFn n (Success nat a) = Success nat c -> val_check a c)
+  /\
+  (forall (a c : nat), val_helperAnimatedTopFn n (Success nat a) = Success nat c -> val_helper a c).
+Proof. animation_soundness_proof_joint. Qed.
+
+End TwoMutualBlocksValidation.
+
+(* ==================================================================== *)
+(** ** Validation 8: [patGuard]/[patGuard']/[patGuardFnApp] -- ground
+    PROPOSITIONAL equality guards (literal [=], not a boolean [eqFn])
+    on a custom type [newTp], and one on a defined function applied to
+    a variable. Each is its own single-relation, non-recursive bundle. *)
+(* ==================================================================== *)
+
+Module PatternGuardValidation.
+
+Inductive newTp : Type :=
+| nulCon : newTp
+| unaCon : nat -> newTp -> newTp.
+
+Inductive patGuard : newTp -> newTp -> Prop :=
+| checkEq : forall w u, u = nulCon /\ unaCon 5 (unaCon 6 nulCon) = w /\ unaCon 5 nulCon = unaCon 5 nulCon -> patGuard w u.
+
+MetaRocq Run (animate_inductive <?patGuard?>
+  [("patGuard", ([0;1], []))] 100).
+
+Theorem patGuard_soundness : forall (n : nat) (w u : newTp),
+  patGuardAnimatedTopFn n (Success (newTp * newTp) (w, u)) = Success bool true ->
+  patGuard w u.
+Proof. animation_soundness_proof_joint. Qed.
+
+Inductive patGuard' : newTp -> newTp -> Prop :=
+| checkEq' : forall w u, u = nulCon /\ unaCon 5 (unaCon 6 nulCon) = w /\ unaCon 5 nulCon = nulCon -> patGuard' w u.
+
+MetaRocq Run (animate_inductive <?patGuard'?>
+  [("patGuard'", ([0;1], []))] 100).
+
+Theorem patGuard'_soundness : forall (n : nat) (w u : newTp),
+  patGuard'AnimatedTopFn n (Success (newTp * newTp) (w, u)) = Success bool true ->
+  patGuard' w u.
+Proof. animation_soundness_proof_joint. Qed.
+
+Definition wrap_nat (n : nat) : newTp :=
+  match n with
+  | 0   => nulCon
+  | S k => unaCon k nulCon
+  end.
+
+Inductive patGuardFnApp : nat -> nat -> Prop :=
+| pgfa_rule : forall n m, nulCon = wrap_nat n /\ wrap_nat m = nulCon -> patGuardFnApp n m.
+
+MetaRocq Run (animate_inductive <?patGuardFnApp?>
+  [("patGuardFnApp", ([0;1], []))] 100).
+
+Theorem patGuardFnApp_soundness : forall (n0 : nat) (n m : nat),
+  patGuardFnAppAnimatedTopFn n0 (Success (nat * nat) (n, m)) = Success bool true ->
+  patGuardFnApp n m.
+Proof. animation_soundness_proof_joint. Qed.
+
+End PatternGuardValidation.
+
+(* ==================================================================== *)
+(** ** Validation 10: [rel]/[rel2] -- another native mutual [with] pair,
+    but LOGICALLY ACYCLIC this time ([rel] calls [rel2], [rel2] never
+    calls back). Confirms the engine gap was about the native [with]
+    DECLARATION SYNTAX, not about cyclic dependency: this one has no
+    cycle at all, yet [rel2AnimatedTopFn] was equally missing before the
+    [emit_aux_topfns] fix, for the exact same [tRel]-vs-[tInd] reason. *)
+(* ==================================================================== *)
+
+Module ClashRelNameValidation.
+
+Inductive rel : nat -> nat -> Prop :=
+| x : forall v0 v1, rel2 v0 v1 -> rel v0 v1
+with rel2 : nat -> nat -> Prop :=
+| x_base' : rel2 0 0
+| x_step' : forall (x v1 : nat), rel2 x v1 -> rel2 (S x) (S v1).
+
+MetaRocq Run (animate_inductive <?rel?> [("rel", ([0], [1])); ("rel2", ([0], [1]))] 200).
+
+Lemma rel_bundle_soundness_aux : forall (n : nat),
+  (forall (a c : nat), relAnimatedTopFn n (Success nat a) = Success nat c -> rel a c)
+  /\
+  (forall (a c : nat), rel2AnimatedTopFn n (Success nat a) = Success nat c -> rel2 a c).
+Proof. animation_soundness_proof_joint. Qed.
+
+End ClashRelNameValidation.
+
+(* ==================================================================== *)
+(** ** Validation 11: [step] (STLC small-step CBV reduction, from
+    TestSTLC.v's [STLCStep] module -- missed on the first pass through
+    this file, since its [typing]/[lookup] section at the top duplicates
+    [STLCValidation] and nothing further was checked). Self-recursive
+    only, no cross-relation calls; its outputs are computed directly via
+    the auxiliary [subst] function (same pattern as [lam_step]'s
+    [lsubst]), not compared against anything, so no new guard shape. *)
+(* ==================================================================== *)
+
+Module STLCStepValidation.
+
+Inductive ty : Type :=
+| TBool : ty
+| TArrow : ty -> ty -> ty.
+
+Inductive tm : Type :=
+| tvar : string -> tm
+| tapp : tm -> tm -> tm
+| tabs : string -> ty -> tm -> tm
+| ttrue : tm
+| tfalse : tm
+| tif : tm -> tm -> tm -> tm.
+
+Fixpoint subst (x : string) (s : tm) (t : tm) : tm :=
+  match t with
+  | tvar y => if String.eqb x y then s else t
+  | tabs y T t1 => if String.eqb x y then t else tabs y T (subst x s t1)
+  | tapp t1 t2 => tapp (subst x s t1) (subst x s t2)
+  | ttrue => ttrue
+  | tfalse => tfalse
+  | tif t1 t2 t3 => tif (subst x s t1) (subst x s t2) (subst x s t3)
+  end.
+
+Inductive step : tm -> tm -> Prop :=
+| ST_AppAbs : forall (z : string) (T : ty) (t w : tm),
+    step (tapp (tabs z T t) w) (subst z w t)
+| ST_App1 : forall (t1 t1' t2 : tm),
+    step t1 t1' ->
+    step (tapp t1 t2) (tapp t1' t2)
+| ST_IfTrue : forall (t1 t2 : tm),
+    step (tif ttrue t1 t2) t1
+| ST_IfFalse : forall (t1 t2 : tm),
+    step (tif tfalse t1 t2) t2
+| ST_If : forall (t1 t1' t2 t3 : tm),
+    step t1 t1' ->
+    step (tif t1 t2 t3) (tif t1' t2 t3).
+
+MetaRocq Run (animate_inductive <?step?> [("step", ([0], [1]))] 100).
+
+Theorem step_soundness : forall (n : nat) (t1 t2 : tm),
+  stepAnimatedTopFn n (Success tm t1) = Success tm t2 ->
+  step t1 t2.
+Proof. animation_soundness_proof_joint. Qed.
+
+End STLCStepValidation.
